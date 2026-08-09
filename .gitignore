@@ -1,0 +1,46 @@
+# Visual Studio user and workspace files
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.VC.db
+*.VC.opendb
+
+# Build directories
+**/Debug/
+**/Release/
+**/x64/
+**/x86/
+**/Win32/
+build/
+out/
+
+# C/C++ build artifacts
+*.obj
+*.pdb
+*.idb
+*.ipdb
+*.iobj
+*.ilk
+*.tlog
+*.lastbuildstate
+*.recipe
+*.ifc
+*.exp
+*.pch
+*.res
+
+# Executables and runtime binaries
+*.exe
+*.dll
+
+# NuGet packages restored by Visual Studio
+packages/
+*.nupkg
+
+# Editor and OS metadata
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
