@@ -513,9 +513,25 @@ void process_data(char* net_buf, size_t io_byte)
 	static char packet_buffer[BUF_SIZE];
 
 	while (0 != io_byte) {
-		if (0 == in_packet_size) in_packet_size = ptr[0];
+		if (0 == in_packet_size) {
+			in_packet_size = static_cast<std::uint8_t>(ptr[0]);
+			if (in_packet_size < PACKET_HEADER_SIZE || in_packet_size > BUF_SIZE) {
+				std::cerr << "Invalid packet size: " << in_packet_size << std::endl;
+				s_socket.disconnect();
+				in_packet_size = 0;
+				saved_packet_size = 0;
+				return;
+			}
+		}
 		if (io_byte + saved_packet_size >= in_packet_size) {
 			memcpy(packet_buffer + saved_packet_size, ptr, in_packet_size - saved_packet_size);
+			if (!is_valid_server_packet(reinterpret_cast<const std::uint8_t*>(packet_buffer), in_packet_size)) {
+				std::cerr << "Invalid server packet" << std::endl;
+				s_socket.disconnect();
+				in_packet_size = 0;
+				saved_packet_size = 0;
+				return;
+			}
 			ProcessPacket(packet_buffer);
 			ptr += in_packet_size - saved_packet_size;
 			io_byte -= in_packet_size - saved_packet_size;
@@ -523,7 +539,6 @@ void process_data(char* net_buf, size_t io_byte)
 			saved_packet_size = 0;
 		}
 		else {
-
 			memcpy(packet_buffer + saved_packet_size, ptr, io_byte);
 			saved_packet_size += io_byte;
 			io_byte = 0;

@@ -18,6 +18,8 @@ constexpr ObjectId MAX_USER = 10000;
 
 constexpr std::size_t SCREEN_WIDTH = 18;
 constexpr std::size_t SCREEN_HEIGHT = 16;
+constexpr std::size_t PACKET_HEADER_SIZE = 2;
+constexpr std::size_t MAX_NEAR_MONSTERS = 5;
 
 constexpr std::uint8_t S2C_P_AVATAR_INFO = 1;
 constexpr std::uint8_t S2C_P_MOVE = 2;
@@ -137,7 +139,7 @@ struct sc_packet_monster_near {
 	std::uint8_t type;
 	std::int32_t monCount;
 	std::int32_t monType;
-	nearMonsterInfo monsters[5];
+	nearMonsterInfo monsters[MAX_NEAR_MONSTERS];
 };
 
 struct sc_packet_mapInfo {
@@ -209,3 +211,49 @@ static_assert(valid_packet_layout<cs_packet_move>(), "invalid packet layout");
 static_assert(valid_packet_layout<cs_packet_attack>(), "invalid packet layout");
 static_assert(valid_packet_layout<cs_packet_chat>(), "invalid packet layout");
 static_assert(valid_packet_layout<cs_packet_teleport>(), "invalid packet layout");
+
+inline bool is_valid_client_packet(std::uint8_t type, std::size_t size) noexcept
+{
+	switch (type) {
+	case C2S_P_LOGIN: return size == sizeof(cs_packet_login);
+	case C2S_P_MOVE: return size == sizeof(cs_packet_move);
+	case C2S_P_ATTACK: return size == sizeof(cs_packet_attack);
+	case C2S_P_CHAT: return size == sizeof(cs_packet_chat);
+	case C2S_P_TELEPORT: return size == sizeof(cs_packet_teleport);
+	default: return false;
+	}
+}
+
+inline bool is_valid_server_packet(const std::uint8_t* packet, std::size_t size) noexcept
+{
+	if (packet == nullptr || size < PACKET_HEADER_SIZE || packet[0] != size) {
+		return false;
+	}
+
+	switch (packet[1]) {
+	case S2C_P_AVATAR_INFO: return size == sizeof(sc_packet_avatar_info);
+	case S2C_P_MOVE: return size == sizeof(sc_packet_move);
+	case S2C_P_ENTER: return size == sizeof(sc_packet_enter);
+	case S2C_P_LEAVE: return size == sizeof(sc_packet_leave);
+	case S2C_P_CHAT: return size == sizeof(sc_packet_chat);
+	case S2C_P_STAT_CHANGE: return size == sizeof(sc_packet_stat_change);
+	case S2C_P_LOGIN_FAIL: return size == sizeof(sc_packet_login_fail);
+	case S2C_P_AVATAR_LOGIN_OK: return size == sizeof(sc_packet_avatar_login_ok);
+	case S2C_P_ATTACK_PtoN: return size == sizeof(sc_packet_attack_success);
+	case S2C_P_MONSTER_DIE: return size == sizeof(sc_packet_monster_die);
+	case S2C_P_MAPINFO: return size == sizeof(sc_packet_mapInfo);
+	case S2C_P_MONSTER_NEAR: {
+		const std::size_t base_size = offsetof(sc_packet_monster_near, monsters);
+		if (size < base_size) {
+			return false;
+		}
+		const auto* near_packet = reinterpret_cast<const sc_packet_monster_near*>(packet);
+		if (near_packet->monCount < 0 ||
+			near_packet->monCount > static_cast<std::int32_t>(MAX_NEAR_MONSTERS)) {
+			return false;
+		}
+		return size == base_size + sizeof(nearMonsterInfo) * near_packet->monCount;
+	}
+	default: return false;
+	}
+}

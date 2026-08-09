@@ -648,12 +648,13 @@ void GAMESESSION::sendMonsterDiePacket(int targetId) {
 }
 
 void GAMESESSION::sendMonsterNearPacket(nearMonsterInfo* infos, int cnt) {
-	sc_packet_monster_near p;
+	cnt = std::clamp(cnt, 0, static_cast<int>(MAX_NEAR_MONSTERS));
+	sc_packet_monster_near p{};
 	p.type = S2C_P_MONSTER_NEAR;
 	p.monCount = cnt;
 	p.monType = _monType;
 	memcpy(p.monsters, infos, sizeof(nearMonsterInfo) * cnt);
-	p.size = sizeof(p) - sizeof(nearMonsterInfo) * (5 - cnt);  // 정확한 size 계산
+	p.size = static_cast<std::uint8_t>(offsetof(sc_packet_monster_near, monsters) + sizeof(nearMonsterInfo) * cnt);  // 정확한 size 계산
 	registerSend(&p);
 }
 
@@ -1220,6 +1221,7 @@ void processPacket(int sessionId, char* packetFromC) {
 		int myY = session->_y;
 		for (int id : nearMonsterList) {
 			if (isPlayer(id)) continue;
+			if (targets.size() >= MAX_NEAR_MONSTERS) break;
 
 			auto it = clients.find(id);
 			if (it == clients.end()) continue;
@@ -1234,8 +1236,8 @@ void processPacket(int sessionId, char* packetFromC) {
 
 		//cout << " 공격가능 몬스터 수 : " << targets.size() << endl;
 		int tempCnt = 0;
-		int cnt = targets.size();
-		nearMonsterInfo nearMons[5];
+		const int cnt = static_cast<int>(targets.size());
+		nearMonsterInfo nearMons[MAX_NEAR_MONSTERS]{};
 		for (auto& target : targets) {
 			nearMons[tempCnt].monHp = target->_hp;
 			nearMons[tempCnt].monId = target->_id;
@@ -1258,6 +1260,7 @@ void processPacket(int sessionId, char* packetFromC) {
 
 		for (int id : viewList) {
 			if (isPlayer(id)) continue;
+			if (targets.size() >= MAX_NEAR_MONSTERS) break;
 
 			auto it = clients.find(id);
 			if (it == clients.end()) continue;
@@ -1303,8 +1306,8 @@ void processPacket(int sessionId, char* packetFromC) {
 		}
 
 		int tempCnt = 0;
-		int cnt = targets.size();
-		nearMonsterInfo nearMons[5];
+		const int cnt = static_cast<int>(targets.size());
+		nearMonsterInfo nearMons[MAX_NEAR_MONSTERS]{};
 		for (auto& target : targets) {
 			nearMons[tempCnt].monHp = target->_hp;
 			nearMons[tempCnt].monId = target->_id;
@@ -1412,15 +1415,25 @@ void workerThread(HANDLE iocp) {
 			OVER_EXP* recv_over = &cli->_recvOver;
 			//cout << " workerThread (OP_RECV) 확인용 " << key << " " << cli->_id << endl;
 			char* p = recv_over->_sendBuf;
+			bool invalidPacket = false;
 			while (remainData > 0) {
-				int packet_size = p[0];
-				if (packet_size <= remainData) {
-					processPacket(static_cast<int>(key), p);
-					//cout << "OP_RECV  속 key : " << key << endl;
-					p = p + packet_size;
-					remainData = remainData - packet_size;
+				const auto packetSize = static_cast<std::uint8_t>(p[0]);
+				if (packetSize < PACKET_HEADER_SIZE || packetSize > BUF_SIZE) {
+					invalidPacket = true;
+					break;
 				}
-				else break;
+				if (packetSize > remainData) break;
+				if (!is_valid_client_packet(static_cast<std::uint8_t>(p[1]), packetSize)) {
+					invalidPacket = true;
+					break;
+				}
+				processPacket(static_cast<int>(key), p);
+				p += packetSize;
+				remainData -= packetSize;
+			}
+			if (invalidPacket) {
+				disconnect(static_cast<int>(key));
+				continue;
 			}
 			cli->_prevRemainData = remainData;
 

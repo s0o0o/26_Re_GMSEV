@@ -199,23 +199,38 @@ void Worker_Thread()
 			unsigned char* buf = g_clients[ci].recv_over.IOCP_buf;
 			unsigned psize = g_clients[ci].curr_packet_size;
 			unsigned pr_size = g_clients[ci].prev_packet_data;
+			bool invalidPacket = false;
 			while (io_size > 0) {
-				if (0 == psize) psize = buf[0];
+				if (0 == psize) {
+					psize = buf[0];
+					if (psize < PACKET_HEADER_SIZE || psize > MAX_PACKET_SIZE) {
+						invalidPacket = true;
+						break;
+					}
+				}
 				if (io_size + pr_size >= psize) {
-					// 지금 패킷 완성 가능
-					unsigned char packet[MAX_PACKET_SIZE];
+					unsigned char packet[MAX_PACKET_SIZE]{};
 					memcpy(packet, g_clients[ci].packet_buf, pr_size);
 					memcpy(packet + pr_size, buf, psize - pr_size);
+					if (!is_valid_server_packet(packet, psize)) {
+						invalidPacket = true;
+						break;
+					}
 					ProcessPacket(static_cast<int>(ci), packet);
 					io_size -= psize - pr_size;
 					buf += psize - pr_size;
-					psize = 0; pr_size = 0;
+					psize = 0;
+					pr_size = 0;
 				}
 				else {
 					memcpy(g_clients[ci].packet_buf + pr_size, buf, io_size);
 					pr_size += io_size;
 					io_size = 0;
 				}
+			}
+			if (invalidPacket) {
+				DisconnectClient(client_id);
+				continue;
 			}
 			g_clients[ci].curr_packet_size = psize;
 			g_clients[ci].prev_packet_data = pr_size;
