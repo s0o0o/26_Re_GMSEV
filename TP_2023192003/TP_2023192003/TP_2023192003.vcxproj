@@ -135,9 +135,12 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="myserver.cpp" />
+    <ClCompile Include="world_map.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="game_header.h" />
+    <ClInclude Include="..\..\shared\protocol.hpp" />
+    <ClInclude Include="server_config.hpp" />
+    <ClInclude Include="world_map.hpp" />
   </ItemGroup>
   <ItemGroup>
     <Library Include="lua54.lib" />

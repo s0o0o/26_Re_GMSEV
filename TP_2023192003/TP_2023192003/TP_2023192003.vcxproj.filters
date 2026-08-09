@@ -18,11 +18,14 @@
     <ClCompile Include="myserver.cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>
+    <ClCompile Include="world_map.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="game_header.h">
+    <ClInclude Include="..\..\shared\protocol.hpp">
       <Filter>헤더 파일</Filter>
     </ClInclude>
+    <ClInclude Include="server_config.hpp" />
+    <ClInclude Include="world_map.hpp" />
   </ItemGroup>
   <ItemGroup>
     <Library Include="lua54.lib">

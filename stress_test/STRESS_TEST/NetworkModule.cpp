@@ -26,7 +26,7 @@ const static int MAX_PACKET_SIZE = 255;
 
 #pragma comment (lib, "ws2_32.lib")
 
-#include "..\..\TP_2023192003\TP_2023192003\game_header.h"
+#include "..\..\shared\protocol.hpp"
 
 HANDLE g_hiocp;
 

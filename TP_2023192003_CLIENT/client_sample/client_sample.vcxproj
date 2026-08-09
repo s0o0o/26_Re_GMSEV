@@ -141,6 +141,9 @@
     <ClCompile Include="client.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\..\shared\protocol.hpp" />
+  </ItemGroup>
+  <ItemGroup>
     <Image Include="chess2.png" />
     <Image Include="chessmap.bmp" />
   </ItemGroup>

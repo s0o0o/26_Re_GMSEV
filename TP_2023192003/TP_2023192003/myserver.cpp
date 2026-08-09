@@ -12,7 +12,9 @@
 #include <cmath>
 #include <algorithm>
 
-#include "game_header.h"
+#include "..\..\shared\protocol.hpp"
+#include "server_config.hpp"
+#include "world_map.hpp"
 
 using namespace std;
 
@@ -25,8 +27,6 @@ using namespace std;
 #pragma comment(lib, "WS2_32.lib")
 #pragma comment(lib, "MSWSock.lib")
 #pragma comment(lib, "lua54.lib")
-
-constexpr int VIEW_RANGE = 7;
 
 // 전역변수들 ========================================================
 

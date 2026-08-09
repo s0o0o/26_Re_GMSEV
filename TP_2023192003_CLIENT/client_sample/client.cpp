@@ -7,7 +7,7 @@
 #include <chrono>
 using namespace std;
 
-#include "..\..\TP_2023192003\TP_2023192003\game_header.h"
+#include "..\..\shared\protocol.hpp"
 
 sf::TcpSocket s_socket;
 
