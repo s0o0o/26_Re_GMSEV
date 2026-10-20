@@ -30,6 +30,7 @@ void GAMESESSION::sendSessioLoginOkPacket() {
 
 void GAMESESSION::sendMovePacket(int sessionId) {
 	auto it = clients.find(sessionId);
+	if (it == clients.end() || !it->second) return;
 	std::shared_ptr<GAMESESSION> user = it->second;
 
 	sc_packet_move p;
@@ -43,6 +44,7 @@ void GAMESESSION::sendMovePacket(int sessionId) {
 
 void GAMESESSION::sendAddPlayerPacket(int sessionId) {
 	auto it = clients.find(sessionId);
+	if (it == clients.end() || !it->second) return;
 	std::shared_ptr<GAMESESSION> user = it->second;
 
 	sc_packet_enter p;
@@ -61,9 +63,6 @@ void GAMESESSION::sendAddPlayerPacket(int sessionId) {
 }
 
 void GAMESESSION::sendRemoveSessionPacket(int sessionId) {
-	auto it = clients.find(sessionId);
-	std::shared_ptr<GAMESESSION> user = it->second;
-
 	_vlL.lock();
 	if (_viewList.count(sessionId))
 		_viewList.erase(sessionId);
@@ -93,9 +92,6 @@ void GAMESESSION::sendChatPacket(int sessionId, const char* message) {
 }
 
 void GAMESESSION::sendAttackPacket_PtoN(int targetId, int targetNewHp) {
-	auto it = clients.find(targetId);
-	std::shared_ptr<GAMESESSION> monster = it->second;
-
 	sc_packet_attack_success p;
 	p.size = sizeof(p);
 	p.type = S2C_P_ATTACK_PtoN;
@@ -108,9 +104,8 @@ void GAMESESSION::sendAttackPacket_PtoN(int targetId, int targetNewHp) {
 	registerSend(&p);
 }
 
-void GAMESESSION::sendAttackPacket_NtoP(int sessionId) {
-	auto it = clients.find(sessionId);
-	std::shared_ptr<GAMESESSION> session = it->second;
+void GAMESESSION::sendAttackPacket_NtoP(int /*sessionId*/) {
+	// Reserved: this notification is not implemented yet.
 }
 
 void GAMESESSION::sendMonsterDiePacket(int targetId) {
@@ -127,20 +122,24 @@ void GAMESESSION::sendMonsterNearPacket(nearMonsterInfo* infos, int cnt) {
 	p.type = S2C_P_MONSTER_NEAR;
 	p.monCount = cnt;
 	p.monType = monster._monType;
-	memcpy(p.monsters, infos, sizeof(nearMonsterInfo) * cnt);
-	p.size = static_cast<std::uint8_t>(offsetof(sc_packet_monster_near, monsters) + sizeof(nearMonsterInfo) * cnt);  // 정확한 size 계산
+	if (cnt > 0) {
+		if (infos == nullptr) return;
+		memcpy(p.monsters, infos, sizeof(nearMonsterInfo) * cnt);
+	}
+	p.size = static_cast<std::uint8_t>(offsetof(sc_packet_monster_near, monsters) + sizeof(nearMonsterInfo) * cnt);
 	registerSend(&p);
 }
 
 void GAMESESSION::sendMapInfo(int player_id, int x, int y) {
-	int left_x = x - SCREEN_WIDTH / 2;
-	int top_y = y - SCREEN_HEIGHT / 2;
+	int left_x = x - static_cast<int>(SCREEN_WIDTH) / 2;
+	int top_y = y - static_cast<int>(SCREEN_HEIGHT) / 2;
 
 	const int MAP_ROW_CHUNK = 4;
 	for (int chunk_y = 0; chunk_y < SCREEN_HEIGHT; chunk_y += MAP_ROW_CHUNK) {
-		sc_packet_mapInfo* p = new sc_packet_mapInfo;
-		p->type = S2C_P_MAPINFO;
-		p->top_y = top_y + chunk_y;
+		sc_packet_mapInfo p{};
+		p.type = S2C_P_MAPINFO;
+		p.left_x = static_cast<std::int16_t>(left_x);
+		p.top_y = static_cast<std::int16_t>(top_y + chunk_y);
 
 		for (int j = 0; j < MAP_ROW_CHUNK; ++j) {
 			for (int i = 0; i < SCREEN_WIDTH; ++i) {
@@ -148,14 +147,15 @@ void GAMESESSION::sendMapInfo(int player_id, int x, int y) {
 				int real_y = top_y + chunk_y + j;
 
 				if (real_x >= 0 && real_x < MAP_WIDTH && real_y >= 0 && real_y < MAP_HEIGHT)
-					p->tiles[j][i] = (char)map_data[real_y][real_x];
+					p.tiles[j][i] = static_cast<std::uint8_t>(map_data[real_y][real_x]);
 				else
-					p->tiles[j][i] = 8;
+					p.tiles[j][i] = 8;
 			}
 		}
 
-		p->size = sizeof(sc_packet_mapInfo);
-		registerSend(p);
+		p.size = sizeof(sc_packet_mapInfo);
+		// registerSend copies the packet before returning.
+		registerSend(&p);
 	}
 }
 
