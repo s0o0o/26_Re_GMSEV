@@ -19,12 +19,17 @@
       <Filter>소스 파일</Filter>
     </ClCompile>
     <ClCompile Include="world_map.cpp" />
+    <ClCompile Include="game_session.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\shared\protocol.hpp">
       <Filter>헤더 파일</Filter>
     </ClInclude>
     <ClInclude Include="server_config.hpp" />
+    <ClInclude Include="iocp_operation.hpp" />
+    <ClInclude Include="game_object.hpp" />
+    <ClInclude Include="monster_state.hpp" />
+    <ClInclude Include="game_session.hpp" />
     <ClInclude Include="world_map.hpp" />
   </ItemGroup>
   <ItemGroup>
