@@ -20,7 +20,7 @@
 using namespace std;
 
 #include "include/lua.hpp"
-#include <concurrent_unordered_map.h>
+#include "session_registry.hpp"
 
 #include <sqlext.h>  
 #include <locale.h>
@@ -111,7 +111,7 @@ std::vector<std::pair<int, int>> findPathAStar(int startX, int startY, int goalX
 }
 
 
-concurrency::concurrent_unordered_map<long long, std::shared_ptr<GAMESESSION>> clients;
+
 
 // ============================================================
 
@@ -419,172 +419,6 @@ bool insert_new_user(int userId, const char* name) {
 	SQLEndTran(SQL_HANDLE_DBC, hdbc, SQL_COMMIT);
 	SQLFreeHandle(SQL_HANDLE_STMT, hstmt);
 	return true;
-}
-
-void GAMESESSION::sendSessionLoginPacket() {
-	sc_packet_avatar_info p;
-	p.id = object._id;
-	p.size = sizeof(sc_packet_avatar_info);
-	p.type = S2C_P_AVATAR_INFO;
-	p.x = object._x;
-	p.y = object._y;
-	p.hp = object._hp;
-	p.level = object._level;
-	p.exp = object._exp;
-	p.max_hp = object._maxHp;
-	p.seedNum = object._seedNum;
-	registerSend(&p);
-}
-
-void GAMESESSION::sendSessioLoginOkPacket() {
-	sc_packet_avatar_login_ok p;
-	p.id = object._id;
-	p.size = sizeof(sc_packet_avatar_login_ok);
-	p.type = S2C_P_AVATAR_LOGIN_OK;
-	registerSend(&p);
-}
-
-void GAMESESSION::sendMovePacket(int sessionId) {
-	auto it = clients.find(sessionId);
-	std::shared_ptr<GAMESESSION> user = it->second;
-
-	sc_packet_move p;
-	p.id = sessionId;
-	p.size = sizeof(sc_packet_move);
-	p.type = S2C_P_MOVE;
-	p.x = user->object._x;
-	p.y = user->object._y;
-	registerSend(&p);
-}
-
-void GAMESESSION::sendAddPlayerPacket(int sessionId) {
-	auto it = clients.find(sessionId);
-	std::shared_ptr<GAMESESSION> user = it->second;
-
-	sc_packet_enter p;
-	p.id = sessionId;
-	sprintf_s(p.name, NAME_SIZE, "%s", user->object._name);
-
-	p.size = sizeof(p);
-	p.type = S2C_P_ENTER;
-	p.monType = user->monster._monType;
-	p.x = user->object._x;
-	p.y = user->object._y;
-	_vlL.lock();
-	_viewList.insert(sessionId);
-	_vlL.unlock();
-	registerSend(&p);
-}
-
-void GAMESESSION::sendRemoveSessionPacket(int sessionId) {
-	auto it = clients.find(sessionId);
-	std::shared_ptr<GAMESESSION> user = it->second;
-
-	_vlL.lock();
-	if (_viewList.count(sessionId))
-		_viewList.erase(sessionId);
-	else {
-		_vlL.unlock();
-		return;
-	}
-	_vlL.unlock();
-
-	sc_packet_leave p;
-	p.id = sessionId;
-	p.size = sizeof(p);
-	p.type = S2C_P_LEAVE;
-	registerSend(&p);
-}
-
-void GAMESESSION::sendChatPacket(int sessionId, const char* message) {
-	sc_packet_chat p;
-	p.id = sessionId;
-	p.size = sizeof(p);
-	p.type = S2C_P_CHAT;
-	//strcpy_s(p.message, message);
-	
-	strncpy_s(p.message, message, MAX_CHAT_LENGTH - 1);
-	p.message[MAX_CHAT_LENGTH - 1] = '\0';
-	registerSend(&p);
-}
-
-void GAMESESSION::sendAttackPacket_PtoN(int targetId, int targetNewHp) {
-	auto it = clients.find(targetId);
-	std::shared_ptr<GAMESESSION> monster = it->second;
-
-	sc_packet_attack_success p;
-	p.size = sizeof(p);
-	p.type = S2C_P_ATTACK_PtoN;
-
-	p.targetId = targetId;
-	p.targetHp = targetNewHp;
-
-	p.attackerId = object._id;
-	p.seedNum = object._seedNum;
-	registerSend(&p);
-}
-
-void GAMESESSION::sendAttackPacket_NtoP(int sessionId) {
-	auto it = clients.find(sessionId);
-	std::shared_ptr<GAMESESSION> session = it->second;
-}
-
-void GAMESESSION::sendMonsterDiePacket(int targetId) {
-	sc_packet_monster_die p;
-	p.size = sizeof(p);
-	p.type = S2C_P_MONSTER_DIE;
-	p.id = targetId;
-	registerSend(&p);
-}
-
-void GAMESESSION::sendMonsterNearPacket(nearMonsterInfo* infos, int cnt) {
-	cnt = std::clamp(cnt, 0, static_cast<int>(MAX_NEAR_MONSTERS));
-	sc_packet_monster_near p{};
-	p.type = S2C_P_MONSTER_NEAR;
-	p.monCount = cnt;
-	p.monType = monster._monType;
-	memcpy(p.monsters, infos, sizeof(nearMonsterInfo) * cnt);
-	p.size = static_cast<std::uint8_t>(offsetof(sc_packet_monster_near, monsters) + sizeof(nearMonsterInfo) * cnt);  // 정확한 size 계산
-	registerSend(&p);
-}
-
-void GAMESESSION::sendMapInfo(int player_id, int x, int y) {
-	int left_x = x - SCREEN_WIDTH / 2;
-	int top_y = y - SCREEN_HEIGHT / 2;
-
-	const int MAP_ROW_CHUNK = 4;
-	for (int chunk_y = 0; chunk_y < SCREEN_HEIGHT; chunk_y += MAP_ROW_CHUNK) {
-		sc_packet_mapInfo* p = new sc_packet_mapInfo;
-		p->type = S2C_P_MAPINFO;
-		p->top_y = top_y + chunk_y;
-
-		for (int j = 0; j < MAP_ROW_CHUNK; ++j) {
-			for (int i = 0; i < SCREEN_WIDTH; ++i) {
-				int real_x = left_x + i;
-				int real_y = top_y + chunk_y + j;
-
-				if (real_x >= 0 && real_x < MAP_WIDTH && real_y >= 0 && real_y < MAP_HEIGHT)
-					p->tiles[j][i] = (char)map_data[real_y][real_x];
-				else
-					p->tiles[j][i] = 8;
-			}
-		}
-
-		p->size = sizeof(sc_packet_mapInfo);
-		registerSend(p);
-	}
-}
-
-void GAMESESSION::sendStatChange(int t) {
-	sc_packet_stat_change p;
-	p.type = S2C_P_STAT_CHANGE;
-	p.size = sizeof(p);
-	p.hp = object._hp;
-	p.exp = object._exp;
-	p.level = object._level;
-	p.seedNum = object._seedNum;
-	p.mapType = t;
-	registerSend(&p);
 }
 
 void GAMESESSION::updateSector(short oldX, short oldY) {

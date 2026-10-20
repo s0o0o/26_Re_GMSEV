@@ -137,6 +137,8 @@
     <ClCompile Include="myserver.cpp" />
     <ClCompile Include="world_map.cpp" />
     <ClCompile Include="game_session.cpp" />
+    <ClCompile Include="session_packets.cpp" />
+    <ClCompile Include="session_registry.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\shared\protocol.hpp" />
@@ -145,6 +147,7 @@
     <ClInclude Include="game_object.hpp" />
     <ClInclude Include="monster_state.hpp" />
     <ClInclude Include="game_session.hpp" />
+    <ClInclude Include="session_registry.hpp" />
     <ClInclude Include="world_map.hpp" />
   </ItemGroup>
   <ItemGroup>
