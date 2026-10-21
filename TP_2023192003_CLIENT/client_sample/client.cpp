@@ -359,8 +359,8 @@ void ProcessPacket(char* ptr)
 		seedNumText.setString(to_string(avatar._seedNum));
 
 		avatar.move(packet->x, packet->y);
-		g_left_x = packet->x - SCREEN_WIDTH / 2;
-		g_top_y = packet->y - SCREEN_HEIGHT / 2;
+		g_left_x = world_layout::cameraX(packet->x);
+		g_top_y = world_layout::cameraY(packet->y);
 		avatar.show();
 	}
 	break;
@@ -372,8 +372,8 @@ void ProcessPacket(char* ptr)
 
 		if (id == g_myid) {
 			avatar.move(my_packet->x, my_packet->y);
-			g_left_x = my_packet->x - SCREEN_WIDTH / 2;
-			g_top_y = my_packet->y - SCREEN_HEIGHT / 2;
+			g_left_x = world_layout::cameraX(my_packet->x);
+			g_top_y = world_layout::cameraY(my_packet->y);
 			avatar.show();
 		}
 		else if (id < MAX_USER) {
@@ -406,8 +406,8 @@ void ProcessPacket(char* ptr)
 		int other_id = my_packet->id;
 		if (other_id == g_myid) {
 			avatar.move(my_packet->x, my_packet->y);
-			g_left_x = my_packet->x - SCREEN_WIDTH / 2;
-			g_top_y = my_packet->y - SCREEN_HEIGHT / 2;
+			g_left_x = world_layout::cameraX(my_packet->x);
+			g_top_y = world_layout::cameraY(my_packet->y);
 		}
 		else {
 			players[other_id].move(my_packet->x, my_packet->y);
@@ -665,6 +665,7 @@ void client_main()
 	temp = false;
 	avatar.draw();
 	for (auto& pl : players) pl.second.draw();
+    clubhouseRenderer().drawLabel(*g_window,gameFont(),avatar.m_x);
 	sf::Text text;
 	text.setFont(gameFont());
 	char buf[100];
@@ -917,7 +918,7 @@ int main()
 	g_window = &window;
 	initStartScreenInit();
     if (!hamsterCustomizer().load("assets/characters") || !hamsterCustomizer().setBackdrop(*startMainTx)) { std::cerr << "Character texture loading failed" << std::endl; return -1; }
-    if (!clubhouseRenderer().load("assets/maps/clubhouse-sheet.png")) { std::cerr << "Club House asset missing" << std::endl; return -1; }
+    if (!clubhouseRenderer().load("assets/maps/clubhouse-sheet.png") || !clubhouseRenderer().loadOutdoor("assets/maps/sunny-peak-sheet.png")) { std::cerr << "Club House asset missing" << std::endl; return -1; }
 	chatInit();
 	lodMapTexture();
 

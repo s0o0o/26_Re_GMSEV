@@ -96,11 +96,11 @@ bool isMonSee(int from, int to)
 
 
 void initializeMap() {
-    std::cout << "[MAP] Preparing Club House 24x18..." << std::endl;
+    std::cout << "[MAP] Preparing Club House + Sunny Peak 52x18..." << std::endl;
     for (int y=0;y<MAP_HEIGHT;++y)
         for (int x=0;x<MAP_WIDTH;++x)
-            map_data[y][x] = clubhouse::walkable(x,y) ? 0 : 3;
-    std::cout << "[MAP] Club House ready." << std::endl;
+            map_data[y][x] = world_layout::walkable(x,y) ? 0 : 3;
+    std::cout << "[MAP] Two regions ready." << std::endl;
 }
 
 // timer ===============================================================
@@ -544,7 +544,7 @@ void processPacket(int sessionId, char* packetFromC) {
             break;
         }
 
-        clubhouse::safePosition(dbUserX,dbUserY);
+        world_layout::safePosition(dbUserX,dbUserY);
         session->_userInputId = dbId;
         session->object._furColor = p->fur_color;
         session->object._characterKind = p->character_kind;
@@ -622,8 +622,13 @@ void processPacket(int sessionId, char* packetFromC) {
 				map_data[y][x] = rand() % 2;
 				break;
 			}
-			session->object._x = x;
-			session->object._y = y;
+            int destinationX=x,destinationY=y;
+            if (world_layout::portal(destinationX,destinationY)) {
+                x=static_cast<short>(destinationX); y=static_cast<short>(destinationY);
+                std::cout << "[MAP] Portal session=" << sessionId << " to=" << x << ',' << y << std::endl;
+            }
+            session->object._x = x;
+            session->object._y = y;
 		}
 		else {
 			//cout << " 이동 불가.. " << endl;
@@ -1096,7 +1101,7 @@ int main(int argc, char* argv[])
 	else if (!startupCheck) cout << " DB연결 성공!" << endl;
 
     if (startupCheck) std::cout << "[STARTUP] Check mode: no DB or network.\n";
-    std::cout << "[STARTUP] Club House is a safe room; monsters disabled (requested=" << count << ")." << std::endl;
+    std::cout << "[STARTUP] Exploration preview; monsters disabled (requested=" << count << ")." << std::endl;
     const bool monstersReady = monsterInit(0);
     if (monstersReady) initializeMap();
     if (startupCheck || !monstersReady) {

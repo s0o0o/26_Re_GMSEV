@@ -153,10 +153,12 @@
     <ClInclude Include="loading_screen.hpp" />
     <ClInclude Include="clubhouse_renderer.hpp" />
     <ClInclude Include="..\..\shared\clubhouse_map.hpp" />
+    <ClInclude Include="..\..\shared\world_layout.hpp" />
   </ItemGroup>
   <ItemGroup>
     <Image Include="chess2.png" />
     <Image Include="assets\maps\clubhouse-sheet.png" />
+    <Image Include="assets\maps\sunny-peak-sheet.png" />
     <Image Include="assets\characters\hamtaro\*.png" />
     <Image Include="assets\characters\bijou\*.png" />
     <Image Include="assets\appearance\body-eyeless.png" />
