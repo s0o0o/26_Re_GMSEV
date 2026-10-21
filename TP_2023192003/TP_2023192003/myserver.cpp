@@ -12,21 +12,24 @@
 #include <cmath>
 #include <algorithm>
 
-#include "game_header.h"
+#include "..\..\shared\protocol.hpp"
+#include "server_config.hpp"
+#include "world_map.hpp"
+#include "pathfinder.hpp"
+#include "../../shared/login_input.hpp"
+#include "game_session.hpp"
 
 using namespace std;
 
 #include "include/lua.hpp"
-#include <concurrent_unordered_map.h>
+#include "session_registry.hpp"
 
-#include <sqlext.h>  
+#include "game_database.hpp"
 #include <locale.h>
 
 #pragma comment(lib, "WS2_32.lib")
 #pragma comment(lib, "MSWSock.lib")
 #pragma comment(lib, "lua54.lib")
-
-constexpr int VIEW_RANGE = 7;
 
 // 전역변수들 ========================================================
 
@@ -35,180 +38,9 @@ SOCKET gServerSocket, gCliSocket;
 
 // SESSION 부분 ============================================================
 
-enum COMP_TYPE {
-	OP_ACCEPT, OP_RECV, OP_SEND, OP_PLAYER_MOVE, OP_NPC_RUN, OP_LOGIN_OK, OP_LOGIN_FAIL,
-	OP_MONSTER_MOVE, OP_MONSTER_CHASE, OP_MONSTER_ATTACK_TO_USER, OP_USER_ATTACK_TO_MONSTER
-};
-enum STATE { ST_FREE, ST_ALLOC, ST_INGAME };
-
-class OVER_EXP {
-public:
-	WSAOVERLAPPED		_over;
-	WSABUF				_wasBuf;
-	char				_sendBuf[BUF_SIZE];
-
-	COMP_TYPE			_compType;
-	int					_playerId;				// npc가 반응할 대상(플레이어) id 저장용
-
-	OVER_EXP()
-	{
-		_wasBuf.len = BUF_SIZE;
-		_wasBuf.buf = _sendBuf;
-		_compType = OP_RECV;
-		ZeroMemory(&_over, sizeof(_over));
-	}
-
-	OVER_EXP(char* packet)
-	{
-		_wasBuf.len = packet[0];
-		_wasBuf.buf = _sendBuf;
-		ZeroMemory(&_over, sizeof(_over));
-		_compType = OP_SEND;
-		memcpy(_sendBuf, packet, _wasBuf.len);
-	}
-};
-
 OVER_EXP gOverExp;
 
 //////////////////////////////// a*알고리즘 
-
-struct Node {
-	int x, y;
-	int gCost, hCost;
-	Node* parent;
-
-	Node(int x_, int y_, int g_, int h_, Node* p)
-		: x(x_), y(y_), gCost(g_), hCost(h_), parent(p) {}
-
-	int fCost() const { return gCost + hCost; }
-	bool operator>(const Node& other) const { return fCost() > other.fCost(); }
-};
-
-struct NodeComp {
-	bool operator()(const Node* a, const Node* b) const {
-		return a->fCost() > b->fCost();
-	}
-};
-
-bool isValid(int x, int y) {
-	return x >= 0 && x < MAP_WIDTH && y >= 0 && y < MAP_HEIGHT && map_data[y][x] != 3;
-}
-
-int heuristic(int x1, int y1, int x2, int y2) {	// 휴리스틱 
-	return abs(x1 - x2) + abs(y1 - y2);
-}
-
-std::vector<std::pair<int, int>> findPathAStar(int startX, int startY, int goalX, int goalY) {
-	std::priority_queue<Node*, std::vector<Node*>, NodeComp> openList;
-	std::unordered_set<long long> closedSet;
-
-	auto hash = [](int x, int y) -> long long { return ((long long)y << 32) | x; };
-
-	Node* start = new Node(startX, startY, 0, heuristic(startX, startY, goalX, goalY), nullptr);
-	openList.push(start);
-
-	while (!openList.empty()) {
-		Node* current = openList.top();
-		openList.pop();
-
-		if (current->x == goalX && current->y == goalY) {
-			std::vector<std::pair<int, int>> path;
-			while (current) {
-				path.emplace_back(current->x, current->y);
-				current = current->parent;
-			}
-			std::reverse(path.begin(), path.end());
-			return path;
-		}
-
-		closedSet.insert(hash(current->x, current->y));
-
-		const int dx[4] = { 0, 0, -1, 1 };
-		const int dy[4] = { -1, 1, 0, 0 };
-
-		for (int dir = 0; dir < 4; ++dir) {
-			int nx = current->x + dx[dir];
-			int ny = current->y + dy[dir];
-
-			if (!isValid(nx, ny)) continue;
-			if (closedSet.count(hash(nx, ny))) continue;
-
-			int gCost = current->gCost + 1;
-			int hCost = heuristic(nx, ny, goalX, goalY);
-			Node* neighbor = new Node(nx, ny, gCost, hCost, current);
-			openList.push(neighbor);
-		}
-	}
-	return {};
-}
-
-
-class GAMESESSION {
-public:
-	OVER_EXP			_recvOver;
-	SOCKET				_socket;
-
-	int					_id;
-	STATE				_state;
-	short				_x, _y;
-	short				_hp, _maxHp, _level, _exp, _seedNum; // hp, 최대hp, 레벨, 경험치
-	short				_damage;
-	char				_name[NAME_SIZE];
-	int					_prevRemainData;
-
-	unordered_set<int>	_viewList;	// monster는 viewlist 안가진다
-	mutex				_vlL;
-
-	lua_State* _L;	// 각 session 객체가 들고있는 _L 이라는 자기만의 루아상태를 가짐
-	// 이러면 각 npc든 플레이어든.. 자기만의 _L가짐
-	// 그러면 npc마다 다른 행동패턴을 가지게 할 수 있음..!
-	// npc.lua에서 처음에 제일 상단에 있는.. 전역변수들로 선언된거 가짐
-	// move_cnt, dir, myid 다 따로 가지게되능거ㅇㅇ
-	mutex				_ll;
-
-	// monster 관련
-	atomic<bool>		_isActive;
-	atomic<bool>		_isMonsterChase;
-	atomic<bool>		_isDie;
-	int					_monType; // 0 이면 플레이어고.. .1,2면 몬스터중 하나
-	short				_nextMonX, _nextMonY;
-
-	int					_userInputId;
-public:
-	GAMESESSION()
-	{
-		_id = -1;
-		_socket = 0;
-		_x = _y = 0;
-		_name[0] = 0;
-		_state = ST_FREE;
-		_prevRemainData = 0;
-	}
-
-	~GAMESESSION() {};
-
-	void registerRecv();
-	void registerSend(void*);
-
-	void sendSessionLoginPacket();
-	void sendSessioLoginOkPacket();
-	void sendMovePacket(int);
-	void sendAddPlayerPacket(int);
-	void sendRemoveSessionPacket(int);
-	void sendChatPacket(int, const char*);
-	void sendAttackPacket_PtoN(int, int);		// PlayertoMon
-	void sendAttackPacket_NtoP(int);		// MontoPlayer
-	void sendMonsterDiePacket(int);
-	void sendMonsterNearPacket(nearMonsterInfo*, int);
-	void sendMapInfo(int, int, int);
-	void sendStatChange(int);
-
-	// sector
-	void updateSector(short, short);
-	std::unordered_set<int> getNearBySessions();
-};
-
-concurrency::concurrent_unordered_map<long long, std::shared_ptr<GAMESESSION>> clients;
 
 // ============================================================
 
@@ -241,9 +73,9 @@ bool isCanSee(int from, int to)
 	auto to_it = clients.find(to);
 	std::shared_ptr<GAMESESSION> toUser = to_it->second;
 
-	if (abs(fromUser->_x - toUser->_x) > VIEW_RANGE)
+	if (abs(fromUser->object._x - toUser->object._x) > VIEW_RANGE)
 		return false;
-	return abs(fromUser->_y - toUser->_y) <= VIEW_RANGE;
+	return abs(fromUser->object._y - toUser->object._y) <= VIEW_RANGE;
 }
 
 bool isMonSee(int from, int to)
@@ -254,9 +86,9 @@ bool isMonSee(int from, int to)
 	auto to_it = clients.find(to);
 	std::shared_ptr<GAMESESSION> toUser = to_it->second;
 
-	if (abs(fromUser->_x - toUser->_x) > 5)
+	if (abs(fromUser->object._x - toUser->object._x) > 5)
 		return false;
-	return abs(fromUser->_y - toUser->_y) <= 5;
+	return abs(fromUser->object._y - toUser->object._y) <= 5;
 }
 
 
@@ -320,399 +152,23 @@ std::pair<int, int> getSectorLocation(int x, int y) {
 }
 
 // DB용 =============================================================
-SQLHENV henv = nullptr;
-extern SQLHDBC hdbc = nullptr;
-void HandleDiagnosticRecord(SQLHANDLE hHandle, SQLSMALLINT hType, RETCODE RetCode)
-{
-	SQLSMALLINT iRec = 0;
-	SQLINTEGER  iError;
-	WCHAR       wszMessage[1000];
-	WCHAR       wszState[SQL_SQLSTATE_SIZE + 1];
-
-	if (RetCode == SQL_INVALID_HANDLE) {
-		fwprintf(stderr, L"Invalid handle!\n");
-		return;
-	}
-	while (SQLGetDiagRec(hType, hHandle, ++iRec, wszState, &iError, wszMessage,
-		(SQLSMALLINT)(sizeof(wszMessage) / sizeof(WCHAR)), (SQLSMALLINT*)NULL) == SQL_SUCCESS) {
-		// Hide data truncated..
-		if (wcsncmp(wszState, L"01004", 5)) {
-			fwprintf(stderr, L"[%5.5s] %s (%d)\n", wszState, wszMessage, iError);
-		}
-	}
-}
-
-bool initializeDB() {
-	SQLRETURN ret;
-
-	ret = SQLAllocHandle(SQL_HANDLE_ENV, SQL_NULL_HANDLE, &henv);
-	if (ret != SQL_SUCCESS && ret != SQL_SUCCESS_WITH_INFO) return false;
-
-	ret = SQLSetEnvAttr(henv, SQL_ATTR_ODBC_VERSION, (SQLPOINTER*)SQL_OV_ODBC3, 0);
-	if (ret != SQL_SUCCESS && ret != SQL_SUCCESS_WITH_INFO) return false;
-
-	ret = SQLAllocHandle(SQL_HANDLE_DBC, henv, &hdbc);
-	if (ret != SQL_SUCCESS && ret != SQL_SUCCESS_WITH_INFO) return false;
-
-	SQLSetConnectAttr(hdbc, SQL_LOGIN_TIMEOUT, (SQLPOINTER)5, 0);
-
-	ret = SQLConnect(hdbc, (SQLWCHAR*)L"2025_gameserver_2023192003", SQL_NTS, NULL, 0, NULL, 0);
-	if (ret != SQL_SUCCESS && ret != SQL_SUCCESS_WITH_INFO) return false;
-
-	//std::cout << "[DB] 연결 성공!" << std::endl;
-	return true;
-}
-
-void finalizeDB() {
-	SQLDisconnect(hdbc);
-	SQLFreeHandle(SQL_HANDLE_DBC, hdbc);
-	SQLFreeHandle(SQL_HANDLE_ENV, henv);
-}
-
-// 로그인할때 정보 확인용
-bool get_DB_login_info(int& db_id, int& db_user_x, int& db_user_y, int& db_user_hp,
-	int& db_user_level, int& db_user_exp, int& db_user_seed_num, int& db_user_maxHp, int& db_user_damage) {
-	SQLHSTMT hstmt = 0;
-	SQLRETURN ret;
-	SQLINTEGER user_id, user_x, user_y, user_hp, user_level, user_exp, user_seed, user_maxHp, user_damage;
-	SQLLEN cb1 = 0, cb2 = 0, cb3 = 0, cb4 = 0, cb5 = 0, cb6 = 0, cb7 = 0, cb8 = 0, cb9 = 0;
-
-	ret = SQLAllocHandle(SQL_HANDLE_STMT, hdbc, &hstmt);
-	ret = SQLPrepare(hstmt, (SQLWCHAR*)L"EXEC get_user_info ?", SQL_NTS);
-	if (ret != SQL_SUCCESS && ret != SQL_SUCCESS_WITH_INFO) {
-		//finalizeDB();
-		return false;
-	}
-	ret = SQLBindParameter(hstmt, 1, SQL_PARAM_INPUT, SQL_C_LONG, SQL_INTEGER, 0, 0, &db_id, 0, NULL);
-	ret = SQLExecute(hstmt);
-	if (ret != SQL_SUCCESS && ret != SQL_SUCCESS_WITH_INFO) {
-		//finalizeDB();
-		return false;
-	}
-
-	SQLBindCol(hstmt, 1, SQL_C_LONG, &user_id, 0, &cb1);
-	SQLBindCol(hstmt, 2, SQL_C_LONG, &user_x, 0, &cb2);
-	SQLBindCol(hstmt, 3, SQL_C_LONG, &user_y, 0, &cb3);
-	SQLBindCol(hstmt, 4, SQL_C_LONG, &user_hp, 0, &cb4);
-	SQLBindCol(hstmt, 5, SQL_C_LONG, &user_level, 0, &cb5);
-	SQLBindCol(hstmt, 6, SQL_C_LONG, &user_exp, 0, &cb6);
-	SQLBindCol(hstmt, 7, SQL_C_LONG, &user_seed, 0, &cb7);
-	SQLBindCol(hstmt, 8, SQL_C_LONG, &user_maxHp, 0, &cb8);
-	SQLBindCol(hstmt, 9, SQL_C_LONG, &user_damage, 0, &cb9);
-
-
-	if (SQLFetch(hstmt) == SQL_SUCCESS) {
-		db_id = user_id;			// db에 저장된걸 꺼내서 저장해준다..!
-		db_user_x = user_x;
-		db_user_y = user_y;
-		db_user_hp = user_hp;
-		db_user_level = user_level;
-		db_user_exp = user_exp;
-		db_user_seed_num = user_seed;
-		db_user_maxHp = user_maxHp;
-		db_user_damage = user_damage;
-
-		/*printf("ID: %d 접속! 위치: (%d, %d) HP : %d, Level : %d, Exp : %d, SeedNum : %d, maxHp : %d, damage : %d\n",
-			user_id, user_x, user_y, user_hp, user_level, user_exp, user_seed, user_maxHp, user_damage);*/
-		SQLFreeHandle(SQL_HANDLE_STMT, hstmt);
-		return true;
-	}
-
-	SQLFreeHandle(SQL_HANDLE_STMT, hstmt);
-	return false;
-}
-
-// db업뎃용
-bool update_user_info(int id, int x, int y, int seed, int hp, int level, int exp, int userMaxHp, int damage) {
-	SQLEndTran(SQL_HANDLE_DBC, hdbc, SQL_ROLLBACK);  // 이전 트랜잭션 실패 가능성 대비
-
-	SQLHSTMT hstmt;
-	SQLRETURN ret;
-
-	// 1. Statement 핸들 할당
-	ret = SQLAllocHandle(SQL_HANDLE_STMT, hdbc, &hstmt);
-
-
-	ret = SQLPrepare(hstmt, (SQLWCHAR*)L"UPDATE SERVER_TABLE1 SET USER_X = ?, USER_Y = ? , USER_SEED_NUM = ?, USER_HP = ?, USER_LEVEL = ?, USER_EXP = ?, USER_MAX_HP = ? WHERE USER_ID = ?", SQL_NTS);
-	if (ret != SQL_SUCCESS && ret != SQL_SUCCESS_WITH_INFO) {
-		std::cout << "[DB] SQLPrepare 실패!" << std::endl;
-		HandleDiagnosticRecord(hstmt, SQL_HANDLE_STMT, ret);  // 에러 로그 추가!
-		SQLFreeHandle(SQL_HANDLE_STMT, hstmt);
-		return false;
-	}
-
-	// 3. 파라미터 바인딩
-	ret = SQLBindParameter(hstmt, 1, SQL_PARAM_INPUT, SQL_C_LONG, SQL_INTEGER, 0, 0, &x, 0, NULL);
-	ret = SQLBindParameter(hstmt, 2, SQL_PARAM_INPUT, SQL_C_LONG, SQL_INTEGER, 0, 0, &y, 0, NULL);
-	ret = SQLBindParameter(hstmt, 3, SQL_PARAM_INPUT, SQL_C_LONG, SQL_INTEGER, 0, 0, &seed, 0, NULL);
-	ret = SQLBindParameter(hstmt, 4, SQL_PARAM_INPUT, SQL_C_LONG, SQL_INTEGER, 0, 0, &hp, 0, NULL);
-	ret = SQLBindParameter(hstmt, 5, SQL_PARAM_INPUT, SQL_C_LONG, SQL_INTEGER, 0, 0, &level, 0, NULL);
-	ret = SQLBindParameter(hstmt, 6, SQL_PARAM_INPUT, SQL_C_LONG, SQL_INTEGER, 0, 0, &exp, 0, NULL);
-	ret = SQLBindParameter(hstmt, 7, SQL_PARAM_INPUT, SQL_C_LONG, SQL_INTEGER, 0, 0, &userMaxHp, 0, NULL);
-	ret = SQLBindParameter(hstmt, 8, SQL_PARAM_INPUT, SQL_C_LONG, SQL_INTEGER, 0, 0, &id, 0, NULL);
-
-
-	// 4. 실행
-	ret = SQLExecute(hstmt);
-	if (ret != SQL_SUCCESS && ret != SQL_SUCCESS_WITH_INFO) {
-		std::cout << "[DB] SQLExecute 실패!" << std::endl;
-		HandleDiagnosticRecord(hstmt, SQL_HANDLE_STMT, ret);  // 에러 로그 추가!
-		SQLFreeHandle(SQL_HANDLE_STMT, hstmt);
-		return false;
-	}
-
-//	std::cout << "유저 정보 업데이트 완료: ID=" << id << " → (" << x << "," << y << ") seed: " << seed << std::endl;
-
-	// 5. 커밋 (안 해도 기본 auto-commit라면 필요 X, 하지만 넣어주자)
-	SQLEndTran(SQL_HANDLE_DBC, hdbc, SQL_COMMIT);
-
-	// 6. 해제
-	SQLFreeHandle(SQL_HANDLE_STMT, hstmt);
-	return true;
-}
-
-bool insert_new_user(int userId, const char* name) {
-	SQLHSTMT hstmt;
-	SQLRETURN ret;
-
-	int init_x = rand() % 2000;
-	int init_y = rand() % 2000;
-	int init_hp = rand() % 10 + 20;
-	int init_level = 1;
-	int init_exp = 0;
-	int init_seed = 22;
-	int init_maxHp = 30;
-	int init_damage = 1;
-
-	ret = SQLAllocHandle(SQL_HANDLE_STMT, hdbc, &hstmt);
-
-	if (ret != SQL_SUCCESS && ret != SQL_SUCCESS_WITH_INFO) return false;
-
-	ret = SQLPrepare(hstmt, (SQLWCHAR*)L"INSERT INTO SERVER_TABLE1 (USER_ID, USER_X, USER_Y, USER_HP, USER_LEVEL, USER_EXP, USER_SEED_NUM, USER_MAX_HP, USER_DAMAGE) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", SQL_NTS);
-
-	if (ret != SQL_SUCCESS && ret != SQL_SUCCESS_WITH_INFO) {
-		SQLFreeHandle(SQL_HANDLE_STMT, hstmt);
-		return false;
-	}
-
-	SQLBindParameter(hstmt, 1, SQL_PARAM_INPUT, SQL_C_LONG, SQL_INTEGER, 0, 0, &userId, 0, NULL);
-	SQLBindParameter(hstmt, 2, SQL_PARAM_INPUT, SQL_C_LONG, SQL_INTEGER, 0, 0, &init_x, 0, NULL);
-	SQLBindParameter(hstmt, 3, SQL_PARAM_INPUT, SQL_C_LONG, SQL_INTEGER, 0, 0, &init_y, 0, NULL);
-	SQLBindParameter(hstmt, 4, SQL_PARAM_INPUT, SQL_C_LONG, SQL_INTEGER, 0, 0, &init_hp, 0, NULL);
-	SQLBindParameter(hstmt, 5, SQL_PARAM_INPUT, SQL_C_LONG, SQL_INTEGER, 0, 0, &init_level, 0, NULL);
-	SQLBindParameter(hstmt, 6, SQL_PARAM_INPUT, SQL_C_LONG, SQL_INTEGER, 0, 0, &init_exp, 0, NULL);
-	SQLBindParameter(hstmt, 7, SQL_PARAM_INPUT, SQL_C_LONG, SQL_INTEGER, 0, 0, &init_seed, 0, NULL);
-	SQLBindParameter(hstmt, 8, SQL_PARAM_INPUT, SQL_C_LONG, SQL_INTEGER, 0, 0, &init_maxHp, 0, NULL);
-	SQLBindParameter(hstmt, 9, SQL_PARAM_INPUT, SQL_C_LONG, SQL_INTEGER, 0, 0, &init_damage, 0, NULL);
-
-	ret = SQLExecute(hstmt);
-	if (ret != SQL_SUCCESS && ret != SQL_SUCCESS_WITH_INFO) {
-		HandleDiagnosticRecord(hstmt, SQL_HANDLE_STMT, ret);  // 디버깅용 로그
-		SQLFreeHandle(SQL_HANDLE_STMT, hstmt);
-		return false;
-	}
-
-	std::cout << "[DB] 새 유저 추가 성공! ID:" << userId << std::endl;
-	SQLEndTran(SQL_HANDLE_DBC, hdbc, SQL_COMMIT);
-	SQLFreeHandle(SQL_HANDLE_STMT, hstmt);
-	return true;
-}
-
-void GAMESESSION::registerRecv() {
-	DWORD recv_flag = 0;
-	memset(&_recvOver._over, 0, sizeof(_recvOver._over));
-	_recvOver._wasBuf.len = BUF_SIZE - _prevRemainData;
-	_recvOver._wasBuf.buf = _recvOver._sendBuf + _prevRemainData;
-	WSARecv(_socket, &_recvOver._wasBuf, 1, 0, &recv_flag, &_recvOver._over, 0);
-}
-
-void GAMESESSION::registerSend(void* packet) {
-	OVER_EXP* sessionData = new OVER_EXP{ reinterpret_cast<char*>(packet)};
-	WSASend(_socket, &sessionData->_wasBuf, 1, 0, 0, &sessionData->_over, 0);
-}
-
-void GAMESESSION::sendSessionLoginPacket() {
-	sc_packet_avatar_info p;
-	p.id = _id;
-	p.size = sizeof(sc_packet_avatar_info);
-	p.type = S2C_P_AVATAR_INFO;
-	p.x = _x;
-	p.y = _y;
-	p.hp = _hp;
-	p.level = _level;
-	p.exp = _exp;
-	p.max_hp = _maxHp;
-	p.seedNum = _seedNum;
-	registerSend(&p);
-}
-
-void GAMESESSION::sendSessioLoginOkPacket() {
-	sc_packet_avatar_login_ok p;
-	p.id = _id;
-	p.size = sizeof(sc_packet_avatar_login_ok);
-	p.type = S2C_P_AVATAR_LOGIN_OK;
-	registerSend(&p);
-}
-
-void GAMESESSION::sendMovePacket(int sessionId) {
-	auto it = clients.find(sessionId);
-	std::shared_ptr<GAMESESSION> user = it->second;
-
-	sc_packet_move p;
-	p.id = sessionId;
-	p.size = sizeof(sc_packet_move);
-	p.type = S2C_P_MOVE;
-	p.x = user->_x;
-	p.y = user->_y;
-	registerSend(&p);
-}
-
-void GAMESESSION::sendAddPlayerPacket(int sessionId) {
-	auto it = clients.find(sessionId);
-	std::shared_ptr<GAMESESSION> user = it->second;
-
-	sc_packet_enter p;
-	p.id = sessionId;
-	sprintf_s(p.name, NAME_SIZE, "%s", user->_name);
-
-	p.size = sizeof(p);
-	p.type = S2C_P_ENTER;
-	p.monType = user->_monType; 
-	p.x = user->_x;
-	p.y = user->_y;
-	_vlL.lock();
-	_viewList.insert(sessionId);
-	_vlL.unlock();
-	registerSend(&p);
-}
-
-void GAMESESSION::sendRemoveSessionPacket(int sessionId) {
-	auto it = clients.find(sessionId);
-	std::shared_ptr<GAMESESSION> user = it->second;
-
-	_vlL.lock();
-	if (_viewList.count(sessionId))
-		_viewList.erase(sessionId);
-	else {
-		_vlL.unlock();
-		return;
-	}
-	_vlL.unlock();
-
-	sc_packet_leave p;
-	p.id = sessionId;
-	p.size = sizeof(p);
-	p.type = S2C_P_LEAVE;
-	registerSend(&p);
-}
-
-void GAMESESSION::sendChatPacket(int sessionId, const char* message) {
-	sc_packet_chat p;
-	p.id = sessionId;
-	p.size = sizeof(p);
-	p.type = S2C_P_CHAT;
-	//strcpy_s(p.message, message);
-	
-	strncpy_s(p.message, message, MAX_CHAT_LENGTH - 1);
-	p.message[MAX_CHAT_LENGTH - 1] = '\0';
-	registerSend(&p);
-}
-
-void GAMESESSION::sendAttackPacket_PtoN(int targetId, int targetNewHp) {
-	auto it = clients.find(targetId);
-	std::shared_ptr<GAMESESSION> monster = it->second;
-
-	sc_packet_attack_success p;
-	p.size = sizeof(p);
-	p.type = S2C_P_ATTACK_PtoN;
-
-	p.targetId = targetId;
-	p.targetHp = targetNewHp;
-
-	p.attackerId = _id;
-	p.seedNum = _seedNum;
-	registerSend(&p);
-}
-
-void GAMESESSION::sendAttackPacket_NtoP(int sessionId) {
-	auto it = clients.find(sessionId);
-	std::shared_ptr<GAMESESSION> session = it->second;
-}
-
-void GAMESESSION::sendMonsterDiePacket(int targetId) {
-	sc_packet_monster_die p;
-	p.size = sizeof(p);
-	p.type = S2C_P_MONSTER_DIE;
-	p.id = targetId;
-	registerSend(&p);
-}
-
-void GAMESESSION::sendMonsterNearPacket(nearMonsterInfo* infos, int cnt) {
-	sc_packet_monster_near p;
-	p.type = S2C_P_MONSTER_NEAR;
-	p.monCount = cnt;
-	p.monType = _monType;
-	memcpy(p.monsters, infos, sizeof(nearMonsterInfo) * cnt);
-	p.size = sizeof(p) - sizeof(nearMonsterInfo) * (5 - cnt);  // 정확한 size 계산
-	registerSend(&p);
-}
-
-void GAMESESSION::sendMapInfo(int player_id, int x, int y) {
-	int left_x = x - SCREEN_WIDTH / 2;
-	int top_y = y - SCREEN_HEIGHT / 2;
-
-	const int MAP_ROW_CHUNK = 4;
-	for (int chunk_y = 0; chunk_y < SCREEN_HEIGHT; chunk_y += MAP_ROW_CHUNK) {
-		sc_packet_mapInfo* p = new sc_packet_mapInfo;
-		p->type = S2C_P_MAPINFO;
-		p->top_y = top_y + chunk_y;
-
-		for (int j = 0; j < MAP_ROW_CHUNK; ++j) {
-			for (int i = 0; i < SCREEN_WIDTH; ++i) {
-				int real_x = left_x + i;
-				int real_y = top_y + chunk_y + j;
-
-				if (real_x >= 0 && real_x < MAP_WIDTH && real_y >= 0 && real_y < MAP_HEIGHT)
-					p->tiles[j][i] = (char)map_data[real_y][real_x];
-				else
-					p->tiles[j][i] = 8;
-			}
-		}
-
-		p->size = sizeof(sc_packet_mapInfo);
-		registerSend(p);
-	}
-}
-
-void GAMESESSION::sendStatChange(int t) {
-	sc_packet_stat_change p;
-	p.type = S2C_P_STAT_CHANGE;
-	p.size = sizeof(p);
-	p.hp = _hp;
-	p.exp = _exp;
-	p.level = _level;
-	p.seedNum = _seedNum;
-	p.mapType = t;
-	registerSend(&p);
-}
-
 void GAMESESSION::updateSector(short oldX, short oldY) {
 	auto [old_sx, old_sy] = getSectorLocation(oldX, oldY);
-	auto [new_sx, new_sy] = getSectorLocation(_x, _y);
+	auto [new_sx, new_sy] = getSectorLocation(object._x, object._y);
 
 	if (old_sx == new_sx && old_sy == new_sy) return;
 	{
 		std::scoped_lock lock(sectorLock[old_sx][old_sy], sectorLock[new_sx][new_sy]);
-		sectors[old_sx][old_sy].erase(_id);
-		sectors[new_sx][new_sy].insert(_id);
+		sectors[old_sx][old_sy].erase(object._id);
+		sectors[new_sx][new_sy].insert(object._id);
 	}
 }
 
 std::unordered_set<int> GAMESESSION::getNearBySessions() {
 	std::unordered_set<int> result;
-	auto [sx, sy] = getSectorLocation(_x, _y);
+	auto [sx, sy] = getSectorLocation(object._x, object._y);
 	if (sx < 0 || sx >= MAX_SECTOR_X || sy < 0 || sy >= MAX_SECTOR_Y) {
-		std::cout << "[ERROR] 잘못된 섹터 인덱스! x: " << _x << " y: " << _y
+		std::cout << "[ERROR] 잘못된 섹터 인덱스! x: " << object._x << " y: " << object._y
 			<< " sx: " << sx << ", sy: " << sy << '\n';
 		__debugbreak();  // 디버거 중단
 		return {};
@@ -732,17 +188,17 @@ std::unordered_set<int> GAMESESSION::getNearBySessions() {
 
 			std::lock_guard<std::mutex> lock(sectorLock[nx][ny]);
 			for (int id : sectors[nx][ny]) {
-				if (id == _id) continue;
+				if (id == object._id) continue;
 
 				auto it = clients.find(id);
 				if (it == clients.end()) continue;
 
 				auto other = it->second;
 				if (!other || other->_state != ST_INGAME) continue;
-				if (other->_isDie) continue;
+				if (other->monster._isDie) continue;
 
-				if (abs(other->_x - _x) > VIEW_RANGE) continue;
-				if (abs(other->_y - _y) > VIEW_RANGE) continue;
+				if (abs(other->object._x - object._x) > VIEW_RANGE) continue;
+				if (abs(other->object._y - object._y) > VIEW_RANGE) continue;
 
 				result.insert(id);
 			}
@@ -761,7 +217,7 @@ int API_get_x(lua_State* L)
 	auto it = clients.find(user_id);
 	std::shared_ptr<GAMESESSION> user = it->second;
 
-	int x = user->_x;
+	int x = user->object._x;
 	lua_pushnumber(L, x);
 	return 1;
 }
@@ -775,7 +231,7 @@ int API_get_y(lua_State* L)
 	auto it = clients.find(user_id);
 	std::shared_ptr<GAMESESSION> user = it->second;
 
-	int y = user->_y;
+	int y = user->object._y;
 	lua_pushnumber(L, y);
 	return 1;
 }
@@ -806,8 +262,8 @@ void wakeUpMonster(int monId, int playerId) {
 	exover->_playerId = playerId;
 
 	PostQueuedCompletionStatus(g_hiocp, 1, monId, &exover->_over);
-	if (monster->_isActive.exchange(true) == false) {
-		int idx = get_timer_queue_index(monster->_id);
+	if (monster->monster._isActive.exchange(true) == false) {
+		int idx = get_timer_queue_index(monster->object._id);
 		if (idx < 0 || idx >= TIMER_THREAD_COUNT) {
 			cout << "[ERROR] 잘못된 타이머 큐 인덱스: " << idx << endl;
 			return;
@@ -825,14 +281,14 @@ void trySleepMonster(std::shared_ptr<GAMESESSION> monster) {
 	for (auto& c : _near) {
 		auto near_it = clients.find(c);
 		std::shared_ptr<GAMESESSION> user = near_it->second;
-		if (!isPlayer(user->_id)) continue;
+		if (!isPlayer(user->object._id)) continue;
 		if (user->_state != ST_INGAME) continue;
 
-		if (isCanSee(monster->_id, user->_id)) {
+		if (isCanSee(monster->object._id, user->object._id)) {
 			return; // 누군가에게라도 보이면 깨운 상태 유지
 		}
 	}
-	monster->_isActive = false;
+	monster->monster._isActive = false;
 }
 
 void doMonsterRandomMoving(int monId) {
@@ -840,20 +296,20 @@ void doMonsterRandomMoving(int monId) {
 	std::shared_ptr<GAMESESSION> monster = it->second;
 
 	if (isPlayer(monId)) return;
-	if (monster->_isActive == false) return;
-	if (monster->_isMonsterChase) return;	
+	if (monster->monster._isActive == false) return;
+	if (monster->monster._isMonsterChase) return;
 
 	unordered_set<int> old_vl;
 	{
 		auto nearby_ids = monster->getNearBySessions();
 		for (int id : nearby_ids) {
 			if (isMonster(id)) continue;
-			if (!isCanSee(monster->_id, id)) continue;
+			if (!isCanSee(monster->object._id, id)) continue;
 			old_vl.insert(id);
 		}
 	}
-	short x = monster->_x;
-	short y = monster->_y;
+	short x = monster->object._x;
+	short y = monster->object._y;
 	short old_x = x;
 	short old_y = y;
 	switch (rand() % 4) {
@@ -862,8 +318,8 @@ void doMonsterRandomMoving(int monId) {
 	case 2: if (y < (MAP_HEIGHT - 1)) y++; break;
 	case 3:if (y > 0) y--; break;
 	}
-	monster->_x = x;
-	monster->_y = y;
+	monster->object._x = x;
+	monster->object._y = y;
 
 	monster->updateSector(old_x, old_y);
 
@@ -873,7 +329,7 @@ void doMonsterRandomMoving(int monId) {
 		auto nearby_ids = monster->getNearBySessions(); // monster->x, monster->y는 이미 이동된 상태
 		for (int id : nearby_ids) {
 			if (isMonster(id)) continue;
-			if (!isCanSee(monster->_id, id)) continue;
+			if (!isCanSee(monster->object._id, id)) continue;
 			new_vl.insert(id);
 		}
 	}
@@ -883,10 +339,10 @@ void doMonsterRandomMoving(int monId) {
 		std::shared_ptr<GAMESESSION> vl_other = it->second;
 		if (0 == old_vl.count(pl)) {		// 이동해서 새로 보이는애라면, 
 			// 플레이어의 시야에 등장
-			vl_other->sendAddPlayerPacket(monster->_id);	// 걔한테 나(monster) 추가
+			vl_other->sendAddPlayerPacket(monster->object._id);	// 걔한테 나(monster) 추가
 		}
 		else {
-			vl_other->sendMovePacket(monster->_id);	// 그게 아니라면.. 단순히 위치만 업뎃
+			vl_other->sendMovePacket(monster->object._id);	// 그게 아니라면.. 단순히 위치만 업뎃
 		}
 	}
 
@@ -895,9 +351,9 @@ void doMonsterRandomMoving(int monId) {
 		std::shared_ptr<GAMESESSION> vl_other = it->second;
 		if (0 == new_vl.count(pl)) {	// 새 뷰리에 없다면?
 			vl_other->_vlL.lock();
-			if (0 != vl_other->_viewList.count(monster->_id)) {	// 만약.. 클라의 뷰리에. 나(monster) 존재한다면
+			if (0 != vl_other->_viewList.count(monster->object._id)) {	// 만약.. 클라의 뷰리에. 나(monster) 존재한다면
 				vl_other->_vlL.unlock();
-				vl_other->sendRemoveSessionPacket(monster->_id);	// 걔한테 나(monster) 지우라고 알리기
+				vl_other->sendRemoveSessionPacket(monster->object._id);	// 걔한테 나(monster) 지우라고 알리기
 			}
 			else {
 				vl_other->_vlL.unlock();
@@ -923,23 +379,23 @@ void monsterInit()
 	for (int i = MAX_USER; i < MAX_USER + NUM_MONSTER; ++i) {
 		auto newMonster = std::make_shared<GAMESESSION>();
 
-		newMonster->_x = rand() % MAP_WIDTH;
-		newMonster->_y = rand() % MAP_HEIGHT;
-		newMonster->_hp = rand() % 5 + 5;
+		newMonster->object._x = rand() % MAP_WIDTH;
+		newMonster->object._y = rand() % MAP_HEIGHT;
+		newMonster->object._hp = rand() % 5 + 5;
 
-		newMonster->_monType = rand() % 2 + 1;	// 1이면 일반, 2면 훈스터
-		newMonster->_id = i;
+		newMonster->monster._monType = rand() % 2 + 1;	// 1이면 일반, 2면 훈스터
+		newMonster->object._id = i;
 		newMonster->_state = ST_INGAME;
 
-		newMonster->_isActive = false;
-		if (newMonster->_monType == 1)
-			sprintf_s(newMonster->_name, "HAM");
-		if (newMonster->_monType == 2) 
-			sprintf_s(newMonster->_name, "HUN");
+		newMonster->monster._isActive = false;
+		if (newMonster->monster._monType == 1)
+			sprintf_s(newMonster->object._name, "HAM");
+		if (newMonster->monster._monType == 2)
+			sprintf_s(newMonster->object._name, "HUN");
 
 		clients[i] = newMonster;
 
-		auto L = newMonster->_L = luaL_newstate();	// LUA 상태 초기화...
+		auto L = newMonster->monster._L = luaL_newstate();	// LUA 상태 초기화...
 		luaL_openlibs(L);							// 표준 라이브러리 로딩하는거..
 		luaL_loadfile(L, "npc.lua");				// npc.lua 스크립트 파일 로드
 		lua_pcall(L, 0, 0, 0);						// 스크립트 실행
@@ -953,7 +409,7 @@ void monsterInit()
 		lua_register(L, "API_get_y", API_get_y);
 
 		// 딱히 필요없지 않나..?
-		auto [sx, sy] = getSectorLocation(newMonster->_x, newMonster->_y);
+		auto [sx, sy] = getSectorLocation(newMonster->object._x, newMonster->object._y);
 		{
 			std::lock_guard<std::mutex> lock(sectorLock[sx][sy]);
 			sectors[sx][sy].insert(i);
@@ -982,7 +438,7 @@ void doTimer(int timerIdx) {
 				if (npc_it != clients.end()) {
 					std::shared_ptr<GAMESESSION> npc = npc_it->second;
 					//std::lock_guard<std::mutex> lock(timer_locks[idx]);
-					if (npc->_isActive == false) {
+					if (npc->monster._isActive == false) {
 						timerQueues[timerIdx].pop(); // 그냥 버림
 						continue;
 					}
@@ -1025,7 +481,9 @@ void doTimer(int timerIdx) {
 
 void disconnect(int sessionId) {
 	auto it = clients.find(sessionId);
+	if (it == clients.end() || !it->second) return;
 	std::shared_ptr<GAMESESSION> session = it->second;
+    const bool wasInGame = session->_state == ST_INGAME;
 
 	session->_vlL.lock();
 	unordered_set <int> vl = session->_viewList;
@@ -1034,15 +492,16 @@ void disconnect(int sessionId) {
 		if (isMonster(p_id)) continue;
 		auto& pl = clients[p_id];
 		std::shared_ptr<GAMESESSION> vl_other = pl;
-		if (ST_INGAME != vl_other->_state) continue;
+		if (!vl_other || ST_INGAME != vl_other->_state) continue;
 
-		if (vl_other->_id == sessionId) continue;
+		if (vl_other->object._id == sessionId) continue;
 		vl_other->sendRemoveSessionPacket(sessionId);
 	}
 	closesocket(session->_socket);
 	session->_state = ST_FREE;
-	if (update_user_info(session->_userInputId, session->_x, session->_y, session->_seedNum,
-		session->_hp, session->_level, session->_exp, session->_maxHp, session->_damage)) {
+    if (!wasInGame) return;
+	if (update_user_info(session->_userInputId, session->object._x, session->object._y, session->object._seedNum,
+		session->object._hp, session->object._level, session->object._exp, session->object._maxHp, session->object._damage)) {
 		//cout << "없뎃성공" << endl;
 	}
 	else cout << "업뎃실패. " << endl;
@@ -1058,65 +517,53 @@ void processPacket(int sessionId, char* packetFromC) {
 	case C2S_P_LOGIN:
 	{	// 로그인 패킷이 날아온거라면 DB 확인
 		cs_packet_login* p = reinterpret_cast<cs_packet_login*>(packetFromC);
+		if (p->inputId < 0 || !login_input::nickname(p->name, sizeof(p->name))) {
+            sc_packet_login_fail fail{};
+            fail.size = sizeof(fail);
+            fail.type = S2C_P_LOGIN_FAIL;
+            session->registerSend(&fail);
+            break;
+        }
 
 		int dbUserX = 0, dbUserY = 0, dbUserHp = 0, dbUserLevel = 0,
 			dbUserExp = 0, dbUserSeedNum = 0, dbUserMaxHp = 0, dbUserDamage = 0;
 		int dbId = p->inputId;
 
-		bool loginResult = get_DB_login_info(
-			dbId, dbUserX, dbUserY, dbUserHp, dbUserLevel,
-			dbUserExp, dbUserSeedNum, dbUserMaxHp, dbUserDamage
-		);
+		const auto loginResult = load_or_create_user(
+            [&]() {
+                return get_DB_login_info(dbId, dbUserX, dbUserY, dbUserHp, dbUserLevel,
+                    dbUserExp, dbUserSeedNum, dbUserMaxHp, dbUserDamage);
+            },
+            [&]() { return insert_new_user(dbId, p->name); });
+        if (loginResult != LoginLookupResult::Found) {
+            sc_packet_login_fail fail{};
+            fail.size = sizeof(fail);
+            fail.type = S2C_P_LOGIN_FAIL;
+            session->registerSend(&fail);
+            // Stay connected for retry; do not save an uninitialized character.
+            break;
+        }
 
+        session->_userInputId = dbId;
+		session->object._x = dbUserX;
+		session->object._y = dbUserY;
+		session->object._hp = dbUserHp;
+		session->object._level = dbUserLevel;
+		session->object._exp = dbUserExp;
+		session->object._seedNum = dbUserSeedNum;
+		session->object._maxHp = dbUserMaxHp;
+		session->object._damage = dbUserDamage;
+		session->monster._monType = 0;
 
-
-		if (!loginResult) {
-			cout << "신규유저" << dbId <<"아이디생성" <<endl;
-			if (!insert_new_user(dbId, p->name)) {
-				std::cout << "신규 유저 삽입 실패" << std::endl;
-				sc_packet_login_fail fail;
-				fail.size = sizeof(fail);
-				fail.size = sizeof(fail);
-				fail.type = S2C_P_LOGIN_FAIL;
-				session->registerSend(&fail);
-				disconnect(sessionId);
-				break;
-			}
-
-			cout << "신규유저 삽입됨" << endl;
-			if (!get_DB_login_info(
-				dbId, dbUserX, dbUserY, dbUserHp, dbUserLevel,
-				dbUserExp, dbUserSeedNum, dbUserMaxHp, dbUserDamage)) {
-				std::cout << "삽입 후 정보 조회 실패" << std::endl;
-				sc_packet_login_fail fail;
-				fail.size = sizeof(fail);
-				fail.type = S2C_P_LOGIN_FAIL;
-				session->registerSend(&fail);
-				disconnect(sessionId);
-				break;
-			}
-		}
-
-		session->_userInputId = dbId;
-		session->_x = dbUserX;
-		session->_y = dbUserY;
-		session->_hp = dbUserHp;
-		session->_level = dbUserLevel;
-		session->_exp = dbUserExp;
-		session->_seedNum = dbUserSeedNum;
-		session->_maxHp = dbUserMaxHp;
-		session->_damage = dbUserDamage;
-		session->_monType = 0;
-
-		strcpy_s(session->_name, p->name);
-		//session->sendMapInfo(session->_id, session->_x, session->_y);
+		strncpy_s(session->object._name, p->name, MAX_ID_LENGTH - 1);
+		//session->sendMapInfo(session->object._id, session->object._x, session->object._y);
 
 		OVER_EXP* ov = new OVER_EXP;
 		ov->_compType = OP_LOGIN_OK;
 		PostQueuedCompletionStatus(g_hiocp, 1, sessionId, &ov->_over);
 
-		if (update_user_info(session->_userInputId, session->_x, session->_y, session->_seedNum,
-			session->_hp, session->_level, session->_exp, session->_maxHp, session->_damage)) {
+		if (update_user_info(session->_userInputId, session->object._x, session->object._y, session->object._seedNum,
+			session->object._hp, session->object._level, session->object._exp, session->object._maxHp, session->object._damage)) {
 			//cout << "없뎃성공" << endl;
 		}
 		else cout << "업뎃실패. " << endl;
@@ -1126,10 +573,10 @@ void processPacket(int sessionId, char* packetFromC) {
 	{
 		cs_packet_move* p = reinterpret_cast<cs_packet_move*>(packetFromC);
 
-		short oldX = session->_x;
-		short oldY = session->_y;
-		short x = session->_x;
-		short y = session->_y;
+		short oldX = session->object._x;
+		short oldY = session->object._y;
+		short x = session->object._x;
+		short y = session->object._y;
 
 		switch (p->direction) {	// 이건 이동방향 계산..
 		case 0: if (y > 0) y--; break;
@@ -1142,32 +589,32 @@ void processPacket(int sessionId, char* packetFromC) {
 			switch (map_data[y][x]) {
 			case 4:
 				cout << "seed Get" << endl;
-				session->_seedNum++;
+				session->object._seedNum++;
 				session->sendStatChange(4);
 				map_data[y][x] = rand() % 2;
 				break;
 			case 5:
 				cout << "똥 밟음 -HP" << endl;
-				if (session->_hp > 0)
-					session->_hp--;
+				if (session->object._hp > 0)
+					session->object._hp--;
 				session->sendStatChange(5);
 				map_data[y][x] = rand() % 2;
 				break;
 			case 6:
 				cout << "potion Get" << endl;
-				if (session->_hp < session->_maxHp)
-					session->_hp++;
+				if (session->object._hp < session->object._maxHp)
+					session->object._hp++;
 				session->sendStatChange(6);
 				map_data[y][x] = rand() % 2;
 				break;
 			}
-			session->_x = x;
-			session->_y = y;
+			session->object._x = x;
+			session->object._y = y;
 		}
 		else {
 			//cout << " 이동 불가.. " << endl;
-			session->_x = oldX;
-			session->_y = oldY;
+			session->object._x = oldX;
+			session->object._y = oldY;
 		}
 
 		session->updateSector(oldX, oldY);
@@ -1178,8 +625,8 @@ void processPacket(int sessionId, char* packetFromC) {
 		unordered_set<int> _oldVl = session->_viewList;	// 지금 유저의. 이전 시야를 백업해둔다..
 		session->_vlL.unlock();
 
-		session->sendMovePacket(sessionId);	// 나한테 나 움직였다고 알리기
-		session->sendMapInfo(session->_id, session->_x, session->_y);
+		session->sendMovePacket(sessionId, p->move_time);	// 나한테 나 움직였다고 알리기
+		session->sendMapInfo(session->object._id, session->object._x, session->object._y);
 
 		for (auto& pl : _near_vlist) {	// nearlist돌면서... (이거 상대방기준임****)
 			auto it = clients.find(pl);
@@ -1196,7 +643,7 @@ void processPacket(int sessionId, char* packetFromC) {
 				}
 			}
 			else if (isMonster(pl)) {						// npc라면?
-				wakeUpMonster(near_other->_id, session->_id);	// 깨운다(왜냐면 npc니까.. 얼려진상태로 있는게 디폴트임)
+				wakeUpMonster(near_other->object._id, session->object._id);	// 깨운다(왜냐면 npc니까.. 얼려진상태로 있는게 디폴트임)
 			}
 
 			if (_oldVl.count(pl) == 0)			// 만약에.. 내가 움직여서.내가 새롭게 본 상대가 있다?
@@ -1211,109 +658,111 @@ void processPacket(int sessionId, char* packetFromC) {
 				if (isPlayer(pl))									// 상대가 플레이어라면
 					old_other->sendRemoveSessionPacket(sessionId);// 상대에서 나를 지워주자..
 				if (isMonster(pl))
-					old_other->_isActive = false;
+					old_other->monster._isActive = false;
 			}
 		}
 
 		vector<shared_ptr<GAMESESSION>> targets;
-		int myX = session->_x;
-		int myY = session->_y;
+		int myX = session->object._x;
+		int myY = session->object._y;
 		for (int id : nearMonsterList) {
 			if (isPlayer(id)) continue;
+			if (targets.size() >= MAX_NEAR_MONSTERS) break;
 
 			auto it = clients.find(id);
 			if (it == clients.end()) continue;
 
 			std::shared_ptr<GAMESESSION> monster = it->second;
 
-			int dx = abs(monster->_x - myX);
-			int dy = abs(monster->_y - myY);
+			int dx = abs(monster->object._x - myX);
+			int dy = abs(monster->object._y - myY);
 
 			if (dx <= 2 and dy <= 2) targets.push_back(monster);
 		}
 
 		//cout << " 공격가능 몬스터 수 : " << targets.size() << endl;
 		int tempCnt = 0;
-		int cnt = targets.size();
-		nearMonsterInfo nearMons[5];
+		const int cnt = static_cast<int>(targets.size());
+		nearMonsterInfo nearMons[MAX_NEAR_MONSTERS]{};
 		for (auto& target : targets) {
-			nearMons[tempCnt].monHp = target->_hp;
-			nearMons[tempCnt].monId = target->_id;
-			nearMons[tempCnt].monType = target->_monType;
+			nearMons[tempCnt].monHp = target->object._hp;
+			nearMons[tempCnt].monId = target->object._id;
+			nearMons[tempCnt].monType = target->monster._monType;
 			tempCnt++;
 		}
 		session->sendMonsterNearPacket(nearMons, cnt);
 
-	
+
 	}
 	break;
 	case C2S_P_ATTACK:
 	{
-		cout << "seed : " << session->_seedNum << endl;
+		cout << "seed : " << session->object._seedNum << endl;
 		unordered_set<int> viewList = session->getNearBySessions();
 		vector<shared_ptr<GAMESESSION>> targets;
 
-		int myX = session->_x;
-		int myY = session->_y;
+		int myX = session->object._x;
+		int myY = session->object._y;
 
 		for (int id : viewList) {
 			if (isPlayer(id)) continue;
+			if (targets.size() >= MAX_NEAR_MONSTERS) break;
 
 			auto it = clients.find(id);
 			if (it == clients.end()) continue;
 
 			std::shared_ptr<GAMESESSION> monster = it->second;
-			int dx = abs(monster->_x - myX);
-			int dy = abs(monster->_y - myY);
+			int dx = abs(monster->object._x - myX);
+			int dy = abs(monster->object._y - myY);
 
 			if (dx <= 2 and dy <= 2) targets.push_back(monster);	// 범위 설정
 		}
 
 		//cout << "주변 몬스터 수 : " << targets.size() << endl;
 		for (auto& target : targets) {
-			target->_hp -= session->_damage;	// 데미지 깎고..
-			session->_seedNum--;				// seed 갯수 줄이기
-			if (target->_hp <= 0) {
-				cout << target->_id << " 사망 " << endl;
-				target->_hp = 0;
-				target->_isDie = true;
-				target->_isActive = false;
-				session->sendMonsterDiePacket(target->_id);
-				session->sendAttackPacket_PtoN(target->_id, target->_hp);
+			target->object._hp -= session->object._damage;	// 데미지 깎고..
+			session->object._seedNum--;				// seed 갯수 줄이기
+			if (target->object._hp <= 0) {
+				cout << target->object._id << " 사망 " << endl;
+				target->object._hp = 0;
+				target->monster._isDie = true;
+				target->monster._isActive = false;
+				session->sendMonsterDiePacket(target->object._id);
+				session->sendAttackPacket_PtoN(target->object._id, target->object._hp);
 			}
 			else {
-				session->sendAttackPacket_PtoN(target->_id, target->_hp);
-				auto path = findPathAStar(target->_x, target->_y, session->_x, session->_y);
+				session->sendAttackPacket_PtoN(target->object._id, target->object._hp);
+				auto path = findPathAStar(target->object._x, target->object._y, session->object._x, session->object._y);
 				if (!path.empty() && path.size() > 1) {
 					// path[0] = 현재 위치, path[1] = 다음 목적지
 					int next_x = path[1].first;
 					int next_y = path[1].second;
-					target->_nextMonX = next_x;
-					target->_nextMonY = next_y;
-					session->sendMovePacket(target->_id);	
-					target->_isMonsterChase = true;
+					target->monster._nextMonX = next_x;
+					target->monster._nextMonY = next_y;
+					session->sendMovePacket(target->object._id);
+					target->monster._isMonsterChase = true;
 
 					// 타이머에 chase 등록
-					int idx = target->_id % TIMER_THREAD_COUNT;
+					int idx = target->object._id % TIMER_THREAD_COUNT;
 					std::lock_guard<std::mutex> guard(timerLocks[idx]);
-					timerQueues[idx].emplace(TIMER_EVENT{ target->_id, 
-						chrono::high_resolution_clock::now() + 100ms, EV_CHASE, session->_id });
+					timerQueues[idx].emplace(TIMER_EVENT{ target->object._id,
+						chrono::high_resolution_clock::now() + 100ms, EV_CHASE, session->object._id });
 				}
 			}
 		}
 
 		int tempCnt = 0;
-		int cnt = targets.size();
-		nearMonsterInfo nearMons[5];
+		const int cnt = static_cast<int>(targets.size());
+		nearMonsterInfo nearMons[MAX_NEAR_MONSTERS]{};
 		for (auto& target : targets) {
-			nearMons[tempCnt].monHp = target->_hp;
-			nearMons[tempCnt].monId = target->_id;
-			nearMons[tempCnt].monType = target->_monType;
+			nearMons[tempCnt].monHp = target->object._hp;
+			nearMons[tempCnt].monId = target->object._id;
+			nearMons[tempCnt].monType = target->monster._monType;
 			tempCnt++;
 		}
 		session->sendMonsterNearPacket(nearMons, cnt);
-		if (update_user_info(session->_userInputId, session->_x, session->_y, session->_seedNum,
-			session->_hp, session->_level, session->_exp, session->_maxHp, session->_damage)) {
+		if (update_user_info(session->_userInputId, session->object._x, session->object._y, session->object._seedNum,
+			session->object._hp, session->object._level, session->object._exp, session->object._maxHp, session->object._damage)) {
 			//cout << "없뎃성공" << endl;
 		}
 		else cout << "업뎃실패. " << endl;
@@ -1379,13 +828,13 @@ void workerThread(HANDLE iocp) {
 			if (clientId != -1) {
 				auto newPlayer = std::make_shared<GAMESESSION>();
 				newPlayer->_state = ST_ALLOC;		// 일단 수락만 했고, 로그인 아직 아닌 상태
-				newPlayer->_x = 0;
-				newPlayer->_y = 0;
-				newPlayer->_id = clientId;
-				newPlayer->_hp = 0;
-				newPlayer->_exp = 0;
-				newPlayer->_level = 0;
-				newPlayer->_name[0] = 0;
+				newPlayer->object._x = 0;
+				newPlayer->object._y = 0;
+				newPlayer->object._id = clientId;
+				newPlayer->object._hp = 0;
+				newPlayer->object._exp = 0;
+				newPlayer->object._level = 0;
+				newPlayer->object._name[0] = 0;
 				newPlayer->_prevRemainData = 0;
 				newPlayer->_socket = gCliSocket;
 
@@ -1410,17 +859,27 @@ void workerThread(HANDLE iocp) {
 			int remainData = numBytes + cli->_prevRemainData;
 
 			OVER_EXP* recv_over = &cli->_recvOver;
-			//cout << " workerThread (OP_RECV) 확인용 " << key << " " << cli->_id << endl;
+			//cout << " workerThread (OP_RECV) 확인용 " << key << " " << cli->object._id << endl;
 			char* p = recv_over->_sendBuf;
+			bool invalidPacket = false;
 			while (remainData > 0) {
-				int packet_size = p[0];
-				if (packet_size <= remainData) {
-					processPacket(static_cast<int>(key), p);
-					//cout << "OP_RECV  속 key : " << key << endl;
-					p = p + packet_size;
-					remainData = remainData - packet_size;
+				const auto packetSize = static_cast<std::uint8_t>(p[0]);
+				if (packetSize < PACKET_HEADER_SIZE || packetSize > BUF_SIZE) {
+					invalidPacket = true;
+					break;
 				}
-				else break;
+				if (packetSize > remainData) break;
+				if (!is_valid_client_packet(static_cast<std::uint8_t>(p[1]), packetSize)) {
+					invalidPacket = true;
+					break;
+				}
+				processPacket(static_cast<int>(key), p);
+				p += packetSize;
+				remainData -= packetSize;
+			}
+			if (invalidPacket) {
+				disconnect(static_cast<int>(key));
+				continue;
 			}
 			cli->_prevRemainData = remainData;
 
@@ -1439,12 +898,12 @@ void workerThread(HANDLE iocp) {
 			session->_state = ST_INGAME;
 			session->sendSessionLoginPacket();	// 나한테 정보전송 -> 그래야 내가본다
 			session->sendSessioLoginOkPacket();
-			session->sendMapInfo(session->_id, session->_x, session->_y); // 맵 정보
+			session->sendMapInfo(session->object._id, session->object._x, session->object._y); // 맵 정보
 
-			auto [sx, sy] = getSectorLocation(session->_x, session->_y);	// 로그인 후.. 나를 섹터에 등록
+			auto [sx, sy] = getSectorLocation(session->object._x, session->object._y);	// 로그인 후.. 나를 섹터에 등록
 			{
 				std::lock_guard<std::mutex> lock(sectorLock[sx][sy]);
-				sectors[sx][sy].insert(session->_id);
+				sectors[sx][sy].insert(session->object._id);
 			}
 
 			// 이제 브로드캐스팅
@@ -1454,17 +913,17 @@ void workerThread(HANDLE iocp) {
 				std::shared_ptr<GAMESESSION> other = it2->second;
 				if (ST_INGAME != other->_state) continue;	// 접속중인애들한테만!!
 
-				if (other->_id == session->_id) // 나는 제외
+				if (other->object._id == session->object._id) // 나는 제외
 					continue;
-				if (false == isCanSee(session->_id, other->_id))	// 내가 안보여도 제외
+				if (false == isCanSee(session->object._id, other->object._id))	// 내가 안보여도 제외
 					continue;
 
-				if (isPlayer(other->_id)) // 걔가 플레이어면?
-					other->sendAddPlayerPacket(session->_id);	// 상대한테 내가왔다고 알린다.
+				if (isPlayer(other->object._id)) // 걔가 플레이어면?
+					other->sendAddPlayerPacket(session->object._id);	// 상대한테 내가왔다고 알린다.
 				else if (isMonster(pl)) {
-					wakeUpMonster(other->_id, session->_id);	// 깨운다(왜냐면 npc니까..     얼려진상태로 있는게 디폴트임)
+					wakeUpMonster(other->object._id, session->object._id);	// 깨운다(왜냐면 npc니까..     얼려진상태로 있는게 디폴트임)
 				}
-				session->sendAddPlayerPacket(other->_id);	//이제 나한테.. 상대방정보 알리기
+				session->sendAddPlayerPacket(other->object._id);	//이제 나한테.. 상대방정보 알리기
 			}
 		}
 		break;
@@ -1475,7 +934,7 @@ void workerThread(HANDLE iocp) {
 		break;
 		case OP_SEND:
 		{
-
+            delete overEx;
 		}
 		break;
 		case OP_PLAYER_MOVE:
@@ -1499,14 +958,14 @@ void workerThread(HANDLE iocp) {
 			if (it == clients.end()) break;
 			std::shared_ptr<GAMESESSION> npc = it->second;
 
-			if (not npc->_isActive) break;
+			if (not npc->monster._isActive) break;
 			//if (npc->_is_npc_run) break;
 
-			npc->_ll.lock();
-			auto L = npc->_L;
+			npc->monster._ll.lock();
+			auto L = npc->monster._L;
 			if (L == nullptr) {
-				cout << "[ERROR] npc->_L is nullptr!" << endl;
-				npc->_ll.unlock();
+				cout << "[ERROR] npc->monster._L is nullptr!" << endl;
+				npc->monster._ll.unlock();
 				delete overEx;
 				break;
 			}
@@ -1518,7 +977,7 @@ void workerThread(HANDLE iocp) {
 				lua_pop(L, 1);
 			}
 			//lua_pop(L, 1);
-			npc->_ll.unlock();
+			npc->monster._ll.unlock();
 			delete overEx;
 		}
 		break;
@@ -1531,7 +990,7 @@ void workerThread(HANDLE iocp) {
 
 			int monsterId = static_cast<int>(key);
 
-			if (not monster->_isMonsterChase) {
+			if (not monster->monster._isMonsterChase) {
 				doMonsterRandomMoving(monsterId);	// 그 키 가진 npc 랜덤으로 움직이게 만들기
 				int idx = monsterId % TIMER_THREAD_COUNT;
 				std::lock_guard<std::mutex> guard(timerLocks[idx]);
@@ -1553,34 +1012,34 @@ void workerThread(HANDLE iocp) {
 			if (it_mon == clients.end()) break;
 
 			std::shared_ptr<GAMESESSION> monster = it_mon->second;
-			if (not monster->_isActive) break;
-			monster->_isMonsterChase = true;
+			if (not monster->monster._isActive) break;
+			monster->monster._isMonsterChase = true;
 
-			monster->_x = monster->_nextMonX;
-			monster->_y = monster->_nextMonY;
+			monster->object._x = monster->monster._nextMonX;
+			monster->object._y = monster->monster._nextMonY;
 
 			auto it = clients.find(targetPlayerId);
 			std::shared_ptr<GAMESESSION> player = it->second;
-			player->sendMovePacket(monster->_id);
+			player->sendMovePacket(monster->object._id);
 
-			if (isMonSee(monster->_id, targetPlayerId)) {
+			if (isMonSee(monster->object._id, targetPlayerId)) {
 				shared_ptr<GAMESESSION> player = clients[targetPlayerId];
-				auto path = findPathAStar(monster->_x, monster->_y, player->_x, player->_y);
+				auto path = findPathAStar(monster->object._x, monster->object._y, player->object._x, player->object._y);
 				if (!path.empty() && path.size() > 1) {
-					monster->_nextMonX = path[1].first;
-					monster->_nextMonY = path[1].second;
+					monster->monster._nextMonX = path[1].first;
+					monster->monster._nextMonY = path[1].second;
 
-					int idx = monster->_id % TIMER_THREAD_COUNT;
+					int idx = monster->object._id % TIMER_THREAD_COUNT;
 					std::lock_guard<std::mutex> guard(timerLocks[idx]);
-					timerQueues[idx].emplace(TIMER_EVENT{ monster->_id, chrono::high_resolution_clock::now() + 1s
+					timerQueues[idx].emplace(TIMER_EVENT{ monster->object._id, chrono::high_resolution_clock::now() + 1s
 						, EV_CHASE, targetPlayerId });
 				}
 			}
-			else if (not isMonSee(monster->_id, targetPlayerId)) {
+			else if (not isMonSee(monster->object._id, targetPlayerId)) {
 				//cout << " 시야에서 사라져서 쫓아가기 중단.. " << endl;
-				monster->_isMonsterChase = false;
-				int idx = monster->_id % TIMER_THREAD_COUNT;
-				timerQueues[idx].emplace(TIMER_EVENT{ monster->_id, chrono::high_resolution_clock::now() + 1s
+				monster->monster._isMonsterChase = false;
+				int idx = monster->object._id % TIMER_THREAD_COUNT;
+				timerQueues[idx].emplace(TIMER_EVENT{ monster->object._id, chrono::high_resolution_clock::now() + 1s
 					, EV_RANDOM_MOVE, 0 });
 			}
 			break;
