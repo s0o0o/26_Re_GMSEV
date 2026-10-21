@@ -8,6 +8,7 @@ inline void markMonsterDead(MonsterState& monster,respawn_policy::Tick now) {
     if(monster._isDie) return;
     ++monster.generation;
     monster._isDie=true; monster._isActive=false; monster._isMonsterChase=false;
+    monster.chaseTarget=-1;
     monster.respawnAt=now+respawn_policy::monsterDelay;
 }
 inline bool reviveMonster(GameObjectState& object,MonsterState& monster,respawn_policy::Tick now) {
@@ -19,6 +20,7 @@ inline bool reviveMonster(GameObjectState& object,MonsterState& monster,respawn_
     object._hp=object._maxHp=5;
     monster._nextMonX=object._x; monster._nextMonY=object._y;
     monster._isActive=false; monster._isMonsterChase=false;
+    monster.chaseTarget=-1;
     monster.respawnAt=0; ++monster.generation;
     monster._isDie=false;
     return true;

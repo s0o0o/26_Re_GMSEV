@@ -16,6 +16,7 @@ public:
 	char				_sendBuf[BUF_SIZE];
 
     std::uint64_t generation=0;
+    std::uint64_t playerConnectionId=0;
 	COMP_TYPE			_compType;
 	int					_playerId;				// npc가 반응할 대상(플레이어) id 저장용
 

@@ -60,7 +60,15 @@ cl /nologo /EHsc /std:c++17 tests\respawn_test.cpp TP_2023192003\TP_2023192003\w
 if not "%errorlevel%"=="0" goto failed
 build\tests\respawn_test.exe
 if not "%errorlevel%"=="0" goto failed
-echo All 13 regression programs passed.
+cl /nologo /EHsc /std:c++17 tests\world_sessions_test.cpp TP_2023192003\TP_2023192003\session_packets.cpp TP_2023192003\TP_2023192003\session_registry.cpp TP_2023192003\TP_2023192003\world_map.cpp /Fo:build\tests\ /Fe:build\tests\world_sessions_test.exe /link ws2_32.lib
+if not "%errorlevel%"=="0" goto failed
+build\tests\world_sessions_test.exe
+if not "%errorlevel%"=="0" goto failed
+cl /nologo /EHsc /std:c++17 tests\world_loopback_test.cpp TP_2023192003\TP_2023192003\game_session.cpp TP_2023192003\TP_2023192003\session_packets.cpp TP_2023192003\TP_2023192003\session_registry.cpp TP_2023192003\TP_2023192003\world_map.cpp /Fo:build\tests\ /Fe:build\tests\world_loopback_test.exe /link ws2_32.lib
+if not "%errorlevel%"=="0" goto failed
+build\tests\world_loopback_test.exe
+if not "%errorlevel%"=="0" goto failed
+echo All 15 regression programs passed.
 popd
 exit /b 0
 :failed
