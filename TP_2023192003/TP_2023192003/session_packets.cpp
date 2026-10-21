@@ -140,8 +140,8 @@ void GAMESESSION::sendMonsterNearPacket(nearMonsterInfo* infos, int cnt) {
 }
 
 void GAMESESSION::sendMapInfo(int player_id, int x, int y) {
-	int left_x = x - static_cast<int>(SCREEN_WIDTH) / 2;
-	int top_y = y - static_cast<int>(SCREEN_HEIGHT) / 2;
+	int left_x = world_layout::cameraX(x);
+	int top_y = world_layout::cameraY(y);
 
 	const int MAP_ROW_CHUNK = 4;
 	for (int chunk_y = 0; chunk_y < SCREEN_HEIGHT; chunk_y += MAP_ROW_CHUNK) {
@@ -156,7 +156,7 @@ void GAMESESSION::sendMapInfo(int player_id, int x, int y) {
 				int real_y = top_y + chunk_y + j;
 
 				if (real_x >= 0 && real_x < MAP_WIDTH && real_y >= 0 && real_y < MAP_HEIGHT)
-					p.tiles[j][i] = static_cast<std::uint8_t>(map_data[real_y][real_x]);
+					p.tiles[j][i] = static_cast<std::uint8_t>(mapTileAt(real_x,real_y));
 				else
 					p.tiles[j][i] = 8;
 			}

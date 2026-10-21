@@ -1,5 +1,10 @@
 #include "../shared/clubhouse_map.hpp"
 #include "../shared/world_layout.hpp"
+#include "../shared/field_content.hpp"
+#include "../TP_2023192003/TP_2023192003/world_map.hpp"
+#include <thread>
+#include <atomic>
+#include <vector>
 #include <cassert>
 #include <queue>
 #include <utility>
@@ -51,4 +56,17 @@ int main() {
     }
     for (int fy=0;fy<18;++fy) for(int fx=0;fx<20;++fx)
         if (world_layout::fieldWalkable(fx,fy)) assert(fieldSeen[fy][fx]);
+    initializeFieldMap();
+    for(auto monster : field_content::monsters) assert(field_content::monsterCanStand(monster.x,monster.y));
+    assert(!field_content::monsterCanStand(11,12));
+    assert(!field_content::monsterCanStand(42,12));
+    auto seed=field_content::seeds[0];
+    assert(mapTileAt(seed.x,seed.y) == 4);
+    std::atomic<int> collected{0};
+    std::vector<std::thread> collectors;
+    for(int i=0;i<16;++i) collectors.emplace_back([&] { if(collectSeed(seed.x,seed.y)) ++collected; });
+    for(auto& thread : collectors) thread.join();
+    assert(collected == 1 && mapTileAt(seed.x,seed.y) == 0);
+    assert(!collectSeed(-1,0) && !collectSeed(11,12));
+    for(auto other : field_content::seeds) assert(world_layout::outdoors(other.x) && world_layout::walkable(other.x,other.y));
 }

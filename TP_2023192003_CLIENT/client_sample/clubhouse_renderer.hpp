@@ -50,4 +50,18 @@ public:
         sf::RectangleShape help({330,28}); help.setPosition(285,58); help.setFillColor({255,248,228,220});
         target.draw(help); centerText(hint,help.getGlobalBounds()); target.draw(hint);
     }
+    void drawPickups(sf::RenderTarget& target,const int* tiles,int columns,int rows) const {
+        for(int y=0;y<rows;++y) for(int x=0;x<columns;++x) {
+            if (tiles[y*columns+x] != 4) continue;
+            sf::RectangleShape shadow({24,5}); shadow.setFillColor({70,80,35,90});
+            shadow.setPosition(x*50.f+13,y*50.f+38); target.draw(shadow);
+            sf::ConvexShape seed(6);
+            const sf::Vector2f points[]={{25,10},{36,23},{32,35},{25,40},{18,35},{14,23}};
+            for(int i=0;i<6;++i) seed.setPoint(i,points[i]);
+            seed.setPosition(x*50.f,y*50.f); seed.setFillColor({147,93,48});
+            seed.setOutlineColor({72,46,37}); seed.setOutlineThickness(2); target.draw(seed);
+            sf::RectangleShape stripe({5,20}); stripe.setFillColor({255,235,167});
+            stripe.setPosition(x*50.f+23,y*50.f+16); target.draw(stripe);
+        }
+    }
 };

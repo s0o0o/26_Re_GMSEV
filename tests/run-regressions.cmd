@@ -48,7 +48,7 @@ cl /nologo /EHsc /std:c++17 tests\startup_config_test.cpp /Fo:build\tests\ /Fe:b
 if not "%errorlevel%"=="0" goto failed
 build\tests\startup_config_test.exe
 if not "%errorlevel%"=="0" goto failed
-cl /nologo /EHsc /std:c++17 tests\clubhouse_map_test.cpp /Fo:build\tests\ /Fe:build\tests\clubhouse_map_test.exe
+cl /nologo /EHsc /std:c++17 tests\clubhouse_map_test.cpp TP_2023192003\TP_2023192003\world_map.cpp /Fo:build\tests\ /Fe:build\tests\clubhouse_map_test.exe
 if not "%errorlevel%"=="0" goto failed
 build\tests\clubhouse_map_test.exe
 if not "%errorlevel%"=="0" goto failed

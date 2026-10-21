@@ -371,7 +371,8 @@ void ProcessPacket(char* ptr)
 		cout << "sc_packet_enter : " << id << endl;
 
 		if (id == g_myid) {
-			avatar.move(my_packet->x, my_packet->y);
+			if (world_layout::outdoors(avatar.m_x) != world_layout::outdoors(my_packet->x)) memset(clientMapData,0,sizeof(clientMapData));
+            avatar.move(my_packet->x, my_packet->y);
 			g_left_x = world_layout::cameraX(my_packet->x);
 			g_top_y = world_layout::cameraY(my_packet->y);
 			avatar.show();
@@ -405,7 +406,8 @@ void ProcessPacket(char* ptr)
 		sc_packet_move* my_packet = reinterpret_cast<sc_packet_move*>(ptr);
 		int other_id = my_packet->id;
 		if (other_id == g_myid) {
-			avatar.move(my_packet->x, my_packet->y);
+			if (world_layout::outdoors(avatar.m_x) != world_layout::outdoors(my_packet->x)) memset(clientMapData,0,sizeof(clientMapData));
+            avatar.move(my_packet->x, my_packet->y);
 			g_left_x = world_layout::cameraX(my_packet->x);
 			g_top_y = world_layout::cameraY(my_packet->y);
 		}
@@ -502,8 +504,8 @@ void ProcessPacket(char* ptr)
 		//cout << "S2C_P_MAPINFO ³¯¶ó¿È " << endl;
 		sc_packet_mapInfo* p = reinterpret_cast<sc_packet_mapInfo*>(ptr);
 
-		g_left_x = avatar.m_x - SCREEN_WIDTH / 2;
-		g_top_y = avatar.m_y - SCREEN_HEIGHT / 2;
+		g_left_x = world_layout::cameraX(avatar.m_x);
+		g_top_y = world_layout::cameraY(avatar.m_y);
 
 		const int MAP_ROW_CHUNK = 4;
 
@@ -514,7 +516,8 @@ void ProcessPacket(char* ptr)
 			if (draw_y < 0 || draw_y >= SCREEN_HEIGHT) continue;
 
 			for (int i = 0; i < SCREEN_WIDTH; ++i) {
-				clientMapData[draw_y][i] = p->tiles[j][i];
+				const int draw_x=p->left_x+i-g_left_x;
+                if (draw_x >= 0 && draw_x < SCREEN_WIDTH) clientMapData[draw_y][draw_x] = p->tiles[j][i];
 				//cout << " i,j:(" << i << "," << j<< "):" << (int)p->tiles[j][i];
 			}
 			//cout << endl;
@@ -662,6 +665,7 @@ void client_main()
 	// ¸Ê±×¸®±â 
 
     clubhouseRenderer().draw(*g_window,g_left_x,g_top_y);
+    clubhouseRenderer().drawPickups(*g_window,&clientMapData[0][0],SCREEN_WIDTH,SCREEN_HEIGHT);
 	temp = false;
 	avatar.draw();
 	for (auto& pl : players) pl.second.draw();
