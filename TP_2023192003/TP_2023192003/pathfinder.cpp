@@ -27,7 +27,7 @@ struct NodeComp {
 };
 
 bool isValid(int x, int y) {
-	return x >= 0 && x < MAP_WIDTH && y >= 0 && y < MAP_HEIGHT && map_data[y][x] != 3;
+	return playerCanMove(x,y);
 }
 
 int heuristic(int x1, int y1, int x2, int y2) {	// ÈÞ¸®½ºÆ½

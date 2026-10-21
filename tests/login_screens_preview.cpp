@@ -4,6 +4,7 @@
 #undef main
 #include <cassert>
 #include <filesystem>
+#include "../shared/field_content.hpp"
 
 int main() {
     std::cout << "Preparing login screen assets" << std::endl;
@@ -38,6 +39,12 @@ int main() {
     const int outsideX=world_layout::fieldX+10,outsideY=10;
     const int outsideLeft=world_layout::cameraX(outsideX),outsideTop=world_layout::cameraY(outsideY);
     clubhouseRenderer().draw(frame,outsideLeft,outsideTop);
+    int pickupTiles[16][18]{};
+    for (auto point : field_content::seeds) {
+        int px=point.x-outsideLeft,py=point.y-outsideTop;
+        if(px>=0 && px<18 && py>=0 && py<16) pickupTiles[py][px]=4;
+    }
+    clubhouseRenderer().drawPickups(frame,&pickupTiles[0][0],18,16);
     resident.setPosition((outsideX-outsideLeft)*50.f+25,(outsideY-outsideTop)*50.f+45);
     frame.draw(resident);
     clubhouseRenderer().drawLabel(frame,gameFont(),outsideX);
@@ -154,6 +161,13 @@ int main() {
         move.x=10; move.y=14;
         process_data(reinterpret_cast<char*>(&move),sizeof(move));
         assert(avatar.m_x == 10 && avatar.m_y == 14 && g_left_x == world_layout::cameraX(10));
+        sc_packet_mapInfo map{};
+        map.size=sizeof(map); map.type=S2C_P_MAPINFO;
+        map.left_x=world_layout::cameraX(10); map.top_y=world_layout::cameraY(14);
+        map.tiles[0][0]=4;
+        process_data(reinterpret_cast<char*>(&map),sizeof(map));
+        assert(g_left_x == world_layout::cameraX(10) && g_top_y == world_layout::cameraY(14));
+        assert(clientMapData[0][0] == 4);
     }
     {
         sf::TcpSocket peer;

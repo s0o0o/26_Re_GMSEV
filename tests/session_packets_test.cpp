@@ -79,9 +79,8 @@ int main() {
         assert(sent[chunk].size() == sizeof(packet));
         std::memcpy(&packet, sent[chunk].data(), sizeof(packet));
         assert(packet.type == S2C_P_MAPINFO);
-        assert(packet.left_x == -9);
-        assert(packet.top_y == -8 + chunk * 4);
-        assert(packet.tiles[0][0] == 8);
-        if (chunk == 2) assert(packet.tiles[0][9] == 6);
+        assert(packet.left_x == 0);
+        assert(packet.top_y == chunk * 4);
+        if (chunk == 0) assert(packet.tiles[0][0] == 6);
     }
 }

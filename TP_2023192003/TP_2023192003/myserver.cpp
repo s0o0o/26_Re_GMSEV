@@ -16,6 +16,7 @@
 #include "server_config.hpp"
 #include "startup_config.hpp"
 #include "../../shared/clubhouse_map.hpp"
+#include "../../shared/field_content.hpp"
 #include <cstring>
 #include "world_map.hpp"
 #include "pathfinder.hpp"
@@ -97,9 +98,7 @@ bool isMonSee(int from, int to)
 
 void initializeMap() {
     std::cout << "[MAP] Preparing Club House + Sunny Peak 52x18..." << std::endl;
-    for (int y=0;y<MAP_HEIGHT;++y)
-        for (int x=0;x<MAP_WIDTH;++x)
-            map_data[y][x] = world_layout::walkable(x,y) ? 0 : 3;
+    initializeFieldMap();
     std::cout << "[MAP] Two regions ready." << std::endl;
 }
 
@@ -191,47 +190,26 @@ std::unordered_set<int> GAMESESSION::getNearBySessions() {
 
 // NPC + lua =============================================================
 
-int API_get_x(lua_State* L)
-{
-	int user_id = (int)lua_tointeger(L, -1);
-	lua_pop(L, 2);
-
-	auto it = clients.find(user_id);
-	std::shared_ptr<GAMESESSION> user = it->second;
-
-	int x = user->object._x;
-	lua_pushnumber(L, x);
-	return 1;
+int API_get_x(lua_State* L) {
+    const int id=static_cast<int>(luaL_checkinteger(L,1));
+    const auto it=clients.find(id);
+    lua_pushinteger(L,it != clients.end() && it->second ? it->second->object._x : 0);
+    return 1;
 }
-
-int API_get_y(lua_State* L)
-{
-	int user_id =
-		(int)lua_tointeger(L, -1);
-	lua_pop(L, 2);
-
-	auto it = clients.find(user_id);
-	std::shared_ptr<GAMESESSION> user = it->second;
-
-	int y = user->object._y;
-	lua_pushnumber(L, y);
-	return 1;
+int API_get_y(lua_State* L) {
+    const int id=static_cast<int>(luaL_checkinteger(L,1));
+    const auto it=clients.find(id);
+    lua_pushinteger(L,it != clients.end() && it->second ? it->second->object._y : 0);
+    return 1;
 }
-
-int API_SendMessage(lua_State* L)
-{
-	//cout << "API_SendMessage 호출" << endl;
-	int my_id = (int)lua_tointeger(L, -3);
-	int user_id = (int)lua_tointeger(L, -2);
-	char* mess = (char*)lua_tostring(L, -1);
-
-	lua_pop(L, 4);
-
-	auto it = clients.find(user_id);
-	std::shared_ptr<GAMESESSION> user = it->second;
-
-	user->sendChatPacket(my_id, mess);
-	return 0;
+int API_SendMessage(lua_State* L) {
+    const int sender=static_cast<int>(luaL_checkinteger(L,1));
+    const int receiver=static_cast<int>(luaL_checkinteger(L,2));
+    const char* message=luaL_checkstring(L,3);
+    const auto it=clients.find(receiver);
+    if (it != clients.end() && it->second && isPlayer(receiver) && it->second->_state == ST_INGAME)
+        it->second->sendChatPacket(sender,message);
+    return 0;
 }
 
 void wakeUpMonster(int monId, int playerId) {
@@ -278,7 +256,7 @@ void doMonsterRandomMoving(int monId) {
 	std::shared_ptr<GAMESESSION> monster = it->second;
 
 	if (isPlayer(monId)) return;
-	if (monster->monster._isActive == false) return;
+	if (monster->monster._isActive == false || monster->monster._isDie) return;
 	if (monster->monster._isMonsterChase) return;
 
 	unordered_set<int> old_vl;
@@ -300,6 +278,7 @@ void doMonsterRandomMoving(int monId) {
 	case 2: if (y < (MAP_HEIGHT - 1)) y++; break;
 	case 3:if (y > 0) y--; break;
 	}
+    if (!field_content::monsterCanStand(x,y)) { x=old_x; y=old_y; }
 	monster->object._x = x;
 	monster->object._y = y;
 
@@ -363,11 +342,11 @@ bool monsterInit(int count)
     for (int i = MAX_USER; i < MAX_USER + count; ++i) {
 		auto newMonster = std::make_shared<GAMESESSION>();
 
-		newMonster->object._x = rand() % MAP_WIDTH;
-		newMonster->object._y = rand() % MAP_HEIGHT;
-		newMonster->object._hp = rand() % 5 + 5;
+		newMonster->object._x = static_cast<short>(field_content::monsters[i-MAX_USER].x);
+		newMonster->object._y = static_cast<short>(field_content::monsters[i-MAX_USER].y);
+		newMonster->object._hp = newMonster->object._maxHp = 5;
 
-		newMonster->monster._monType = rand() % 2 + 1;	// 1이면 일반, 2면 훈스터
+		newMonster->monster._monType = 1;	// 1이면 일반, 2면 훈스터
 		newMonster->object._id = i;
 		newMonster->_state = ST_INGAME;
 
@@ -397,6 +376,15 @@ bool monsterInit(int count)
 		lua_register(L, "API_SendMessage", API_SendMessage);
 		lua_register(L, "API_get_x", API_get_x);
 		lua_register(L, "API_get_y", API_get_y);
+        // Validate the real Lua callback stack contract while initializing each NPC.
+        for (const char* callback : {"API_get_x","API_get_y"}) {
+            lua_getglobal(L,callback); lua_pushinteger(L,i);
+            if (lua_pcall(L,1,1,0) != LUA_OK) return failScript();
+            const int expected=std::strcmp(callback,"API_get_x") == 0 ? newMonster->object._x : newMonster->object._y;
+            const bool matches=lua_isinteger(L,-1) && lua_tointeger(L,-1) == expected;
+            lua_pop(L,1);
+            if (!matches) { std::cerr << "[STARTUP] NPC callback mismatch\n"; return false; }
+        }
 
 		// 딱히 필요없지 않나..?
 		auto [sx, sy] = getSectorLocation(newMonster->object._x, newMonster->object._y);
@@ -600,28 +588,16 @@ void processPacket(int sessionId, char* packetFromC) {
 		}
 
 		if (playerCanMove(x, y)) {
-			switch (map_data[y][x]) {
-			case 4:
-				cout << "seed Get" << endl;
-				session->object._seedNum++;
-				session->sendStatChange(4);
-				map_data[y][x] = rand() % 2;
-				break;
-			case 5:
-				cout << "똥 밟음 -HP" << endl;
-				if (session->object._hp > 0)
-					session->object._hp--;
-				session->sendStatChange(5);
-				map_data[y][x] = rand() % 2;
-				break;
-			case 6:
-				cout << "potion Get" << endl;
-				if (session->object._hp < session->object._maxHp)
-					session->object._hp++;
-				session->sendStatChange(6);
-				map_data[y][x] = rand() % 2;
-				break;
-			}
+            if (collectSeed(x,y)) {
+                ++session->object._seedNum;
+                session->sendStatChange(4);
+                for (int observerId : session->getNearBySessions()) {
+                    if (!isPlayer(observerId)) continue;
+                    auto observer = clients.find(observerId);
+                    if (observer != clients.end() && observer->second && observer->second->_state == ST_INGAME)
+                        observer->second->sendMapInfo(observerId,observer->second->object._x,observer->second->object._y);
+                }
+            }
             int destinationX=x,destinationY=y;
             if (world_layout::portal(destinationX,destinationY)) {
                 x=static_cast<short>(destinationX); y=static_cast<short>(destinationY);
@@ -696,7 +672,7 @@ void processPacket(int sessionId, char* packetFromC) {
 			int dx = abs(monster->object._x - myX);
 			int dy = abs(monster->object._y - myY);
 
-			if (dx <= 2 and dy <= 2) targets.push_back(monster);
+			if (!monster->monster._isDie && world_layout::outdoors(myX) && dx <= 2 && dy <= 2) targets.push_back(monster);
 		}
 
 		//cout << " 공격가능 몬스터 수 : " << targets.size() << endl;
@@ -734,11 +710,12 @@ void processPacket(int sessionId, char* packetFromC) {
 			int dx = abs(monster->object._x - myX);
 			int dy = abs(monster->object._y - myY);
 
-			if (dx <= 2 and dy <= 2) targets.push_back(monster);	// 범위 설정
+			if (!monster->monster._isDie && world_layout::outdoors(myX) && dx <= 2 && dy <= 2) targets.push_back(monster);	// 범위 설정
 		}
 
 		//cout << "주변 몬스터 수 : " << targets.size() << endl;
 		for (auto& target : targets) {
+            if (session->object._seedNum <= 0) break;
 			target->object._hp -= session->object._damage;	// 데미지 깎고..
 			session->object._seedNum--;				// seed 갯수 줄이기
 			if (target->object._hp <= 0) {
@@ -985,10 +962,10 @@ void workerThread(HANDLE iocp) {
 			//if (not is_npc(key)) break;
 
 			auto it = clients.find(key);
-			if (it == clients.end()) break;
+			if (it == clients.end()) { delete overEx; break; }
 			std::shared_ptr<GAMESESSION> npc = it->second;
 
-			if (not npc->monster._isActive) break;
+			if (!npc || !npc->monster._isActive || npc->monster._isDie) { delete overEx; break; }
 			//if (npc->_is_npc_run) break;
 
 			npc->monster._ll.lock();
@@ -1039,17 +1016,26 @@ void workerThread(HANDLE iocp) {
 				break;
 			}
 			auto it_mon = clients.find(key);
-			if (it_mon == clients.end()) break;
+			if (it_mon == clients.end()) { delete overEx; break; }
 
 			std::shared_ptr<GAMESESSION> monster = it_mon->second;
-			if (not monster->monster._isActive) break;
+			if (not monster->monster._isActive) { delete overEx; break; }
 			monster->monster._isMonsterChase = true;
 
-			monster->object._x = monster->monster._nextMonX;
-			monster->object._y = monster->monster._nextMonY;
-
-			auto it = clients.find(targetPlayerId);
-			std::shared_ptr<GAMESESSION> player = it->second;
+            auto target = clients.find(targetPlayerId);
+            if (target == clients.end() || !target->second || target->second->_state != ST_INGAME ||
+                !world_layout::outdoors(target->second->object._x) || monster->monster._isDie ||
+                !field_content::monsterCanStand(monster->monster._nextMonX,monster->monster._nextMonY)) {
+                monster->monster._isMonsterChase = false;
+                monster->monster._isActive = false;
+                delete overEx;
+                break;
+            }
+            const short previousX=monster->object._x,previousY=monster->object._y;
+            monster->object._x = monster->monster._nextMonX;
+            monster->object._y = monster->monster._nextMonY;
+            monster->updateSector(previousX,previousY);
+            std::shared_ptr<GAMESESSION> player=target->second;
 			player->sendMovePacket(monster->object._id);
 
 			if (isMonSee(monster->object._id, targetPlayerId)) {
@@ -1072,6 +1058,7 @@ void workerThread(HANDLE iocp) {
 				timerQueues[idx].emplace(TIMER_EVENT{ monster->object._id, chrono::high_resolution_clock::now() + 1s
 					, EV_RANDOM_MOVE, 0 });
 			}
+            delete overEx;
 			break;
 		}
 		}
@@ -1101,8 +1088,8 @@ int main(int argc, char* argv[])
 	else if (!startupCheck) cout << " DB연결 성공!" << endl;
 
     if (startupCheck) std::cout << "[STARTUP] Check mode: no DB or network.\n";
-    std::cout << "[STARTUP] Exploration preview; monsters disabled (requested=" << count << ")." << std::endl;
-    const bool monstersReady = monsterInit(0);
+    std::cout << "[STARTUP] Field monsters capped at 3 (requested=" << count << ")." << std::endl;
+    const bool monstersReady = monsterInit((std::min)(count,static_cast<int>(field_content::monsters.size())));
     if (monstersReady) initializeMap();
     if (startupCheck || !monstersReady) {
         for (const auto& entry : clients) {

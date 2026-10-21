@@ -154,6 +154,7 @@
     <ClInclude Include="clubhouse_renderer.hpp" />
     <ClInclude Include="..\..\shared\clubhouse_map.hpp" />
     <ClInclude Include="..\..\shared\world_layout.hpp" />
+    <ClInclude Include="..\..\shared\field_content.hpp" />
   </ItemGroup>
   <ItemGroup>
     <Image Include="chess2.png" />
