@@ -4,6 +4,7 @@
 #include "game_object.hpp"
 #include "monster_state.hpp"
 #include <mutex>
+#include <atomic>
 #include <unordered_set>
 
 // Transitional aggregate: existing worker code keeps the same session lifetime.
@@ -15,6 +16,8 @@ public:
     STATE _state = ST_FREE;
     int _prevRemainData = 0;
     int _userInputId = 0;
+    std::atomic<bool> transportFailed{false};
+    std::atomic<bool> disconnectStarted{false};
     std::unordered_set<int> _viewList;
     std::mutex _vlL;
 
@@ -23,7 +26,7 @@ public:
 
     GAMESESSION() = default;
 
-	void registerRecv();
+	bool registerRecv();
 	void registerSend(void*);
 
 	void sendSessionLoginPacket();
