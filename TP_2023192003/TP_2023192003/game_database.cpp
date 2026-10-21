@@ -42,6 +42,15 @@ public:
         if (!SQL_SUCCEEDED(result)) {
             HandleDiagnosticRecord(hdbc,SQL_HANDLE_DBC,result);
             handle = SQL_NULL_HSTMT;
+            return;
+        }
+        const auto timeoutResult = SQLSetStmtAttr(handle,SQL_ATTR_QUERY_TIMEOUT,
+            reinterpret_cast<SQLPOINTER>(5),0);
+        if (!SQL_SUCCEEDED(timeoutResult)) {
+            std::cerr << "[DB] Cannot configure query timeout.\n";
+            HandleDiagnosticRecord(handle,SQL_HANDLE_STMT,timeoutResult);
+            SQLFreeHandle(SQL_HANDLE_STMT,handle);
+            handle = SQL_NULL_HSTMT;
         }
     }
     ~Statement() { if (handle != SQL_NULL_HSTMT) SQLFreeHandle(SQL_HANDLE_STMT,handle); }

@@ -60,6 +60,109 @@ int main() {
     assert(inputNickname == sf::String(L"\uD584\uCC0C"));
     assert(s_socket.getRemotePort() == 0);
     assert(!gameResourcesReady);
+    // Exercise the actual client connection/send/framing/state path, without a DB.
+    sf::TcpListener listener;
+    assert(listener.listen(0,sf::IpAddress::LocalHost) == sf::Socket::Done);
+    gameResourcesReady = true; // Rendering resources above suffice for packet handling.
+    const auto connectPeer = [&](sf::TcpSocket& peer) {
+        loginFlow = LoginFlow{};
+        assert(loginFlow.finishCredentials());
+        assert(loginFlow.connect());
+        beginLoginConnection(listener.getLocalPort());
+        assert(loginFlow.stage() == GAMESTATE::ConnectingScreen);
+        assert(listener.accept(peer) == sf::Socket::Done);
+        peer.setBlocking(false);
+        cs_packet_login request{};
+        std::size_t total = 0;
+        sf::Clock limit;
+        while (total < sizeof(request) && limit.getElapsedTime() < sf::seconds(2)) {
+            pumpLogin();
+            std::size_t count = 0;
+            peer.receive(reinterpret_cast<char*>(&request)+total,sizeof(request)-total,count);
+            total += count;
+            sf::sleep(sf::milliseconds(1));
+        }
+        assert(total == sizeof(request));
+        assert(is_valid_client_packet(request.type,request.size));
+        assert(request.inputId == 321 && request.character_kind == 1);
+        assert(std::string(request.name) == toUtf8(inputNickname));
+        peer.setBlocking(true);
+    };
+    const auto waitForReply = [&]() {
+        sf::Clock limit;
+        while (loginFlow.stage() == GAMESTATE::ConnectingScreen && limit.getElapsedTime() < sf::seconds(2)) {
+            pumpLogin();
+            sf::sleep(sf::milliseconds(1));
+        }
+        assert(loginFlow.stage() != GAMESTATE::ConnectingScreen);
+    };
+    for (bool fragment : {false,true}) {
+        sf::TcpSocket peer;
+        connectPeer(peer);
+        sc_packet_avatar_info info{};
+        info.size = sizeof(info); info.type = S2C_P_AVATAR_INFO;
+        info.id = 1; info.x = 10; info.y = 20; info.character_kind = 1;
+        sc_packet_avatar_login_ok ok{};
+        ok.size = sizeof(ok); ok.type = S2C_P_AVATAR_LOGIN_OK; ok.id = 1;
+        std::vector<char> reply(sizeof(info)+sizeof(ok));
+        std::memcpy(reply.data(),&info,sizeof(info));
+        std::memcpy(reply.data()+sizeof(info),&ok,sizeof(ok));
+        if (fragment) {
+            assert(peer.send(reply.data(),1) == sf::Socket::Done);
+            sf::Clock limit;
+            while (loginBytesReceived == 0 && limit.getElapsedTime() < sf::seconds(2)) { pumpLogin(); sf::sleep(sf::milliseconds(1)); }
+            assert(saved_packet_size == 1);
+        }
+        const std::size_t offset = fragment ? 1 : 0;
+        assert(peer.send(reply.data()+offset,reply.size()-offset) == sf::Socket::Done);
+        waitForReply();
+        assert(loginFlow.stage() == GAMESTATE::GameScreen);
+        assert(g_myid == 1 && g_left_x == 10-SCREEN_WIDTH/2 && g_top_y == 20-SCREEN_HEIGHT/2);
+    }
+    {
+        sf::TcpSocket peer;
+        connectPeer(peer);
+        sc_packet_login_fail rejected{};
+        rejected.size = sizeof(rejected); rejected.type = S2C_P_LOGIN_FAIL;
+        assert(peer.send(&rejected,sizeof(rejected)) == sf::Socket::Done);
+        waitForReply();
+        assert(loginStatus.find("rejected") != std::string::npos);
+    }
+    {
+        sf::TcpSocket peer;
+        connectPeer(peer);
+        const char malformed[] = {2,127};
+        assert(peer.send(malformed,sizeof(malformed)) == sf::Socket::Done);
+        waitForReply();
+        assert(loginStatus.find("protocol mismatch") != std::string::npos);
+    }
+    {
+        sf::TcpSocket peer;
+        connectPeer(peer);
+        pumpLogin(sf::Time::Zero);
+        assert(loginFlow.stage() == GAMESTATE::CustomizeScreen);
+        assert(loginStatus.find("No login response") != std::string::npos);
+    }
+    {
+        sf::TcpSocket peer;
+        connectPeer(peer);
+        peer.disconnect();
+        waitForReply();
+        assert(loginStatus.find("disconnected") != std::string::npos);
+    }
+    {
+        sf::TcpSocket peer;
+        connectPeer(peer);
+        const char header = sizeof(sc_packet_avatar_info);
+        assert(peer.send(&header,1) == sf::Socket::Done);
+        sf::Clock limit;
+        while (loginBytesReceived == 0 && limit.getElapsedTime() < sf::seconds(2)) { pumpLogin(); sf::sleep(sf::milliseconds(1)); }
+        assert(saved_packet_size == 1);
+        pumpLogin(sf::Time::Zero);
+        assert(loginStatus.find("Incomplete login response") != std::string::npos);
+    }
+    s_socket.disconnect();
+    std::cout << "Loopback login success/failure/framing checks passed" << std::endl;
     std::filesystem::current_path(root);
     std::cout << "Login screen previews passed" << std::endl;
 }

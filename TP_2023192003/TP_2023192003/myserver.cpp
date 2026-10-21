@@ -517,6 +517,7 @@ void processPacket(int sessionId, char* packetFromC) {
 	case C2S_P_LOGIN:
 	{	// 로그인 패킷이 날아온거라면 DB 확인
 		cs_packet_login* p = reinterpret_cast<cs_packet_login*>(packetFromC);
+        std::cout << "[LOGIN] Received session=" << sessionId << " bytes=" << static_cast<unsigned>(p->size) << std::endl;
 		if (!validCharacterKind(p->character_kind) || !validFurColor(p->fur_color) || !validEyeStyle(p->eye_style) || !validScarfStyle(p->scarf_style) || p->inputId < 0 || !login_input::nickname(p->name, sizeof(p->name))) {
             sc_packet_login_fail fail{};
             fail.size = sizeof(fail);
@@ -529,12 +530,14 @@ void processPacket(int sessionId, char* packetFromC) {
 			dbUserExp = 0, dbUserSeedNum = 0, dbUserMaxHp = 0, dbUserDamage = 0;
 		int dbId = p->inputId;
 
-		const auto loginResult = load_or_create_user(
+		std::cout << "[LOGIN] DB lookup begin session=" << sessionId << std::endl;
+        const auto loginResult = load_or_create_user(
             [&]() {
                 return get_DB_login_info(dbId, dbUserX, dbUserY, dbUserHp, dbUserLevel,
                     dbUserExp, dbUserSeedNum, dbUserMaxHp, dbUserDamage);
             },
             [&]() { return insert_new_user(dbId, p->name); });
+        std::cout << "[LOGIN] DB lookup end session=" << sessionId << " result=" << static_cast<int>(loginResult) << std::endl;
         if (loginResult != LoginLookupResult::Found) {
             sc_packet_login_fail fail{};
             fail.size = sizeof(fail);
@@ -564,7 +567,16 @@ void processPacket(int sessionId, char* packetFromC) {
 
 		OVER_EXP* ov = new OVER_EXP;
 		ov->_compType = OP_LOGIN_OK;
-		PostQueuedCompletionStatus(g_hiocp, 1, sessionId, &ov->_over);
+		        if (!PostQueuedCompletionStatus(g_hiocp,1,sessionId,&ov->_over)) {
+            std::cerr << "[LOGIN] Completion enqueue failed: " << GetLastError() << std::endl;
+            delete ov;
+            sc_packet_login_fail fail{};
+            fail.size = sizeof(fail);
+            fail.type = S2C_P_LOGIN_FAIL;
+            session->registerSend(&fail);
+            break;
+        }
+        std::cout << "[LOGIN] Completion queued session=" << sessionId << std::endl;
 
 		if (update_user_info(session->_userInputId, session->object._x, session->object._y, session->object._seedNum,
 			session->object._hp, session->object._level, session->object._exp, session->object._maxHp, session->object._damage)) {
@@ -902,6 +914,8 @@ void workerThread(HANDLE iocp) {
 			session->_state = ST_INGAME;
 			session->sendSessionLoginPacket();	// 나한테 정보전송 -> 그래야 내가본다
 			session->sendSessioLoginOkPacket();
+            std::cout << "[LOGIN] Success response submitted session=" << key << std::endl;
+            delete overEx;
 			session->sendMapInfo(session->object._id, session->object._x, session->object._y); // 맵 정보
 
 			auto [sx, sy] = getSectorLocation(session->object._x, session->object._y);	// 로그인 후.. 나를 섹터에 등록
