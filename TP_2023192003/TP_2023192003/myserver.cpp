@@ -15,6 +15,7 @@
 #include "..\..\shared\protocol.hpp"
 #include "server_config.hpp"
 #include "startup_config.hpp"
+#include "../../shared/clubhouse_map.hpp"
 #include <cstring>
 #include "world_map.hpp"
 #include "pathfinder.hpp"
@@ -95,33 +96,12 @@ bool isMonSee(int from, int to)
 
 
 void initializeMap() {
-	std::cout << " ÁöÇüÁ¤º¸ ¾÷µ«Áß.. " << std::endl;
-	for (int y = 0; y < MAP_HEIGHT; ++y) {
-		for (int x = 0; x < MAP_WIDTH; ++x) {
-			int temp = rand() % 100;
-			if (temp >= 0 and temp <= 35) map_data[y][x] = 0;		// Ç®
-			else if (temp > 35 and temp <= 87) map_data[y][x] = 1;	// ¶¥
-			else if (temp > 87 and temp <= 88) map_data[y][x] = 2;  // ²É
-			else if (temp > 88 and temp <= 94) map_data[y][x] = 3;	// Àå¾Ö¹°
-			else if (temp > 94 and temp <= 97) map_data[y][x] = 4;	// ¾¾¾Ñ
-			else if (temp > 97 and temp <= 98) map_data[y][x] = 5;	// ¶Ë
-			else if (temp > 98 and temp < 100) map_data[y][x] = 6;	// hpÆ÷¼Ç
-
-			if (x == 0)map_data[y][x] = 7;
-			if (y == 0)map_data[y][x] = 10;
-			if (x == MAP_WIDTH - 1) map_data[y][x] = 12;
-			if (y == MAP_HEIGHT - 1) map_data[y][x] = 14;
-		}
-	}
-	// ¸Ê »óÇÏÁÂ¿ì³¡ºÎºÐ
-	map_data[0][0] = 9;
-	map_data[0][MAP_WIDTH - 1] = 11;
-	map_data[MAP_WIDTH - 1][0] = 13;
-	map_data[MAP_WIDTH - 1][MAP_WIDTH - 1] = 15;
-
-	std::cout << " ÁöÇüÁ¤º¸ ¾÷µ« ¿Ï·á!! " << std::endl;
+    std::cout << "[MAP] Preparing Club House 24x18..." << std::endl;
+    for (int y=0;y<MAP_HEIGHT;++y)
+        for (int x=0;x<MAP_WIDTH;++x)
+            map_data[y][x] = clubhouse::walkable(x,y) ? 0 : 3;
+    std::cout << "[MAP] Club House ready." << std::endl;
 }
-
 
 // timer ===============================================================
 enum EVENT_TYPE { EV_RANDOM_MOVE, EV_RUN, EV_CHASE };	// EV_RUN -> ÀÌ°Ô NPC°¡ 3Ä­ÀÌµ¿ÇÏ°ÔÇÏ´Â 
@@ -564,6 +544,7 @@ void processPacket(int sessionId, char* packetFromC) {
             break;
         }
 
+        clubhouse::safePosition(dbUserX,dbUserY);
         session->_userInputId = dbId;
         session->object._furColor = p->fur_color;
         session->object._characterKind = p->character_kind;
@@ -1115,7 +1096,8 @@ int main(int argc, char* argv[])
 	else if (!startupCheck) cout << " DB¿¬°á ¼º°ø!" << endl;
 
     if (startupCheck) std::cout << "[STARTUP] Check mode: no DB or network.\n";
-    const bool monstersReady = monsterInit(count);
+    std::cout << "[STARTUP] Club House is a safe room; monsters disabled (requested=" << count << ")." << std::endl;
+    const bool monstersReady = monsterInit(0);
     if (monstersReady) initializeMap();
     if (startupCheck || !monstersReady) {
         for (const auto& entry : clients) {

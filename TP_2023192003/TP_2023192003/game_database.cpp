@@ -1,4 +1,5 @@
 #include "game_database.hpp"
+#include "../../shared/clubhouse_map.hpp"
 #include "database_write.hpp"
 #include <Windows.h>
 #include <sqlext.h>
@@ -184,7 +185,7 @@ bool insert_new_user(int userId, const char* /*name*/) {
     // Nickname persistence is not part of the existing account schema.
     std::lock_guard<std::mutex> guard(databaseMutex);
     Statement statement;
-    std::array<SQLINTEGER,9> values = {{userId,rand()%2000,rand()%2000,rand()%10+20,1,0,22,30,1}};
+    std::array<SQLINTEGER,9> values = {{userId,clubhouse::spawnX,clubhouse::spawnY,rand()%10+20,1,0,22,30,1}};
     const bool saved = database_write::execute(statement,
         L"INSERT INTO SERVER_TABLE1 (USER_ID, USER_X, USER_Y, USER_HP, USER_LEVEL, USER_EXP, USER_SEED_NUM, USER_MAX_HP, USER_DAMAGE) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         values);

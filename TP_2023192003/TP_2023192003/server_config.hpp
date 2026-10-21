@@ -1,11 +1,12 @@
 #pragma once
 
 #include "..\..\shared\protocol.hpp"
+#include "../../shared/clubhouse_map.hpp"
 
 constexpr int NUM_MONSTER = 200000;
 
-constexpr int MAP_HEIGHT = 2000;
-constexpr int MAP_WIDTH = 2000;
+constexpr int MAP_HEIGHT = clubhouse::height;
+constexpr int MAP_WIDTH = clubhouse::width;
 
 constexpr int VIEW_RANGE = 7;
 constexpr int SECTOR_SIZE = 20;

@@ -16,6 +16,8 @@ using namespace std;
 #include "hamster_customizer.hpp"
 #include "login_flow.hpp"
 #include "loading_screen.hpp"
+#include "clubhouse_renderer.hpp"
+ClubhouseRenderer& clubhouseRenderer() { static ClubhouseRenderer value; return value; }
 HamsterCustomizer& hamsterCustomizer() {
     static HamsterCustomizer instance;
     return instance;
@@ -165,7 +167,11 @@ public:
 		if (false == m_showing) return;
 		float rx = (m_x - g_left_x) * TILE_WIDTH + 1;
 		float ry = (m_y - g_top_y) * TILE_WIDTH + 1;
-		m_sprite.setPosition(rx, ry);
+		        if (id >= 0 && id < MAX_USER) {
+            m_sprite.setScale(2.f,2.f);
+            m_sprite.setOrigin(24.f,44.f);
+            m_sprite.setPosition(rx+25.f,ry+45.f);
+        } else m_sprite.setPosition(rx,ry);
 		g_window->draw(m_sprite);
 		auto size = m_name.getGlobalBounds();
 		if (m_mess_end_time < chrono::system_clock::now()) {
@@ -655,13 +661,7 @@ void client_main()
 
 	// 맵그리기 
 
-	for (int j = 0; j < SCREEN_HEIGHT; ++j) {
-		for (int i = 0; i < SCREEN_WIDTH; ++i) {
-			int type = clientMapData[j][i];  // 서버에서 받은 타일 정보 사용
-			mapType[type].a_move(TILE_WIDTH * i, TILE_WIDTH * j);
-			mapType[type].a_draw();
-		}
-	}
+    clubhouseRenderer().draw(*g_window,g_left_x,g_top_y);
 	temp = false;
 	avatar.draw();
 	for (auto& pl : players) pl.second.draw();
@@ -917,6 +917,7 @@ int main()
 	g_window = &window;
 	initStartScreenInit();
     if (!hamsterCustomizer().load("assets/characters") || !hamsterCustomizer().setBackdrop(*startMainTx)) { std::cerr << "Character texture loading failed" << std::endl; return -1; }
+    if (!clubhouseRenderer().load("assets/maps/clubhouse-sheet.png")) { std::cerr << "Club House asset missing" << std::endl; return -1; }
 	chatInit();
 	lodMapTexture();
 
