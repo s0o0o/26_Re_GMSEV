@@ -5,9 +5,13 @@
 #include <unordered_map>
 #include <Windows.h>
 #include <chrono>
+#include <cstdint>
+#include <cstring>
+#include <limits>
 using namespace std;
 
 #include "..\..\shared\protocol.hpp"
+#include "..\..\shared\login_input.hpp"
 
 sf::TcpSocket s_socket;
 
@@ -28,11 +32,24 @@ int userTextureWidth = 48;
 int userTextureHeight = 48;
 int monTextureWidth = 52;
 
-int id_input;
-std::string input_id_str = "";
+std::int32_t id_input;
+sf::String inputNickname;
+sf::String inputAccountId;
+bool choosingNickname = false;
 bool isChatMode = false;
 std::string chatInputStr = "";
 bool id_entered = false;
+
+std::string toUtf8(const sf::String& value) {
+	const auto bytes = value.toUtf8();
+	return std::string(bytes.begin(), bytes.end());
+}
+
+sf::String fromUtf8(const char* value) {
+	const char* end = value + std::strlen(value);
+	return sf::String::fromUtf8(value, end);
+}
+
 bool isMonNear = true;
 bool isChat = false;
 bool isAttackAnim = false;
@@ -143,7 +160,7 @@ public:
 
 	void set_name(const char str[]) {
 		m_name.setFont(g_font);
-		m_name.setString(str);
+		m_name.setString(fromUtf8(str));
 		if (id < MAX_USER) m_name.setFillColor(sf::Color(0, 0, 0));
 		else m_name.setFillColor(sf::Color(rand() % 256, rand() % 256, rand() % 256));
 		m_name.setStyle(sf::Text::Regular);
@@ -403,7 +420,7 @@ void ProcessPacket(char* ptr)
 	case S2C_P_LOGIN_FAIL:
 	{
 		cout << " 로그인 실패 " << endl;
-		input_id_str.clear();
+		inputNickname.clear();
 		break;
 	}
 	case S2C_P_ATTACK_PtoN:
@@ -726,17 +743,26 @@ void send_packet(void* packet)
 	s_socket.send(packet, p[0], sent);
 }
 
-void drawStartScreen(sf::RenderWindow& window, const std::string& input_id_str) {
+void drawStartScreen(sf::RenderWindow& window, const sf::String& nickname) {
 	window.draw(startBgSprite);
 
 	// 실시간 ID 입력 표시
 	//g_font.loadFromFile("neodgm.ttf");
 	idInputText.setFont(g_font);
-	idInputText.setString(input_id_str);
+	idInputText.setString(choosingNickname ? nickname : inputAccountId);
 	idInputText.setCharacterSize(53);
 	idInputText.setFillColor(sf::Color::Black);
 	idInputText.setPosition(395, 633);
 	window.draw(idInputText);
+    sf::Text prompt;
+    prompt.setFont(g_font);
+    prompt.setCharacterSize(22);
+    prompt.setFillColor(sf::Color::Black);
+    prompt.setPosition(30, 560);
+    prompt.setString(choosingNickname ?
+        "Nickname (1-12 letters / Korean / digits / _) - Enter to login, Esc for ID" :
+        "Account ID (digits) - Enter to choose nickname");
+    window.draw(prompt);
 }
 
 void chatInit() {
@@ -786,32 +812,44 @@ int main()
 				window.close();
 
 			if (gameState == GAMESTATE::startScreen) {
-				if (event.type == sf::Event::TextEntered) {
-					cout << input_id_str << endl;
-					if (event.text.unicode == '\b' && !input_id_str.empty()) {
-						input_id_str.pop_back();
+				if (event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::Escape) choosingNickname = false;
+				if (event.type == sf::Event::TextEntered && !choosingNickname) {
+                    if (event.text.unicode == '\b' && !inputAccountId.isEmpty()) inputAccountId.erase(inputAccountId.getSize() - 1);
+                    else if (event.text.unicode >= '0' && event.text.unicode <= '9' && inputAccountId.getSize() < 10) inputAccountId += event.text.unicode;
+                }
+                else if (event.type == sf::Event::TextEntered) {
+					if (event.text.unicode == '\b' && !inputNickname.isEmpty()) {
+						inputNickname.erase(inputNickname.getSize() - 1);
 					}
-					else if (event.text.unicode >= '0' && event.text.unicode <= '9') {
-						input_id_str += static_cast<char>(event.text.unicode);
+					else if (login_input::allowed(event.text.unicode)) {
+						sf::String candidate = inputNickname;
+						candidate += event.text.unicode;
+						if (candidate.getSize() <= MAX_NICKNAME_CODEPOINTS &&
+							toUtf8(candidate).size() < MAX_ID_LENGTH) {
+							inputNickname = candidate;
+						}
 					}
 				}
 
 				if (event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::Enter) {
-					if (!input_id_str.empty()) {
-						id_input = std::stoi(input_id_str);
+					if (!choosingNickname) {
+                        if (login_input::accountId(toUtf8(inputAccountId).c_str(), id_input)) choosingNickname = true;
+                    }
+                    else if (!inputNickname.isEmpty()) {
+						const std::string nicknameUtf8 = toUtf8(inputNickname);
+						if (!login_input::nickname(nicknameUtf8.c_str(), nicknameUtf8.size() + 1)) continue;
 						client_initialize();
 						// 로그인 패킷 전송
-						cs_packet_login p;
+						cs_packet_login p{};
 						p.size = sizeof(p);
 						p.type = C2S_P_LOGIN;
 						p.inputId = id_input;
 
-						string player_name{ "Player" + to_string(id_input) };
-						strcpy_s(p.name, player_name.c_str());
+						strncpy_s(p.name, nicknameUtf8.c_str(), MAX_ID_LENGTH - 1);
 						send_packet(&p);
 
 						avatar.set_name(p.name);
-						nameText.setString(p.name);
+						nameText.setString(fromUtf8(p.name));
 					}
 				}
 			}
@@ -917,7 +955,7 @@ int main()
 
 		window.clear();
 		if (gameState == GAMESTATE::startScreen) {
-			drawStartScreen(*g_window, input_id_str);
+			drawStartScreen(*g_window, inputNickname);
 			char net_buf[BUF_SIZE];
 			size_t   received;
 

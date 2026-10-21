@@ -31,6 +31,7 @@
     </Image>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\..\shared\login_input.hpp" />
     <ClInclude Include="..\..\shared\protocol.hpp">
       <Filter>헤더 파일</Filter>
     </ClInclude>

@@ -142,6 +142,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\shared\protocol.hpp" />
+    <ClInclude Include="..\..\shared\login_input.hpp" />
   </ItemGroup>
   <ItemGroup>
     <Image Include="chess2.png" />

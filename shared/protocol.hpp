@@ -10,8 +10,9 @@ using ObjectId = std::int32_t;
 constexpr std::uint16_t GAME_PORT = 3000;
 
 constexpr std::size_t MAX_CHAT_LENGTH = 30;
-constexpr std::size_t MAX_ID_LENGTH = 20;
-constexpr std::size_t NAME_SIZE = 20;
+constexpr std::size_t MAX_ID_LENGTH = 48;
+constexpr std::size_t NAME_SIZE = MAX_ID_LENGTH;
+constexpr std::size_t MAX_NICKNAME_CODEPOINTS = 12;
 constexpr std::size_t BUF_SIZE = 300;
 
 constexpr ObjectId MAX_USER = 10000;

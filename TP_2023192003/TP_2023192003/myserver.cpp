@@ -16,6 +16,7 @@
 #include "server_config.hpp"
 #include "world_map.hpp"
 #include "pathfinder.hpp"
+#include "../../shared/login_input.hpp"
 #include "game_session.hpp"
 
 using namespace std;
@@ -711,6 +712,13 @@ void processPacket(int sessionId, char* packetFromC) {
 	case C2S_P_LOGIN:
 	{	// 로그인 패킷이 날아온거라면 DB 확인
 		cs_packet_login* p = reinterpret_cast<cs_packet_login*>(packetFromC);
+		if (p->inputId < 0 || !login_input::nickname(p->name, sizeof(p->name))) {
+            sc_packet_login_fail fail{};
+            fail.size = sizeof(fail);
+            fail.type = S2C_P_LOGIN_FAIL;
+            session->registerSend(&fail);
+            break;
+        }
 
 		int dbUserX = 0, dbUserY = 0, dbUserHp = 0, dbUserLevel = 0,
 			dbUserExp = 0, dbUserSeedNum = 0, dbUserMaxHp = 0, dbUserDamage = 0;
@@ -761,7 +769,7 @@ void processPacket(int sessionId, char* packetFromC) {
 		session->object._damage = dbUserDamage;
 		session->monster._monType = 0;
 
-		strcpy_s(session->object._name, p->name);
+		strncpy_s(session->object._name, p->name, MAX_ID_LENGTH - 1);
 		//session->sendMapInfo(session->object._id, session->object._x, session->object._y);
 
 		OVER_EXP* ov = new OVER_EXP;
