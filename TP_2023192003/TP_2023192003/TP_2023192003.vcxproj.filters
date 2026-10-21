@@ -30,6 +30,7 @@
       <Filter>헤더 파일</Filter>
     </ClInclude>
     <ClInclude Include="server_config.hpp" />
+    <ClInclude Include="startup_config.hpp" />
     <ClInclude Include="..\..\shared\appearance.hpp" />
     <ClInclude Include="..\..\shared\login_input.hpp" />
     <ClInclude Include="iocp_operation.hpp" />
