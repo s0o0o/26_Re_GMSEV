@@ -14,6 +14,8 @@
 
 #include "..\..\shared\protocol.hpp"
 #include "server_config.hpp"
+#include "startup_config.hpp"
+#include <cstring>
 #include "world_map.hpp"
 #include "pathfinder.hpp"
 #include "../../shared/login_input.hpp"
@@ -373,10 +375,12 @@ void doMonsterRandomMoving(int monId) {
 	trySleepMonster(monster);
 }
 
-void monsterInit()
+bool monsterInit(int count)
 {
 	cout << "monster initialize begin.\n";
-	for (int i = MAX_USER; i < MAX_USER + NUM_MONSTER; ++i) {
+	const auto started = GetTickCount64();
+    std::cout << "[STARTUP] Monsters=" << count << " (GMSEV_MONSTER_COUNT; max 200000)" << std::endl;
+    for (int i = MAX_USER; i < MAX_USER + count; ++i) {
 		auto newMonster = std::make_shared<GAMESESSION>();
 
 		newMonster->object._x = rand() % MAP_WIDTH;
@@ -395,14 +399,20 @@ void monsterInit()
 
 		clients[i] = newMonster;
 
-		auto L = newMonster->monster._L = luaL_newstate();	// LUA 상태 초기화...
-		luaL_openlibs(L);							// 표준 라이브러리 로딩하는거..
-		luaL_loadfile(L, "npc.lua");				// npc.lua 스크립트 파일 로드
-		lua_pcall(L, 0, 0, 0);						// 스크립트 실행
-
-		lua_getglobal(L, "set_uid");		// lua함수 set_uid()를 호출하며
-		lua_pushnumber(L, i);				// i 라는 아이디를 lua에 전달..
-		lua_pcall(L, 1, 0, 0);
+        auto L = newMonster->monster._L = luaL_newstate();
+        if (!L) { std::cerr << "[STARTUP] Lua allocation failed monster=" << i << std::endl; return false; }
+        luaL_openlibs(L);
+        const auto failScript = [&]() {
+            std::cerr << "[STARTUP] npc.lua failed monster=" << i << ": " << lua_tostring(L,-1) << std::endl;
+            lua_close(L);
+            newMonster->monster._L = nullptr;
+            return false;
+        };
+        if (luaL_loadfile(L,"npc.lua") != LUA_OK) return failScript();
+        if (lua_pcall(L,0,0,0) != LUA_OK) return failScript();
+        lua_getglobal(L,"set_uid");
+        lua_pushinteger(L,i);
+        if (lua_pcall(L,1,0,0) != LUA_OK) return failScript();
 
 		lua_register(L, "API_SendMessage", API_SendMessage);
 		lua_register(L, "API_get_x", API_get_x);
@@ -414,8 +424,12 @@ void monsterInit()
 			std::lock_guard<std::mutex> lock(sectorLock[sx][sy]);
 			sectors[sx][sy].insert(i);
 		}
+        if ((i-MAX_USER+1)%250 == 0 || i-MAX_USER+1 == count)
+            std::cout << "[STARTUP] Monsters " << i-MAX_USER+1 << "/" << count << " elapsed_ms=" << GetTickCount64()-started << std::endl;
 	}
-	cout << "monster initialize end.\n";
+    std::cout << "[STARTUP] Monsters complete elapsed_ms=" << GetTickCount64()-started << std::endl;
+    cout << "monster initialize end.\n";
+    return true;
 }
 
 // timer 함수 =================================================================
@@ -1081,13 +1095,39 @@ void workerThread(HANDLE iocp) {
 
 
 // main =============================================================
-int main()
+int main(int argc, char* argv[])
 {
-	if (not initializeDB()) {
+    const bool startupCheck = argc == 2 && std::strcmp(argv[1],"--startup-check") == 0;
+    int count = 0;
+    char* setting = nullptr;
+    size_t settingLength = 0;
+    const auto settingError = _dupenv_s(&setting,&settingLength,"GMSEV_MONSTER_COUNT");
+    const bool validSetting = settingError == 0 && startup_config::monsterCount(setting,count);
+    std::free(setting);
+    if (!validSetting) {
+        std::cerr << "[STARTUP] GMSEV_MONSTER_COUNT must be an integer from 0 to 200000.\n";
+        return 1;
+    }
+	if (!startupCheck && !initializeDB()) {
 		cout << " DB연결 실패..." << endl;
 		return -1;
 	}
-	else cout << " DB연결 성공!" << endl;
+	else if (!startupCheck) cout << " DB연결 성공!" << endl;
+
+    if (startupCheck) std::cout << "[STARTUP] Check mode: no DB or network.\n";
+    const bool monstersReady = monsterInit(count);
+    if (monstersReady) initializeMap();
+    if (startupCheck || !monstersReady) {
+        for (const auto& entry : clients) {
+            if (entry.second && entry.second->monster._L) {
+                lua_close(entry.second->monster._L);
+                entry.second->monster._L = nullptr;
+            }
+        }
+        clients.clear();
+        if (!startupCheck) finalizeDB();
+        return monstersReady ? 0 : 1;
+    }
 
 	WSADATA WSAData;
 	WSAStartup(MAKEWORD(2, 2), &WSAData);
@@ -1097,13 +1137,17 @@ int main()
 	server_addr.sin_family = AF_INET;
 	server_addr.sin_port = htons(GAME_PORT);
 	server_addr.sin_addr.S_un.S_addr = INADDR_ANY;
-	bind(gServerSocket, reinterpret_cast<sockaddr*>(&server_addr), sizeof(server_addr));
-	listen(gServerSocket, SOMAXCONN);
+	    if (bind(gServerSocket,reinterpret_cast<sockaddr*>(&server_addr),sizeof(server_addr)) == SOCKET_ERROR) {
+        std::cerr << "[STARTUP] Bind failed error=" << WSAGetLastError() << std::endl;
+        closesocket(gServerSocket); WSACleanup(); finalizeDB(); return 1;
+    }
+	    if (listen(gServerSocket,SOMAXCONN) == SOCKET_ERROR) {
+        std::cerr << "[STARTUP] Listen failed error=" << WSAGetLastError() << std::endl;
+        closesocket(gServerSocket); WSACleanup(); finalizeDB(); return 1;
+    }
 	SOCKADDR_IN cl_addr;
 	int addr_size = sizeof(cl_addr);
 
-	monsterInit();
-	initializeMap();
 
 	g_hiocp = CreateIoCompletionPort(INVALID_HANDLE_VALUE, 0, 0, 0);
 	CreateIoCompletionPort(reinterpret_cast<HANDLE>(gServerSocket), g_hiocp, 9999, 0);
@@ -1120,6 +1164,7 @@ int main()
 	for (int i = 0; i < TIMER_THREAD_COUNT; ++i)
 		std::thread(doTimer, i).detach();
 
+    std::cout << "[READY] Server ready. Login is available on port " << GAME_PORT << std::endl;
 	for (auto& th : worker_threads)
 		th.join();
 
