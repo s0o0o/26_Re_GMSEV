@@ -11,6 +11,7 @@ public:
     bool setBackdrop(const sf::Texture& texture);
     void handleEvent(const sf::Event& event, const sf::RenderWindow& window);
     void draw(sf::RenderTarget& target, const sf::Font& font) const;
+    void drawBackdrop(sf::RenderTarget& target) const;
     const sf::Texture& texture(std::uint8_t color, std::uint8_t eyes = 0, std::uint8_t scarf = 0, std::uint8_t kind = 0) const;
     std::uint8_t selected() const { return selected_; }
     std::uint8_t selectedEyes() const { return eyes_; }

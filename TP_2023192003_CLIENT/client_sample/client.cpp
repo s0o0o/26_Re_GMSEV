@@ -15,6 +15,7 @@ using namespace std;
 #include "..\..\shared\login_input.hpp"
 #include "hamster_customizer.hpp"
 #include "login_flow.hpp"
+#include "loading_screen.hpp"
 HamsterCustomizer& hamsterCustomizer() {
     static HamsterCustomizer instance;
     return instance;
@@ -102,6 +103,8 @@ cs_packet_login pendingLogin{};
 std::size_t loginBytesSent = 0;
 std::size_t loginBytesReceived = 0;
 sf::Clock loginClock;
+LoadingPhase loadingPhase = LoadingPhase::Connecting;
+sf::Clock loadingClock;
 void failLogin(const char* message) {
     std::cerr << "[LOGIN] Failed: " << message << " elapsed_ms=" << loginClock.getElapsedTime().asMilliseconds()
         << " sent=" << loginBytesSent << " received=" << loginBytesReceived << std::endl;
@@ -820,6 +823,13 @@ void drawGameScreen() {
 }
 
 void drawCustomizationScreen(sf::RenderTarget& window) {
+    if (loginFlow.stage() == GAMESTATE::ConnectingScreen) {
+        hamsterCustomizer().drawBackdrop(window);
+        drawLoadingScreen(window,gameFont(),hamsterCustomizer().texture(hamsterCustomizer().selected(),
+            hamsterCustomizer().selectedEyes(),hamsterCustomizer().selectedScarf(),hamsterCustomizer().selectedCharacter()),
+            inputNickname,loadingPhase,loadingClock.getElapsedTime().asSeconds());
+        return;
+    }
     hamsterCustomizer().draw(window, gameFont());
     sf::Text identity(sf::String("ID " + std::to_string(id_input) + " / ") + inputNickname, gameFont(), 22);
     identity.setFillColor(sf::Color::White);
@@ -867,6 +877,7 @@ void beginLoginConnection(unsigned short port = GAME_PORT) {
     loginBytesReceived = 0;
     std::cout << "[LOGIN] Connected; request bytes=" << sizeof(pendingLogin) << std::endl;
     loginClock.restart();
+    loadingPhase = LoadingPhase::Sending;
     loginStatus = "Connecting to your hamster world...";
 }
 
@@ -886,6 +897,7 @@ void pumpLogin(sf::Time timeout = sf::seconds(10)) {
         if (status == sf::Socket::Error || status == sf::Socket::Disconnected) { failLogin("Login send failed. Please retry."); return; }
         if (loginBytesSent < sizeof(pendingLogin)) return;
     }
+    loadingPhase = loginBytesReceived ? LoadingPhase::Receiving : LoadingPhase::Waiting;
     char buffer[BUF_SIZE];
     std::size_t received = 0;
     const auto status = s_socket.receive(buffer,sizeof(buffer),received);
@@ -957,7 +969,7 @@ int main()
                     loginFlow.back();
                     loginStatus.clear();
                 } else if ((event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::Enter) || sf::FloatRect(480,610,230,52).contains(point)) {
-                    if (loginFlow.connect()) startConnectionRequested = true;
+                    if (loginFlow.connect()) { loadingPhase = LoadingPhase::Connecting; loadingClock.restart(); startConnectionRequested = true; }
                 }
             }
             else if (loginFlow.stage() == GAMESTATE::GameScreen) {

@@ -111,11 +111,15 @@ void HamsterCustomizer::handleEvent(const sf::Event& event, const sf::RenderWind
     }
 }
 
-void HamsterCustomizer::draw(sf::RenderTarget& target, const sf::Font& font) const {
+void HamsterCustomizer::drawBackdrop(sf::RenderTarget& target) const {
     if (hasBackdrop_) target.draw(sf::Sprite(blurredBackdrop_));
     sf::RectangleShape dim(target.getView().getSize());
     dim.setFillColor({0,0,0,100});
     target.draw(dim);
+}
+
+void HamsterCustomizer::draw(sf::RenderTarget& target, const sf::Font& font) const {
+    drawBackdrop(target);
     sf::RectangleShape panel({580.f, 480.f});
     panel.setPosition(160.f, 70.f);
     panel.setFillColor({255, 248, 228});
