@@ -56,7 +56,11 @@ cl /nologo /EHsc /std:c++17 tests\combat_rules_test.cpp /Fo:build\tests\ /Fe:bui
 if not "%errorlevel%"=="0" goto failed
 build\tests\combat_rules_test.exe
 if not "%errorlevel%"=="0" goto failed
-echo All 12 regression programs passed.
+cl /nologo /EHsc /std:c++17 tests\respawn_test.cpp TP_2023192003\TP_2023192003\world_map.cpp /Fo:build\tests\ /Fe:build\tests\respawn_test.exe
+if not "%errorlevel%"=="0" goto failed
+build\tests\respawn_test.exe
+if not "%errorlevel%"=="0" goto failed
+echo All 13 regression programs passed.
 popd
 exit /b 0
 :failed

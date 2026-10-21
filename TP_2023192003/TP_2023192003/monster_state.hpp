@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <mutex>
+#include "../../shared/respawn_policy.hpp"
 
 struct lua_State;
 
@@ -9,7 +10,9 @@ struct lua_State;
 struct MonsterState {
     lua_State* _L = nullptr;
     std::mutex _ll;
-    std::mutex combatMutex;
+    std::recursive_mutex combatMutex;
+    std::atomic<std::uint64_t> generation{0};
+    respawn_policy::Tick respawnAt=0;
     std::atomic<bool> _isActive{false};
     std::atomic<bool> _isMonsterChase{false};
     std::atomic<bool> _isDie{false};

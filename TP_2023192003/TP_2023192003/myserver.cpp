@@ -22,6 +22,7 @@
 #include "pathfinder.hpp"
 #include "../../shared/login_input.hpp"
 #include "game_session.hpp"
+#include "monster_lifecycle.hpp"
 
 using namespace std;
 
@@ -107,10 +108,11 @@ enum EVENT_TYPE { EV_RANDOM_MOVE, EV_RUN, EV_CHASE };	// EV_RUN -> 이게 NPC가 3�
 
 struct TIMER_EVENT {
 	int obj_id;				// 이 타이머 이벤트 수행할 객체ID(player또는 npc)
-	chrono::high_resolution_clock::time_point wakeup_time;	// 이벤트 실행되는 시간
+	chrono::steady_clock::time_point wakeup_time;	// 이벤트 실행되는 시간
 	EVENT_TYPE event_id;		// 이 이벤트 종류
 	int target_id;				// 이벤트 대상 id
 
+    std::uint64_t generation=0;
 	constexpr bool operator < (const TIMER_EVENT& L) const
 	{
 		return (wakeup_time > L.wakeup_time);
@@ -216,9 +218,12 @@ void wakeUpMonster(int monId, int playerId) {
 	//cout << "montser 깨워지냐 " << endl;
 	auto it = clients.find(monId);
 	std::shared_ptr<GAMESESSION> monster = it->second;
+    std::lock_guard<std::recursive_mutex> lifeGuard(monster->monster.combatMutex);
+    if (monster->monster._isDie) return;
 
 	OVER_EXP* exover = new OVER_EXP;
 	exover->_compType = OP_PLAYER_MOVE;
+    exover->generation=monster->monster.generation.load();
 	exover->_playerId = playerId;
 
 	PostQueuedCompletionStatus(g_hiocp, 1, monId, &exover->_over);
@@ -229,7 +234,7 @@ void wakeUpMonster(int monId, int playerId) {
 			return;
 		}
 		std::lock_guard<std::mutex> guard(timerLocks[idx]);
-		timerQueues[idx].emplace(TIMER_EVENT{ monId, chrono::high_resolution_clock::now() + 1s, EV_RANDOM_MOVE, 0 });
+		timerQueues[idx].emplace(TIMER_EVENT{ monId, chrono::steady_clock::now() + 1s, EV_RANDOM_MOVE, 0 , monster->monster.generation.load() });
 		//cout << " 큐 등록 끝 " << endl;
 	}
 }
@@ -404,13 +409,14 @@ bool monsterInit(int count)
 
 void doTimer(int timerIdx) {
 	using namespace chrono;
+    auto nextWorldTick=steady_clock::now();
 	do {
 		do {
 			std::lock_guard<std::mutex> lock(timerLocks[timerIdx]);
 			if (timerQueues[timerIdx].empty()) break;
 
 			auto& k = timerQueues[timerIdx].top();	// top에서 꺼냈는데, 
-			if (k.wakeup_time > high_resolution_clock::now()) {	// 걔가 아직 시간이 안됐으면..
+			if (k.wakeup_time > steady_clock::now()) {	// 걔가 아직 시간이 안됐으면..
 				break;
 			}
 
@@ -420,7 +426,7 @@ void doTimer(int timerIdx) {
 				if (npc_it != clients.end()) {
 					std::shared_ptr<GAMESESSION> npc = npc_it->second;
 					//std::lock_guard<std::mutex> lock(timer_locks[idx]);
-					if (npc->monster._isActive == false) {
+					if (!respawn_policy::accepts(k.generation,npc->monster.generation.load(),npc->monster._isDie.load()) || npc->monster._isActive == false) {
 						timerQueues[timerIdx].pop(); // 그냥 버림
 						continue;
 					}
@@ -431,6 +437,7 @@ void doTimer(int timerIdx) {
 			switch (k.event_id) {			// 시간이됐다면,여기로넘어왔을테니..
 			case EV_RANDOM_MOVE: {
 				OVER_EXP* o = new OVER_EXP;
+                o->generation=k.generation;
 				o->_compType = OP_MONSTER_MOVE;	// npc움직였다고 해주기
 				PostQueuedCompletionStatus(g_hiocp, 1, k.obj_id, &o->_over);
 				// 이거 처리해줘~라고 직접!!이벤트 던지는 함수임 
@@ -438,6 +445,7 @@ void doTimer(int timerIdx) {
 			}
 			case EV_RUN: {
 				OVER_EXP* ov = new OVER_EXP;
+                ov->generation=k.generation;
 				ov->_compType = OP_NPC_RUN;
 				ov->_playerId = k.target_id;
 				PostQueuedCompletionStatus(g_hiocp, 1, k.obj_id, &ov->_over);
@@ -446,6 +454,7 @@ void doTimer(int timerIdx) {
 			case EV_CHASE: {
 				cout << "ev_chase도착" << endl;
 				OVER_EXP* ov = new OVER_EXP;
+                ov->generation=k.generation;
 				ov->_compType = OP_MONSTER_CHASE;	
 				ov->_playerId = k.target_id;
 				PostQueuedCompletionStatus(g_hiocp, 1, k.obj_id, &ov->_over);
@@ -455,7 +464,12 @@ void doTimer(int timerIdx) {
 			timerQueues[timerIdx].pop();			// 이벤트 처리했으면 큐에서 제거..
 
 		} while (true);
-		this_thread::sleep_for(chrono::milliseconds(10));	// 할수있는건 다 처리하고, 10ms마다 쉰다..
+		        if (timerIdx == 0 && steady_clock::now() >= nextWorldTick) {
+            nextWorldTick=steady_clock::now()+1s;
+            auto tick=new OVER_EXP; tick->_compType=OP_WORLD_TICK;
+            if (!PostQueuedCompletionStatus(g_hiocp,1,0,&tick->_over)) delete tick;
+        }
+        this_thread::sleep_for(chrono::milliseconds(10));	// 할수있는건 다 처리하고, 10ms마다 쉰다..
 	} while (true);
 }
 
@@ -721,16 +735,14 @@ void processPacket(int sessionId, char* packetFromC) {
 		//cout << "주변 몬스터 수 : " << targets.size() << endl;
         if (targets.empty()) { session->sendAttackFeedback(AttackFeedback::NoTarget); break; }
 		for (auto& target : targets) {
-            std::lock_guard<std::mutex> healthGuard(target->monster.combatMutex);
+            std::lock_guard<std::recursive_mutex> healthGuard(target->monster.combatMutex);
             if (session->object._seedNum <= 0) break;
             const auto hit=combat_rules::apply(target->object._hp,session->object._seedNum,session->object._damage);
             if (!hit.applied) continue;
             auto audience=target->getNearBySessions();
             audience.insert(sessionId);
             if (hit.died) {
-                target->monster._isDie=true;
-                target->monster._isActive=false;
-                target->monster._isMonsterChase=false;
+                markMonsterDead(target->monster,respawn_policy::now());
             }
             for (int viewerId : audience) {
                 if (!isPlayer(viewerId)) continue;
@@ -767,7 +779,7 @@ void processPacket(int sessionId, char* packetFromC) {
 					int idx = target->object._id % TIMER_THREAD_COUNT;
 					std::lock_guard<std::mutex> guard(timerLocks[idx]);
 					timerQueues[idx].emplace(TIMER_EVENT{ target->object._id,
-						chrono::high_resolution_clock::now() + 100ms, EV_CHASE, session->object._id });
+						chrono::steady_clock::now() + 100ms, EV_CHASE, session->object._id , target->monster.generation.load() });
 				}
 			}
 		}
@@ -813,6 +825,40 @@ void processPacket(int sessionId, char* packetFromC) {
 	}
 }
 
+void serviceRespawns() {
+    static std::mutex serviceMutex;
+    std::lock_guard<std::mutex> serviceGuard(serviceMutex);
+    const auto now=respawn_policy::now();
+    for(auto seed : restoreSeeds(now)) {
+        GAMESESSION anchor;
+        anchor.object._x=static_cast<short>(seed.x); anchor.object._y=static_cast<short>(seed.y);
+        for(int viewerId : anchor.getNearBySessions()) {
+            if(!isPlayer(viewerId)) continue;
+            auto viewer=clients.find(viewerId);
+            if(viewer != clients.end() && viewer->second && viewer->second->_state == ST_INGAME)
+                viewer->second->sendMapInfo(viewerId,viewer->second->object._x,viewer->second->object._y);
+        }
+    }
+    for(std::size_t i=0;i<field_content::monsters.size();++i) {
+        auto it=clients.find(MAX_USER+static_cast<int>(i));
+        if(it == clients.end() || !it->second) continue;
+        auto monster=it->second;
+        std::lock_guard<std::recursive_mutex> lifeGuard(monster->monster.combatMutex);
+        const short oldX=monster->object._x,oldY=monster->object._y;
+        if(!reviveMonster(monster->object,monster->monster,now)) continue;
+        monster->updateSector(oldX,oldY);
+        { std::lock_guard<std::mutex> viewGuard(monster->_vlL); monster->_viewList.clear(); }
+        for(int viewerId : monster->getNearBySessions()) {
+            if(!isPlayer(viewerId)) continue;
+            auto viewer=clients.find(viewerId);
+            if(viewer == clients.end() || !viewer->second || viewer->second->_state != ST_INGAME) continue;
+            viewer->second->sendAddPlayerPacket(monster->object._id);
+            wakeUpMonster(monster->object._id,viewerId);
+        }
+        std::cout << "[WORLD] Monster respawn id=" << monster->object._id << " generation=" << monster->monster.generation.load() << std::endl;
+    }
+}
+
 void workerThread(HANDLE iocp) {
 	while (true) {
 		DWORD numBytes;
@@ -843,7 +889,22 @@ void workerThread(HANDLE iocp) {
 			continue;
 		}
 
+        std::shared_ptr<GAMESESSION> aiOwner;
+        std::unique_lock<std::recursive_mutex> aiGuard;
+        if(overEx->_compType == OP_MONSTER_MOVE || overEx->_compType == OP_MONSTER_CHASE ||
+           overEx->_compType == OP_PLAYER_MOVE || overEx->_compType == OP_NPC_RUN) {
+            auto it=clients.find(static_cast<int>(key));
+            if(it == clients.end() || !it->second) { delete overEx; continue; }
+            aiOwner=it->second;
+            aiGuard=std::unique_lock<std::recursive_mutex>(aiOwner->monster.combatMutex);
+            if(!respawn_policy::accepts(overEx->generation,aiOwner->monster.generation.load(),aiOwner->monster._isDie.load())) {
+                delete overEx; continue;
+            }
+        }
 		switch (overEx->_compType) {
+        case OP_WORLD_TICK: { serviceRespawns(); delete overEx; break; }
+        case OP_NPC_RUN: { delete overEx; break; } // Reserved event has no behavior yet.
+
 		case OP_ACCEPT:
 		{
 			int clientId = getNewPlayerId();
@@ -1027,7 +1088,7 @@ void workerThread(HANDLE iocp) {
 				doMonsterRandomMoving(monsterId);	// 그 키 가진 npc 랜덤으로 움직이게 만들기
 				int idx = monsterId % TIMER_THREAD_COUNT;
 				std::lock_guard<std::mutex> guard(timerLocks[idx]);
-				timerQueues[idx].emplace(TIMER_EVENT{ monsterId, high_resolution_clock::now() + 1s, EV_RANDOM_MOVE, 0 });
+				timerQueues[idx].emplace(TIMER_EVENT{ monsterId, steady_clock::now() + 1s, EV_RANDOM_MOVE, 0 , monster->monster.generation.load() });
 			}
 			delete overEx;
 			break;
@@ -1073,16 +1134,16 @@ void workerThread(HANDLE iocp) {
 
 					int idx = monster->object._id % TIMER_THREAD_COUNT;
 					std::lock_guard<std::mutex> guard(timerLocks[idx]);
-					timerQueues[idx].emplace(TIMER_EVENT{ monster->object._id, chrono::high_resolution_clock::now() + 1s
-						, EV_CHASE, targetPlayerId });
+					timerQueues[idx].emplace(TIMER_EVENT{ monster->object._id, chrono::steady_clock::now() + 1s
+						, EV_CHASE, targetPlayerId , monster->monster.generation.load() });
 				}
 			}
 			else if (not isMonSee(monster->object._id, targetPlayerId)) {
 				//cout << " 시야에서 사라져서 쫓아가기 중단.. " << endl;
 				monster->monster._isMonsterChase = false;
 				int idx = monster->object._id % TIMER_THREAD_COUNT;
-				timerQueues[idx].emplace(TIMER_EVENT{ monster->object._id, chrono::high_resolution_clock::now() + 1s
-					, EV_RANDOM_MOVE, 0 });
+				timerQueues[idx].emplace(TIMER_EVENT{ monster->object._id, chrono::steady_clock::now() + 1s
+					, EV_RANDOM_MOVE, 0 , monster->monster.generation.load() });
 			}
             delete overEx;
 			break;

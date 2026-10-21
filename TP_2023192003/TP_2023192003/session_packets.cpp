@@ -52,7 +52,7 @@ void GAMESESSION::sendAddPlayerPacket(int sessionId) {
 	if (it == clients.end() || !it->second) return;
 	std::shared_ptr<GAMESESSION> user = it->second;
 
-    std::lock_guard<std::mutex> stats(user->monster.combatMutex);
+    std::lock_guard<std::recursive_mutex> stats(user->monster.combatMutex);
     if (user->monster._isDie) return;
 	sc_packet_enter p{};
 	p.id = sessionId;
