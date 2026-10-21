@@ -18,6 +18,8 @@ void GAMESESSION::sendSessionLoginPacket() {
 	p.max_hp = object._maxHp;
 	p.seedNum = object._seedNum;
 	p.fur_color = object._furColor;
+	p.eye_style = object._eyeStyle;
+	p.scarf_style = object._scarfStyle;
 	registerSend(&p);
 }
 
@@ -57,6 +59,8 @@ void GAMESESSION::sendAddPlayerPacket(int sessionId) {
 	p.type = S2C_P_ENTER;
 	p.monType = user->monster._monType;
 	p.fur_color = user->object._furColor;
+	p.eye_style = user->object._eyeStyle;
+	p.scarf_style = user->object._scarfStyle;
 	p.x = user->object._x;
 	p.y = user->object._y;
 	_vlL.lock();

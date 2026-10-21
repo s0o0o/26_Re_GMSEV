@@ -149,6 +149,13 @@
   </ItemGroup>
   <ItemGroup>
     <Image Include="chess2.png" />
+    <Image Include="assets\appearance\body-eyeless.png" />
+    <Image Include="assets\appearance\eyes-classic.png" />
+    <Image Include="assets\appearance\eyes-round.png" />
+    <Image Include="assets\appearance\eyes-sleepy.png" />
+    <Image Include="assets\appearance\scarf-none.png" />
+    <Image Include="assets\appearance\scarf-red.png" />
+    <Image Include="assets\appearance\scarf-blue.png" />
     <Image Include="chessmap.bmp" />
   </ItemGroup>
   <ItemGroup>

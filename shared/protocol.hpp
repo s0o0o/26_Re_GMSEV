@@ -60,6 +60,7 @@ struct sc_packet_avatar_info {
 	std::int32_t exp;
 	std::int32_t seedNum;
 	std::uint8_t fur_color;
+	std::uint8_t eye_style, scarf_style;
 };
 
 struct sc_packet_avatar_login_ok {
@@ -84,6 +85,7 @@ struct sc_packet_enter {
 	std::int32_t monType;
 	std::int16_t x, y;
 	std::uint8_t fur_color;
+	std::uint8_t eye_style, scarf_style;
 };
 
 struct sc_packet_leave {
@@ -159,6 +161,7 @@ struct cs_packet_login {
 	char name[MAX_ID_LENGTH];
 	std::int32_t inputId;
 	std::uint8_t fur_color;
+	std::uint8_t eye_style, scarf_style;
 };
 
 struct cs_packet_move {
