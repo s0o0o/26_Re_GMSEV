@@ -32,6 +32,7 @@
     <ClInclude Include="server_config.hpp" />
     <ClInclude Include="startup_config.hpp" />
     <ClInclude Include="..\..\shared\clubhouse_map.hpp" />
+    <ClInclude Include="..\..\shared\world_layout.hpp" />
     <ClInclude Include="..\..\shared\appearance.hpp" />
     <ClInclude Include="..\..\shared\login_input.hpp" />
     <ClInclude Include="iocp_operation.hpp" />

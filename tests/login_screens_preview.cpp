@@ -22,6 +22,7 @@ int main() {
     assert(hamsterCustomizer().load("assets/characters"));
     assert(hamsterCustomizer().setBackdrop(*startMainTx));
     assert(clubhouseRenderer().load("assets/maps/clubhouse-sheet.png"));
+    assert(clubhouseRenderer().loadOutdoor("assets/maps/sunny-peak-sheet.png"));
     std::cout << "Backdrop prepared" << std::endl;
     sf::RenderTexture frame;
     assert(frame.create(900,800));
@@ -33,6 +34,15 @@ int main() {
     frame.draw(resident);
     frame.display();
     assert(frame.getTexture().copyToImage().saveToFile((root / "build/tests/clubhouse-map.png").string()));
+    frame.clear();
+    const int outsideX=world_layout::fieldX+10,outsideY=10;
+    const int outsideLeft=world_layout::cameraX(outsideX),outsideTop=world_layout::cameraY(outsideY);
+    clubhouseRenderer().draw(frame,outsideLeft,outsideTop);
+    resident.setPosition((outsideX-outsideLeft)*50.f+25,(outsideY-outsideTop)*50.f+45);
+    frame.draw(resident);
+    clubhouseRenderer().drawLabel(frame,gameFont(),outsideX);
+    frame.display();
+    assert(frame.getTexture().copyToImage().saveToFile((root / "build/tests/sunny-peak-map.png").string()));
     id_input = 321;
     inputNickname = sf::String(L"\uD584\uCC0C");
     inputAccountId = "321";
@@ -135,7 +145,15 @@ int main() {
         assert(peer.send(reply.data()+offset,reply.size()-offset) == sf::Socket::Done);
         waitForReply();
         assert(loginFlow.stage() == GAMESTATE::GameScreen);
-        assert(g_myid == 1 && g_left_x == 10-SCREEN_WIDTH/2 && g_top_y == 20-SCREEN_HEIGHT/2);
+        assert(g_myid == 1 && g_left_x == world_layout::cameraX(10) && g_top_y == world_layout::cameraY(20));
+        sc_packet_move move{};
+        move.size=sizeof(move); move.type=S2C_P_MOVE; move.id=1;
+        move.x=42; move.y=10;
+        process_data(reinterpret_cast<char*>(&move),sizeof(move));
+        assert(avatar.m_x == 42 && avatar.m_y == 10 && g_left_x == world_layout::cameraX(42));
+        move.x=10; move.y=14;
+        process_data(reinterpret_cast<char*>(&move),sizeof(move));
+        assert(avatar.m_x == 10 && avatar.m_y == 14 && g_left_x == world_layout::cameraX(10));
     }
     {
         sf::TcpSocket peer;
