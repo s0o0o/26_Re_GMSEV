@@ -39,6 +39,7 @@
     <ClInclude Include="session_registry.hpp" />
     <ClInclude Include="pathfinder.hpp" />
     <ClInclude Include="game_database.hpp" />
+    <ClInclude Include="database_write.hpp" />
     <ClInclude Include="world_map.hpp" />
   </ItemGroup>
   <ItemGroup>
