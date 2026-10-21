@@ -12,6 +12,8 @@ using namespace std;
 
 #include "..\..\shared\protocol.hpp"
 #include "..\..\shared\login_input.hpp"
+#include "hamster_customizer.hpp"
+HamsterCustomizer hamsterCustomizer;
 
 sf::TcpSocket s_socket;
 
@@ -291,6 +293,7 @@ void client_initialize()
 	white_tile = OBJECT{ *board, 0, 0, TILE_WIDTH, TILE_WIDTH };
 	black_tile = OBJECT{ *board, 50, 0, TILE_WIDTH, TILE_WIDTH };
 	avatar = OBJECT{ *myHam, userTextureWidth, 0, userTextureWidth, userTextureHeight };
+    avatar.get_sprite().setTexture(hamsterCustomizer.texture(hamsterCustomizer.selected()));
 
 	// 프로필
 	profileSprite.setPosition(0 + 15, WINDOW_HEIGHT - profileHeight - 15);
@@ -317,6 +320,7 @@ void ProcessPacket(char* ptr)
 		sc_packet_avatar_info* packet = reinterpret_cast<sc_packet_avatar_info*>(ptr);
 		g_myid = packet->id;
 		avatar.id = g_myid;
+        avatar.get_sprite().setTexture(hamsterCustomizer.texture(packet->fur_color));
 
 		avatar._hp = packet->hp;
 		hpText.setString(to_string(avatar._hp));
@@ -349,6 +353,7 @@ void ProcessPacket(char* ptr)
 		else if (id < MAX_USER) {
 			players[id] = OBJECT{ *myHam, userTextureWidth, 0, userTextureHeight, userTextureHeight };
 			players[id]._monType = my_packet->monType;
+            players[id].get_sprite().setTexture(hamsterCustomizer.texture(my_packet->fur_color));
 			players[id].id = id;
 			players[id].move(my_packet->x, my_packet->y);
 			players[id].set_name(my_packet->name);
@@ -745,6 +750,7 @@ void send_packet(void* packet)
 
 void drawStartScreen(sf::RenderWindow& window, const sf::String& nickname) {
 	window.draw(startBgSprite);
+    hamsterCustomizer.draw(window, g_font);
 
 	// 실시간 ID 입력 표시
 	//g_font.loadFromFile("neodgm.ttf");
@@ -800,6 +806,7 @@ int main()
 	sf::RenderWindow window(sf::VideoMode(WINDOW_WIDTH, WINDOW_HEIGHT), "HAMSTER RPG 2023192003 김연수");
 	g_window = &window;
 	initStartScreenInit();
+    if (!hamsterCustomizer.load("character.png")) { std::cerr << "Character texture loading failed" << std::endl; return -1; }
 	chatInit();
 	lodMapTexture();
 
@@ -812,6 +819,7 @@ int main()
 				window.close();
 
 			if (gameState == GAMESTATE::startScreen) {
+                hamsterCustomizer.handleEvent(event, window);
 				if (event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::Escape) choosingNickname = false;
 				if (event.type == sf::Event::TextEntered && !choosingNickname) {
                     if (event.text.unicode == '\b' && !inputAccountId.isEmpty()) inputAccountId.erase(inputAccountId.getSize() - 1);
@@ -844,6 +852,7 @@ int main()
 						p.size = sizeof(p);
 						p.type = C2S_P_LOGIN;
 						p.inputId = id_input;
+                        p.fur_color = hamsterCustomizer.selected();
 
 						strncpy_s(p.name, nicknameUtf8.c_str(), MAX_ID_LENGTH - 1);
 						send_packet(&p);

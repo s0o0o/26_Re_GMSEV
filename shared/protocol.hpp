@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <limits>
 #include <type_traits>
+#include "appearance.hpp"
 
 using ObjectId = std::int32_t;
 
@@ -58,6 +59,7 @@ struct sc_packet_avatar_info {
 	std::int16_t level;
 	std::int32_t exp;
 	std::int32_t seedNum;
+	std::uint8_t fur_color;
 };
 
 struct sc_packet_avatar_login_ok {
@@ -81,6 +83,7 @@ struct sc_packet_enter {
 	char name[MAX_ID_LENGTH];
 	std::int32_t monType;
 	std::int16_t x, y;
+	std::uint8_t fur_color;
 };
 
 struct sc_packet_leave {
@@ -155,6 +158,7 @@ struct cs_packet_login {
 	std::uint8_t type;
 	char name[MAX_ID_LENGTH];
 	std::int32_t inputId;
+	std::uint8_t fur_color;
 };
 
 struct cs_packet_move {

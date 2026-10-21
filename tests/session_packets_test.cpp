@@ -23,6 +23,17 @@ int main() {
     assert(sent.empty());
 
     clients[123] = std::make_shared<GAMESESSION>();
+    clients[123]->object._furColor = 3;
+    receiver.sendAddPlayerPacket(123);
+    sc_packet_enter entered{};
+    std::memcpy(&entered, sent.back().data(), sizeof(entered));
+    assert(entered.fur_color == 3);
+    receiver.object._furColor = 4;
+    receiver.sendSessionLoginPacket();
+    sc_packet_avatar_info avatar{};
+    std::memcpy(&avatar, sent.back().data(), sizeof(avatar));
+    assert(avatar.fur_color == 4);
+    assert(validFurColor(0) && validFurColor(4) && !validFurColor(5) && !validFurColor(255));
     receiver.sendMovePacket(123, 9876);
     sc_packet_move move{};
     std::memcpy(&move, sent.back().data(), sizeof(move));
