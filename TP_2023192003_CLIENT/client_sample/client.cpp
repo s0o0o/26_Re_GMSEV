@@ -17,6 +17,9 @@ using namespace std;
 #include "login_flow.hpp"
 #include "loading_screen.hpp"
 #include "clubhouse_renderer.hpp"
+#include "combat_hud.hpp"
+CombatHud& combatHud() { static CombatHud value; return value; }
+sf::Clock combatClock;
 ClubhouseRenderer& clubhouseRenderer() { static ClubhouseRenderer value; return value; }
 HamsterCustomizer& hamsterCustomizer() {
     static HamsterCustomizer instance;
@@ -371,7 +374,7 @@ void ProcessPacket(char* ptr)
 		cout << "sc_packet_enter : " << id << endl;
 
 		if (id == g_myid) {
-			if (world_layout::outdoors(avatar.m_x) != world_layout::outdoors(my_packet->x)) memset(clientMapData,0,sizeof(clientMapData));
+			if (world_layout::outdoors(avatar.m_x) != world_layout::outdoors(my_packet->x)) { memset(clientMapData,0,sizeof(clientMapData)); combatHud().clear(); }
             avatar.move(my_packet->x, my_packet->y);
 			g_left_x = world_layout::cameraX(my_packet->x);
 			g_top_y = world_layout::cameraY(my_packet->y);
@@ -389,6 +392,7 @@ void ProcessPacket(char* ptr)
 		}
 		else {
 			players[id]._monType = my_packet->monType;
+            combatHud().enter(id,my_packet->hp,my_packet->max_hp);
 			if (players[id]._monType == 1)
 				players[id] = OBJECT{ *monHamster, monTextureWidth, 0, monTextureWidth, monTextureWidth }; // 몬스터용
 			else if (players[id]._monType == 2)
@@ -406,13 +410,14 @@ void ProcessPacket(char* ptr)
 		sc_packet_move* my_packet = reinterpret_cast<sc_packet_move*>(ptr);
 		int other_id = my_packet->id;
 		if (other_id == g_myid) {
-			if (world_layout::outdoors(avatar.m_x) != world_layout::outdoors(my_packet->x)) memset(clientMapData,0,sizeof(clientMapData));
+			if (world_layout::outdoors(avatar.m_x) != world_layout::outdoors(my_packet->x)) { memset(clientMapData,0,sizeof(clientMapData)); combatHud().clear(); }
             avatar.move(my_packet->x, my_packet->y);
 			g_left_x = world_layout::cameraX(my_packet->x);
 			g_top_y = world_layout::cameraY(my_packet->y);
 		}
 		else {
-			players[other_id].move(my_packet->x, my_packet->y);
+			auto moving=players.find(other_id);
+            if (moving != players.end()) moving->second.move(my_packet->x,my_packet->y);
 		}
 		break;
 	}
@@ -425,7 +430,7 @@ void ProcessPacket(char* ptr)
 			avatar.hide();
 		}
 		else {
-			players.erase(other_id);
+			players.erase(other_id); combatHud().leave(other_id);
 		}
 		break;
 	}
@@ -456,49 +461,50 @@ void ProcessPacket(char* ptr)
 		failLogin("Login rejected. Retry or go back to edit your ID.");
 		break;
 	}
-	case S2C_P_ATTACK_PtoN:
-	{
-		sc_packet_attack_success* p = reinterpret_cast<sc_packet_attack_success*>(ptr);
-
-		int monsterId = p->targetId;
-		int monsterHp = p->targetHp;
-
-		avatar._seedNum = p->seedNum;
-		seedNumText.setString(to_string(avatar._seedNum));
-		isAttackAnim = true;
-		uiTime = chrono::system_clock::now() + chrono::milliseconds(450);
-		break;
-	}
-	case S2C_P_MONSTER_DIE:
-	{
-		cout << " 몬스터 죽음" << endl;
-		sc_packet_monster_die* p = reinterpret_cast<sc_packet_monster_die*>(ptr);
-		int id = p->id;
-		isKill = true;
-		killTime = chrono::system_clock::now() + chrono::milliseconds(400);
-		players.erase(id);
-		break;
-	}
-	case S2C_P_MONSTER_NEAR:
-	{
-		sc_packet_monster_near* p = reinterpret_cast<sc_packet_monster_near*>(ptr);
-
-		*nearMonsters = *p->monsters;
-		nearMonCnt = p->monCount;
-
-		for (int i = 0; i < p->monCount; ++i) {
-			nearMonsters[i].monId = p->monsters[i].monId;
-			nearMonsters[i].monHp = p->monsters[i].monHp;
-			nearMonsters[i].monType = p->monsters[i].monType;
-			//cout << "nearMonster정보 [" << nearMonsters[i].monId << "]/hp:" << nearMonsters[i].monHp
-			//	<< ", type:" << nearMonsters[i].monType << endl;
-
-			monHpText[i].setString(to_string(nearMonsters[i].monHp));
-			monIdText[i].setString(to_string(nearMonsters[i].monId));
-		}
-
-		break;
-	}
+    case S2C_P_ATTACK_FEEDBACK: {
+        auto p=reinterpret_cast<sc_packet_attack_feedback*>(ptr);
+        combatHud().feedback(static_cast<AttackFeedback>(p->reason),combatClock.getElapsedTime().asSeconds());
+        break;
+    }
+    case S2C_P_ATTACK_PtoN: {
+        auto p=reinterpret_cast<sc_packet_attack_success*>(ptr);
+        combatHud().hit(p->targetId,p->targetHp,combatClock.getElapsedTime().asSeconds());
+        for(int i=0;i<nearMonCnt;++i) if(nearMonsters[i].monId == p->targetId) {
+            nearMonsters[i].monHp=p->targetHp; monHpText[i].setString(to_string(p->targetHp));
+        }
+        if(p->attackerId == g_myid) {
+            avatar._seedNum=p->seedNum; seedNumText.setString(to_string(avatar._seedNum));
+            isAttackAnim=true; uiTime=chrono::system_clock::now()+chrono::milliseconds(450);
+            if(p->targetHp == 0) { isKill=true; killTime=chrono::system_clock::now()+chrono::milliseconds(400); }
+        }
+        break;
+    }
+    case S2C_P_MONSTER_DIE: {
+        auto p=reinterpret_cast<sc_packet_monster_die*>(ptr);
+        players.erase(p->id); combatHud().leave(p->id);
+                for(int i=0;i<nearMonCnt;++i) if(nearMonsters[i].monId == p->id) {
+            for(int j=i;j+1<nearMonCnt;++j) nearMonsters[j]=nearMonsters[j+1];
+            --nearMonCnt;
+            break;
+        }
+        for(int i=0;i<nearMonCnt;++i) {
+            monHpText[i].setString(to_string(nearMonsters[i].monHp));
+            monIdText[i].setString(to_string(nearMonsters[i].monId));
+        }
+        break;
+    }
+    case S2C_P_MONSTER_NEAR: {
+        auto p=reinterpret_cast<sc_packet_monster_near*>(ptr);
+        nearMonCnt=0;
+        for(int i=0;i<p->monCount;++i) {
+            if(p->monsters[i].monHp <= 0) continue;
+            nearMonsters[nearMonCnt]=p->monsters[i];
+            monHpText[nearMonCnt].setString(to_string(p->monsters[i].monHp));
+            monIdText[nearMonCnt].setString(to_string(p->monsters[i].monId));
+            ++nearMonCnt;
+        }
+        break;
+    }
 	case S2C_P_MAPINFO:
 	{
 		//cout << "S2C_P_MAPINFO 날라옴 " << endl;
@@ -668,7 +674,12 @@ void client_main()
     clubhouseRenderer().drawPickups(*g_window,&clientMapData[0][0],SCREEN_WIDTH,SCREEN_HEIGHT);
 	temp = false;
 	avatar.draw();
-	for (auto& pl : players) pl.second.draw();
+	    for (auto& pl : players) {
+        pl.second.draw();
+        if(pl.first >= MAX_USER) combatHud().drawMonster(*g_window,gameFont(),pl.first,
+            (pl.second.m_x-g_left_x)*50.f+1,(pl.second.m_y-g_top_y)*50.f+1,combatClock.getElapsedTime().asSeconds());
+    }
+    combatHud().drawMessage(*g_window,gameFont(),combatClock.getElapsedTime().asSeconds());
     clubhouseRenderer().drawLabel(*g_window,gameFont(),avatar.m_x);
 	sf::Text text;
 	text.setFont(gameFont());

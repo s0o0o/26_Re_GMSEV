@@ -52,7 +52,11 @@ cl /nologo /EHsc /std:c++17 tests\clubhouse_map_test.cpp TP_2023192003\TP_202319
 if not "%errorlevel%"=="0" goto failed
 build\tests\clubhouse_map_test.exe
 if not "%errorlevel%"=="0" goto failed
-echo All 11 regression programs passed.
+cl /nologo /EHsc /std:c++17 tests\combat_rules_test.cpp /Fo:build\tests\ /Fe:build\tests\combat_rules_test.exe
+if not "%errorlevel%"=="0" goto failed
+build\tests\combat_rules_test.exe
+if not "%errorlevel%"=="0" goto failed
+echo All 12 regression programs passed.
 popd
 exit /b 0
 :failed

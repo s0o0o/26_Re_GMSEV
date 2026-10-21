@@ -692,6 +692,11 @@ void processPacket(int sessionId, char* packetFromC) {
 	break;
 	case C2S_P_ATTACK:
 	{
+        static std::mutex attackMutex;
+        std::lock_guard<std::mutex> attackGuard(attackMutex);
+        if (session->_state != ST_INGAME) break;
+        if (!world_layout::outdoors(session->object._x)) { session->sendAttackFeedback(AttackFeedback::SafeZone); break; }
+        if (session->object._seedNum <= 0) { session->sendAttackFeedback(AttackFeedback::NoSeeds); break; }
 		cout << "seed : " << session->object._seedNum << endl;
 		unordered_set<int> viewList = session->getNearBySessions();
 		vector<shared_ptr<GAMESESSION>> targets;
@@ -714,20 +719,40 @@ void processPacket(int sessionId, char* packetFromC) {
 		}
 
 		//cout << "주변 몬스터 수 : " << targets.size() << endl;
+        if (targets.empty()) { session->sendAttackFeedback(AttackFeedback::NoTarget); break; }
 		for (auto& target : targets) {
+            std::lock_guard<std::mutex> healthGuard(target->monster.combatMutex);
             if (session->object._seedNum <= 0) break;
-			target->object._hp -= session->object._damage;	// 데미지 깎고..
-			session->object._seedNum--;				// seed 갯수 줄이기
+            const auto hit=combat_rules::apply(target->object._hp,session->object._seedNum,session->object._damage);
+            if (!hit.applied) continue;
+            auto audience=target->getNearBySessions();
+            audience.insert(sessionId);
+            if (hit.died) {
+                target->monster._isDie=true;
+                target->monster._isActive=false;
+                target->monster._isMonsterChase=false;
+            }
+            for (int viewerId : audience) {
+                if (!isPlayer(viewerId)) continue;
+                const auto viewer=clients.find(viewerId);
+                if (viewer == clients.end() || !viewer->second || viewer->second->_state != ST_INGAME) continue;
+                viewer->second->sendCombatUpdate(sessionId,session->object._seedNum,target->object._id,target->object._hp);
+                if (hit.died) {
+                    viewer->second->sendMonsterDiePacket(target->object._id);
+                    std::lock_guard<std::mutex> visibleGuard(viewer->second->_vlL);
+                    viewer->second->_viewList.erase(target->object._id);
+                }
+            }
 			if (target->object._hp <= 0) {
 				cout << target->object._id << " 사망 " << endl;
 				target->object._hp = 0;
 				target->monster._isDie = true;
 				target->monster._isActive = false;
-				session->sendMonsterDiePacket(target->object._id);
-				session->sendAttackPacket_PtoN(target->object._id, target->object._hp);
+
+
 			}
 			else {
-				session->sendAttackPacket_PtoN(target->object._id, target->object._hp);
+
 				auto path = findPathAStar(target->object._x, target->object._y, session->object._x, session->object._y);
 				if (!path.empty() && path.size() > 1) {
 					// path[0] = 현재 위치, path[1] = 다음 목적지
@@ -750,6 +775,7 @@ void processPacket(int sessionId, char* packetFromC) {
 		int tempCnt = 0;
 		const int cnt = static_cast<int>(targets.size());
 		nearMonsterInfo nearMons[MAX_NEAR_MONSTERS]{};
+
 		for (auto& target : targets) {
 			nearMons[tempCnt].monHp = target->object._hp;
 			nearMons[tempCnt].monId = target->object._id;

@@ -63,6 +63,24 @@ int main() {
     assert(sent.size() == 2);
     receiver.sendAttackPacket_NtoP(999);
     assert(sent.size() == 2);
+    sent.clear();
+    receiver.sendCombatUpdate(23,7,MAX_USER,2);
+    sc_packet_attack_success combat{};
+    std::memcpy(&combat,sent.back().data(),sizeof(combat));
+    assert(combat.attackerId == 23 && combat.seedNum == 7 && combat.targetId == MAX_USER && combat.targetHp == 2);
+    receiver.sendAttackFeedback(AttackFeedback::NoSeeds);
+    assert(is_valid_server_packet(reinterpret_cast<const std::uint8_t*>(sent.back().data()),sent.back().size()));
+    sent.back()[2]=static_cast<char>(255);
+    assert(!is_valid_server_packet(reinterpret_cast<const std::uint8_t*>(sent.back().data()),sent.back().size()));
+    clients[MAX_USER]=std::make_shared<GAMESESSION>();
+    clients[MAX_USER]->object._hp=2; clients[MAX_USER]->object._maxHp=5;
+    receiver.sendAddPlayerPacket(MAX_USER);
+    std::memcpy(&entered,sent.back().data(),sizeof(entered));
+    assert(entered.hp == 2 && entered.max_hp == 5);
+    const auto beforeDead=sent.size();
+    clients[MAX_USER]->monster._isDie=true;
+    receiver.sendAddPlayerPacket(MAX_USER);
+    assert(sent.size() == beforeDead);
 
     sent.clear();
     receiver.sendMonsterNearPacket(nullptr, 1);
