@@ -135,6 +135,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="NetworkModule.h" />
+    <ClInclude Include="load_test_config.hpp" />
     <ClInclude Include="..\..\shared\protocol.hpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

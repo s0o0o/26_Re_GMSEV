@@ -140,6 +140,11 @@ int DrawGLScene(GLvoid)									// Here's Where We Do All The Drawing
 	glPrint("STRESS TEST [%d]", (int)active_clients);	// Print GL Text To The Screen
 	glRasterPos2f(0.0f, 0.05f);
 	glPrint("Delay : %dms", global_delay.load());
+    const auto stats = GetLoadTestStats();
+    glRasterPos2f(-0.8f, 0.10f);
+    glPrint("Attempts %d/%d | Login OK %d | Rejected %d", stats.attempts, stats.limit, stats.accepted, stats.rejected);
+    glRasterPos2f(-0.8f, 0.15f);
+    glPrint("Closed sockets %d | Transport errors %d", stats.closed, stats.errors);
 
 	glColor3f(1, 1, 1);
 

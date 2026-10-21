@@ -13,6 +13,9 @@
 #include <queue>
 #include <array>
 #include <memory>
+#include <cstdlib>
+#include "NetworkModule.h"
+#include "load_test_config.hpp"
 
 using namespace std;
 using namespace chrono;
@@ -62,6 +65,13 @@ array<CLIENT, MAX_CLIENTS> g_clients;
 atomic_int num_connections;
 atomic_int client_to_close;
 atomic_int active_clients;
+atomic_int accepted_logins{0}, rejected_logins{0}, closed_sockets{0}, transport_errors{0};
+int attempt_limit = DEFAULT_LOAD_TEST_ATTEMPTS;
+
+LoadTestStats GetLoadTestStats() {
+    return {num_connections.load(), attempt_limit, accepted_logins.load(),
+        rejected_logins.load(), closed_sockets.load(), transport_errors.load()};
+}
 
 atomic_int global_delay{0};				// ms단위, 1000이 넘으면 클라이언트 증가 종료
 
@@ -98,7 +108,7 @@ void DisconnectClient(int ci)
 {
     if (ci < 0 || ci >= MAX_CLIENTS) return;
     if (g_clients[ci].connected.exchange(false)) --active_clients;
-    if (g_clients[ci].socketOpen.exchange(false)) closesocket(g_clients[ci].client_socket);
+    if (g_clients[ci].socketOpen.exchange(false)) { ++closed_sockets; closesocket(g_clients[ci].client_socket); }
 }
 
 // A handled completion must never be inspected again by the worker.
@@ -106,6 +116,7 @@ bool HandleFailedCompletion(BOOL ok, DWORD bytes, int ci, OverlappedEx* over)
 {
     if (!over) return true;
     if (ci < 0 || ci >= MAX_CLIENTS || !ok || bytes == 0) {
+        if (!ok) ++transport_errors;
         DisconnectClient(ci);
         if (over->event_type == OP_SEND || over->event_type == OP_DO_MOVE) delete over;
         return true;
@@ -128,6 +139,7 @@ void SendPacket(int cl, void* packet)
 		int err_no = WSAGetLastError();
 		if (WSA_IO_PENDING != err_no) {
             delete over;
+            ++transport_errors;
             DisconnectClient(cl);
         }
 	}
@@ -158,6 +170,7 @@ void ProcessPacket(int ci, unsigned char packet[])
 	}
 					   break;
 	case S2C_P_LOGIN_FAIL:
+        ++rejected_logins;
         std::cout << "[LOAD] Login rejected for client " << ci << std::endl;
         DisconnectClient(ci);
         break;
@@ -176,7 +189,7 @@ void ProcessPacket(int ci, unsigned char packet[])
 		sc_packet_avatar_info* login_packet = reinterpret_cast<sc_packet_avatar_info*>(packet);
 		if (login_packet->id < 0 || login_packet->id >= MAX_CLIENTS) { DisconnectClient(ci); break; }
         if (!g_clients[ci].socketOpen) break;
-        if (!g_clients[ci].connected.exchange(true)) ++active_clients;
+        if (!g_clients[ci].connected.exchange(true)) { ++active_clients; ++accepted_logins; }
 		int my_id = ci;
 		client_map[login_packet->id] = my_id;
 		g_clients[my_id].id = login_packet->id;
@@ -282,7 +295,7 @@ void Adjust_Number_Of_Client()
 	static bool increasing = true;
 
 	if (active_clients >= MAX_TEST) return;
-	if (num_connections >= MAX_CLIENTS) return;
+	if (num_connections >= attempt_limit || num_connections >= MAX_CLIENTS) return;
 
 	auto duration = high_resolution_clock::now() - last_connect_time;
 	if (ACCEPT_DELY * delay_multiplier > duration_cast<milliseconds>(duration).count()) return;
@@ -312,7 +325,7 @@ void Adjust_Number_Of_Client()
 	const int ci = num_connections++;
 	g_clients[ci].client_socket = WSASocketW(AF_INET, SOCK_STREAM, IPPROTO_TCP, NULL, 0, WSA_FLAG_OVERLAPPED);
 
-    if (g_clients[ci].client_socket == INVALID_SOCKET) return;
+    if (g_clients[ci].client_socket == INVALID_SOCKET) { ++transport_errors; return; }
     g_clients[ci].socketOpen = true;
 	SOCKADDR_IN ServerAddr;
 	ZeroMemory(&ServerAddr, sizeof(SOCKADDR_IN));
@@ -323,7 +336,7 @@ void Adjust_Number_Of_Client()
 
 	int Result = WSAConnect(g_clients[ci].client_socket, (sockaddr*)&ServerAddr, sizeof(ServerAddr), NULL, NULL, NULL, NULL);
 	if (0 != Result) {
-		std::cout << "[LOAD] Connect failed: " << WSAGetLastError() << std::endl; DisconnectClient(ci); return;
+		++transport_errors; std::cout << "[LOAD] Connect failed: " << WSAGetLastError() << std::endl; DisconnectClient(ci); return;
 	}
 
 	g_clients[ci].curr_packet_size = 0;
@@ -335,7 +348,7 @@ void Adjust_Number_Of_Client()
 	g_clients[ci].recv_over.wsabuf.len = sizeof(g_clients[ci].recv_over.IOCP_buf);
 
 	DWORD recv_flag = 0;
-	CreateIoCompletionPort(reinterpret_cast<HANDLE>(g_clients[ci].client_socket), g_hiocp, ci, 0);
+	if (!CreateIoCompletionPort(reinterpret_cast<HANDLE>(g_clients[ci].client_socket), g_hiocp, ci, 0)) { ++transport_errors; DisconnectClient(ci); return; }
 
 	cs_packet_login l_packet{};
 
@@ -364,7 +377,7 @@ fail_to_connect:
 void Test_Thread()
 {
 	while (true) {
-		//Sleep(max(20, global_delay));
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
 		Adjust_Number_Of_Client();
 
 		for (int i = 0; i < num_connections; ++i) {
@@ -388,6 +401,13 @@ void Test_Thread()
 
 void InitializeNetwork()
 {
+    char* configuredLimit = nullptr;
+    std::size_t length = 0;
+    if (_dupenv_s(&configuredLimit, &length, "GMSEV_LOAD_ATTEMPTS") == 0) {
+        attempt_limit = parseLoadTestAttempts(configuredLimit);
+    }
+    std::free(configuredLimit);
+    std::cout << "[LOAD] Attempt limit: " << attempt_limit << std::endl;
 	for (auto& cl : g_clients) {
 		cl.connected = false;
 		cl.id = INVALID_ID;

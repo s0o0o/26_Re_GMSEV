@@ -39,5 +39,16 @@ int main() {
     info.id = -1;
     ProcessPacket(0, reinterpret_cast<unsigned char*>(&info));
     assert(active_clients == 0);
+    const auto stats = GetLoadTestStats();
+    assert(stats.accepted == 1 && stats.rejected == 1);
+    assert(stats.closed == 2 && stats.errors >= 1);
+    attempt_limit = 30;
+    num_connections = 30;
+    Adjust_Number_Of_Client();
+    assert(num_connections == 30);
+    attempt_limit = 100;
+    num_connections = 100;
+    Adjust_Number_Of_Client();
+    assert(num_connections == 100);
     WSACleanup();
 }
