@@ -36,7 +36,11 @@ cl /nologo /EHsc /std:c++17 tests\stress_error_test.cpp /Fo:build\tests\ /Fe:bui
 if not "%errorlevel%"=="0" goto failed
 build\tests\stress_error_test.exe
 if not "%errorlevel%"=="0" goto failed
-echo All 7 regression programs passed.
+cl /nologo /EHsc /std:c++17 tests\database_write_test.cpp /Fo:build\tests\ /Fe:build\tests\database_write_test.exe
+if not "%errorlevel%"=="0" goto failed
+build\tests\database_write_test.exe
+if not "%errorlevel%"=="0" goto failed
+echo All 8 regression programs passed.
 popd
 exit /b 0
 :failed

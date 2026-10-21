@@ -1,4 +1,5 @@
 #include "game_database.hpp"
+#include "database_write.hpp"
 #include <Windows.h>
 #include <sqlext.h>
 #include <iostream>
@@ -33,6 +34,45 @@ void HandleDiagnosticRecord(SQLHANDLE hHandle, SQLSMALLINT hType, RETCODE RetCod
 	}
 }
 
+class Statement {
+public:
+    SQLHSTMT handle = SQL_NULL_HSTMT;
+    Statement() {
+        const auto result = SQLAllocHandle(SQL_HANDLE_STMT,hdbc,&handle);
+        if (!SQL_SUCCEEDED(result)) {
+            HandleDiagnosticRecord(hdbc,SQL_HANDLE_DBC,result);
+            handle = SQL_NULL_HSTMT;
+        }
+    }
+    ~Statement() { if (handle != SQL_NULL_HSTMT) SQLFreeHandle(SQL_HANDLE_STMT,handle); }
+    Statement(const Statement&) = delete;
+    Statement& operator=(const Statement&) = delete;
+    bool check(SQLRETURN result, const char* step) {
+        if (SQL_SUCCEEDED(result)) return true;
+        std::cerr << "[DB] " << step << " failed.\n";
+        HandleDiagnosticRecord(handle,SQL_HANDLE_STMT,result);
+        return false;
+    }
+    bool prepare(const wchar_t* query) {
+        return handle != SQL_NULL_HSTMT && check(SQLPrepareW(handle,
+            reinterpret_cast<SQLWCHAR*>(const_cast<wchar_t*>(query)),SQL_NTS),"prepare");
+    }
+    template<class Value>
+    bool bind(std::size_t index, Value& value) {
+        static_assert(sizeof(Value) == sizeof(SQLINTEGER),"ODBC integer size mismatch");
+        return check(SQLBindParameter(handle,static_cast<SQLUSMALLINT>(index),SQL_PARAM_INPUT,
+            SQL_C_LONG,SQL_INTEGER,0,0,&value,0,nullptr),"bind parameter");
+    }
+    bool execute() { return check(SQLExecute(handle),"execute"); }
+    bool affectedOneRow() {
+        SQLLEN rows = -1;
+        if (!check(SQLRowCount(handle,&rows),"row count")) return false;
+        if (rows == 1) return true;
+        std::cerr << "[DB] Expected one account row; affected rows=" << rows << '\n';
+        return false;
+    }
+};
+
 } // namespace
 
 bool initializeDB() {
@@ -53,6 +93,17 @@ bool initializeDB() {
 	ret = SQLConnect(hdbc, (SQLWCHAR*)L"2025_gameserver_2023192003", SQL_NTS, NULL, 0, NULL, 0);
 	if (ret != SQL_SUCCESS && ret != SQL_SUCCESS_WITH_INFO) return false;
 
+    ret = SQLSetConnectAttr(hdbc,SQL_ATTR_AUTOCOMMIT,
+        reinterpret_cast<SQLPOINTER>(SQL_AUTOCOMMIT_ON),0);
+    if (!SQL_SUCCEEDED(ret)) {
+        HandleDiagnosticRecord(hdbc,SQL_HANDLE_DBC,ret);
+        SQLDisconnect(hdbc);
+        SQLFreeHandle(SQL_HANDLE_DBC,hdbc);
+        SQLFreeHandle(SQL_HANDLE_ENV,henv);
+        hdbc = nullptr;
+        henv = nullptr;
+        return false;
+    }
 	//std::cout << "[DB] 연결 성공!" << std::endl;
 	return true;
 }
@@ -68,15 +119,9 @@ void finalizeDB() {
 LoginLookupResult get_DB_login_info(int& db_id, int& db_user_x, int& db_user_y, int& db_user_hp,
     int& db_user_level, int& db_user_exp, int& db_user_seed_num, int& db_user_maxHp, int& db_user_damage) {
     std::lock_guard<std::mutex> guard(databaseMutex);
-    struct Statement {
-        SQLHSTMT handle = SQL_NULL_HSTMT;
-        ~Statement() { if (handle != SQL_NULL_HSTMT) SQLFreeHandle(SQL_HANDLE_STMT, handle); }
-    } statement;
-    SQLRETURN ret = SQLAllocHandle(SQL_HANDLE_STMT, hdbc, &statement.handle);
-    if (!SQL_SUCCEEDED(ret)) {
-        HandleDiagnosticRecord(hdbc, SQL_HANDLE_DBC, ret);
-        return LoginLookupResult::Error;
-    }
+    Statement statement;
+    if (statement.handle == SQL_NULL_HSTMT) return LoginLookupResult::Error;
+    SQLRETURN ret;
     const auto fail = [&]() {
         HandleDiagnosticRecord(statement.handle, SQL_HANDLE_STMT, ret);
         return LoginLookupResult::Error;
@@ -119,97 +164,21 @@ LoginLookupResult get_DB_login_info(int& db_id, int& db_user_x, int& db_user_y, 
 
 bool update_user_info(int id, int x, int y, int seed, int hp, int level, int exp, int userMaxHp, int damage) {
     std::lock_guard<std::mutex> guard(databaseMutex);
-	SQLEndTran(SQL_HANDLE_DBC, hdbc, SQL_ROLLBACK);  // 이전 트랜잭션 실패 가능성 대비
-
-	SQLHSTMT hstmt;
-	SQLRETURN ret;
-
-	// 1. Statement 핸들 할당
-	ret = SQLAllocHandle(SQL_HANDLE_STMT, hdbc, &hstmt);
-
-
-	ret = SQLPrepare(hstmt, (SQLWCHAR*)L"UPDATE SERVER_TABLE1 SET USER_X = ?, USER_Y = ? , USER_SEED_NUM = ?, USER_HP = ?, USER_LEVEL = ?, USER_EXP = ?, USER_MAX_HP = ? WHERE USER_ID = ?", SQL_NTS);
-	if (ret != SQL_SUCCESS && ret != SQL_SUCCESS_WITH_INFO) {
-		std::cout << "[DB] SQLPrepare 실패!" << std::endl;
-		HandleDiagnosticRecord(hstmt, SQL_HANDLE_STMT, ret);  // 에러 로그 추가!
-		SQLFreeHandle(SQL_HANDLE_STMT, hstmt);
-		return false;
-	}
-
-	// 3. 파라미터 바인딩
-	ret = SQLBindParameter(hstmt, 1, SQL_PARAM_INPUT, SQL_C_LONG, SQL_INTEGER, 0, 0, &x, 0, NULL);
-	ret = SQLBindParameter(hstmt, 2, SQL_PARAM_INPUT, SQL_C_LONG, SQL_INTEGER, 0, 0, &y, 0, NULL);
-	ret = SQLBindParameter(hstmt, 3, SQL_PARAM_INPUT, SQL_C_LONG, SQL_INTEGER, 0, 0, &seed, 0, NULL);
-	ret = SQLBindParameter(hstmt, 4, SQL_PARAM_INPUT, SQL_C_LONG, SQL_INTEGER, 0, 0, &hp, 0, NULL);
-	ret = SQLBindParameter(hstmt, 5, SQL_PARAM_INPUT, SQL_C_LONG, SQL_INTEGER, 0, 0, &level, 0, NULL);
-	ret = SQLBindParameter(hstmt, 6, SQL_PARAM_INPUT, SQL_C_LONG, SQL_INTEGER, 0, 0, &exp, 0, NULL);
-	ret = SQLBindParameter(hstmt, 7, SQL_PARAM_INPUT, SQL_C_LONG, SQL_INTEGER, 0, 0, &userMaxHp, 0, NULL);
-	ret = SQLBindParameter(hstmt, 8, SQL_PARAM_INPUT, SQL_C_LONG, SQL_INTEGER, 0, 0, &id, 0, NULL);
-
-
-	// 4. 실행
-	ret = SQLExecute(hstmt);
-	if (ret != SQL_SUCCESS && ret != SQL_SUCCESS_WITH_INFO) {
-		std::cout << "[DB] SQLExecute 실패!" << std::endl;
-		HandleDiagnosticRecord(hstmt, SQL_HANDLE_STMT, ret);  // 에러 로그 추가!
-		SQLFreeHandle(SQL_HANDLE_STMT, hstmt);
-		return false;
-	}
-
-//	std::cout << "유저 정보 업데이트 완료: ID=" << id << " → (" << x << "," << y << ") seed: " << seed << std::endl;
-
-	// 5. 커밋 (안 해도 기본 auto-commit라면 필요 X, 하지만 넣어주자)
-	SQLEndTran(SQL_HANDLE_DBC, hdbc, SQL_COMMIT);
-
-	// 6. 해제
-	SQLFreeHandle(SQL_HANDLE_STMT, hstmt);
-	return true;
+    Statement statement;
+    auto values = database_write::userValues(id,x,y,seed,hp,level,exp,userMaxHp,damage);
+    return database_write::execute(statement,
+        L"UPDATE SERVER_TABLE1 SET USER_X = ?, USER_Y = ?, USER_SEED_NUM = ?, USER_HP = ?, USER_LEVEL = ?, USER_EXP = ?, USER_MAX_HP = ?, USER_DAMAGE = ? WHERE USER_ID = ?",
+        values);
 }
 
-bool insert_new_user(int userId, const char* name) {
+bool insert_new_user(int userId, const char* /*name*/) {
+    // Nickname persistence is not part of the existing account schema.
     std::lock_guard<std::mutex> guard(databaseMutex);
-	SQLHSTMT hstmt;
-	SQLRETURN ret;
-
-	int init_x = rand() % 2000;
-	int init_y = rand() % 2000;
-	int init_hp = rand() % 10 + 20;
-	int init_level = 1;
-	int init_exp = 0;
-	int init_seed = 22;
-	int init_maxHp = 30;
-	int init_damage = 1;
-
-	ret = SQLAllocHandle(SQL_HANDLE_STMT, hdbc, &hstmt);
-
-	if (ret != SQL_SUCCESS && ret != SQL_SUCCESS_WITH_INFO) return false;
-
-	ret = SQLPrepare(hstmt, (SQLWCHAR*)L"INSERT INTO SERVER_TABLE1 (USER_ID, USER_X, USER_Y, USER_HP, USER_LEVEL, USER_EXP, USER_SEED_NUM, USER_MAX_HP, USER_DAMAGE) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", SQL_NTS);
-
-	if (ret != SQL_SUCCESS && ret != SQL_SUCCESS_WITH_INFO) {
-		SQLFreeHandle(SQL_HANDLE_STMT, hstmt);
-		return false;
-	}
-
-	SQLBindParameter(hstmt, 1, SQL_PARAM_INPUT, SQL_C_LONG, SQL_INTEGER, 0, 0, &userId, 0, NULL);
-	SQLBindParameter(hstmt, 2, SQL_PARAM_INPUT, SQL_C_LONG, SQL_INTEGER, 0, 0, &init_x, 0, NULL);
-	SQLBindParameter(hstmt, 3, SQL_PARAM_INPUT, SQL_C_LONG, SQL_INTEGER, 0, 0, &init_y, 0, NULL);
-	SQLBindParameter(hstmt, 4, SQL_PARAM_INPUT, SQL_C_LONG, SQL_INTEGER, 0, 0, &init_hp, 0, NULL);
-	SQLBindParameter(hstmt, 5, SQL_PARAM_INPUT, SQL_C_LONG, SQL_INTEGER, 0, 0, &init_level, 0, NULL);
-	SQLBindParameter(hstmt, 6, SQL_PARAM_INPUT, SQL_C_LONG, SQL_INTEGER, 0, 0, &init_exp, 0, NULL);
-	SQLBindParameter(hstmt, 7, SQL_PARAM_INPUT, SQL_C_LONG, SQL_INTEGER, 0, 0, &init_seed, 0, NULL);
-	SQLBindParameter(hstmt, 8, SQL_PARAM_INPUT, SQL_C_LONG, SQL_INTEGER, 0, 0, &init_maxHp, 0, NULL);
-	SQLBindParameter(hstmt, 9, SQL_PARAM_INPUT, SQL_C_LONG, SQL_INTEGER, 0, 0, &init_damage, 0, NULL);
-
-	ret = SQLExecute(hstmt);
-	if (ret != SQL_SUCCESS && ret != SQL_SUCCESS_WITH_INFO) {
-		HandleDiagnosticRecord(hstmt, SQL_HANDLE_STMT, ret);  // 디버깅용 로그
-		SQLFreeHandle(SQL_HANDLE_STMT, hstmt);
-		return false;
-	}
-
-	std::cout << "[DB] 새 유저 추가 성공! ID:" << userId << std::endl;
-	SQLEndTran(SQL_HANDLE_DBC, hdbc, SQL_COMMIT);
-	SQLFreeHandle(SQL_HANDLE_STMT, hstmt);
-	return true;
+    Statement statement;
+    std::array<SQLINTEGER,9> values = {{userId,rand()%2000,rand()%2000,rand()%10+20,1,0,22,30,1}};
+    const bool saved = database_write::execute(statement,
+        L"INSERT INTO SERVER_TABLE1 (USER_ID, USER_X, USER_Y, USER_HP, USER_LEVEL, USER_EXP, USER_SEED_NUM, USER_MAX_HP, USER_DAMAGE) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        values);
+    if (saved) std::cout << "[DB] Account created: " << userId << '\n';
+    return saved;
 }
