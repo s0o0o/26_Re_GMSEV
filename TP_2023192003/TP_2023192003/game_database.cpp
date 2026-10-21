@@ -61,59 +61,57 @@ void finalizeDB() {
 }
 
 // 로그인할때 정보 확인용
-bool get_DB_login_info(int& db_id, int& db_user_x, int& db_user_y, int& db_user_hp,
-	int& db_user_level, int& db_user_exp, int& db_user_seed_num, int& db_user_maxHp, int& db_user_damage) {
-	SQLHSTMT hstmt = 0;
-	SQLRETURN ret;
-	SQLINTEGER user_id, user_x, user_y, user_hp, user_level, user_exp, user_seed, user_maxHp, user_damage;
-	SQLLEN cb1 = 0, cb2 = 0, cb3 = 0, cb4 = 0, cb5 = 0, cb6 = 0, cb7 = 0, cb8 = 0, cb9 = 0;
+LoginLookupResult get_DB_login_info(int& db_id, int& db_user_x, int& db_user_y, int& db_user_hp,
+    int& db_user_level, int& db_user_exp, int& db_user_seed_num, int& db_user_maxHp, int& db_user_damage) {
+    struct Statement {
+        SQLHSTMT handle = SQL_NULL_HSTMT;
+        ~Statement() { if (handle != SQL_NULL_HSTMT) SQLFreeHandle(SQL_HANDLE_STMT, handle); }
+    } statement;
+    SQLRETURN ret = SQLAllocHandle(SQL_HANDLE_STMT, hdbc, &statement.handle);
+    if (!SQL_SUCCEEDED(ret)) {
+        HandleDiagnosticRecord(hdbc, SQL_HANDLE_DBC, ret);
+        return LoginLookupResult::Error;
+    }
+    const auto fail = [&]() {
+        HandleDiagnosticRecord(statement.handle, SQL_HANDLE_STMT, ret);
+        return LoginLookupResult::Error;
+    };
+    ret = SQLPrepare(statement.handle, (SQLWCHAR*)L"EXEC get_user_info ?", SQL_NTS);
+    if (!SQL_SUCCEEDED(ret)) return fail();
+    ret = SQLBindParameter(statement.handle, 1, SQL_PARAM_INPUT, SQL_C_LONG, SQL_INTEGER,
+        0, 0, &db_id, 0, nullptr);
+    if (!SQL_SUCCEEDED(ret)) return fail();
+    ret = SQLExecute(statement.handle);
+    if (!SQL_SUCCEEDED(ret)) return fail();
 
-	ret = SQLAllocHandle(SQL_HANDLE_STMT, hdbc, &hstmt);
-	ret = SQLPrepare(hstmt, (SQLWCHAR*)L"EXEC get_user_info ?", SQL_NTS);
-	if (ret != SQL_SUCCESS && ret != SQL_SUCCESS_WITH_INFO) {
-		//finalizeDB();
-		return false;
-	}
-	ret = SQLBindParameter(hstmt, 1, SQL_PARAM_INPUT, SQL_C_LONG, SQL_INTEGER, 0, 0, &db_id, 0, NULL);
-	ret = SQLExecute(hstmt);
-	if (ret != SQL_SUCCESS && ret != SQL_SUCCESS_WITH_INFO) {
-		//finalizeDB();
-		return false;
-	}
-
-	SQLBindCol(hstmt, 1, SQL_C_LONG, &user_id, 0, &cb1);
-	SQLBindCol(hstmt, 2, SQL_C_LONG, &user_x, 0, &cb2);
-	SQLBindCol(hstmt, 3, SQL_C_LONG, &user_y, 0, &cb3);
-	SQLBindCol(hstmt, 4, SQL_C_LONG, &user_hp, 0, &cb4);
-	SQLBindCol(hstmt, 5, SQL_C_LONG, &user_level, 0, &cb5);
-	SQLBindCol(hstmt, 6, SQL_C_LONG, &user_exp, 0, &cb6);
-	SQLBindCol(hstmt, 7, SQL_C_LONG, &user_seed, 0, &cb7);
-	SQLBindCol(hstmt, 8, SQL_C_LONG, &user_maxHp, 0, &cb8);
-	SQLBindCol(hstmt, 9, SQL_C_LONG, &user_damage, 0, &cb9);
-
-
-	if (SQLFetch(hstmt) == SQL_SUCCESS) {
-		db_id = user_id;			// db에 저장된걸 꺼내서 저장해준다..!
-		db_user_x = user_x;
-		db_user_y = user_y;
-		db_user_hp = user_hp;
-		db_user_level = user_level;
-		db_user_exp = user_exp;
-		db_user_seed_num = user_seed;
-		db_user_maxHp = user_maxHp;
-		db_user_damage = user_damage;
-
-		/*printf("ID: %d 접속! 위치: (%d, %d) HP : %d, Level : %d, Exp : %d, SeedNum : %d, maxHp : %d, damage : %d\n",
-			user_id, user_x, user_y, user_hp, user_level, user_exp, user_seed, user_maxHp, user_damage);*/
-		SQLFreeHandle(SQL_HANDLE_STMT, hstmt);
-		return true;
-	}
-
-	SQLFreeHandle(SQL_HANDLE_STMT, hstmt);
-	return false;
+    SQLINTEGER values[9] = {};
+    SQLLEN indicators[9] = {};
+    for (SQLUSMALLINT i = 0; i < 9; ++i) {
+        ret = SQLBindCol(statement.handle, i + 1, SQL_C_LONG, &values[i], sizeof(values[i]), &indicators[i]);
+        if (!SQL_SUCCEEDED(ret)) return fail();
+    }
+    ret = SQLFetch(statement.handle);
+    if (ret == SQL_NO_DATA) return LoginLookupResult::NotFound;
+    if (!SQL_SUCCEEDED(ret)) return fail();
+    for (auto indicator : indicators) {
+        if (indicator == SQL_NULL_DATA) {
+            std::cerr << "[DB] Login row has a NULL required column.\n";
+            return LoginLookupResult::Error;
+        }
+    }
+    // Publish outputs only after the complete row has been validated.
+    db_id = values[0];
+    db_user_x = values[1];
+    db_user_y = values[2];
+    db_user_hp = values[3];
+    db_user_level = values[4];
+    db_user_exp = values[5];
+    db_user_seed_num = values[6];
+    db_user_maxHp = values[7];
+    db_user_damage = values[8];
+    return LoginLookupResult::Found;
 }
 
-// db업뎃용
 bool update_user_info(int id, int x, int y, int seed, int hp, int level, int exp, int userMaxHp, int damage) {
 	SQLEndTran(SQL_HANDLE_DBC, hdbc, SQL_ROLLBACK);  // 이전 트랜잭션 실패 가능성 대비
 

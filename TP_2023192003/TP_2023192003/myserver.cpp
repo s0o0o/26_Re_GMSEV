@@ -526,41 +526,22 @@ void processPacket(int sessionId, char* packetFromC) {
 			dbUserExp = 0, dbUserSeedNum = 0, dbUserMaxHp = 0, dbUserDamage = 0;
 		int dbId = p->inputId;
 
-		bool loginResult = get_DB_login_info(
-			dbId, dbUserX, dbUserY, dbUserHp, dbUserLevel,
-			dbUserExp, dbUserSeedNum, dbUserMaxHp, dbUserDamage
-		);
+		const auto loginResult = load_or_create_user(
+            [&]() {
+                return get_DB_login_info(dbId, dbUserX, dbUserY, dbUserHp, dbUserLevel,
+                    dbUserExp, dbUserSeedNum, dbUserMaxHp, dbUserDamage);
+            },
+            [&]() { return insert_new_user(dbId, p->name); });
+        if (loginResult != LoginLookupResult::Found) {
+            sc_packet_login_fail fail{};
+            fail.size = sizeof(fail);
+            fail.type = S2C_P_LOGIN_FAIL;
+            session->registerSend(&fail);
+            // Stay connected for retry; do not save an uninitialized character.
+            break;
+        }
 
-
-
-		if (!loginResult) {
-			cout << "신규유저" << dbId <<"아이디생성" <<endl;
-			if (!insert_new_user(dbId, p->name)) {
-				std::cout << "신규 유저 삽입 실패" << std::endl;
-				sc_packet_login_fail fail;
-				fail.size = sizeof(fail);
-				fail.size = sizeof(fail);
-				fail.type = S2C_P_LOGIN_FAIL;
-				session->registerSend(&fail);
-				disconnect(sessionId);
-				break;
-			}
-
-			cout << "신규유저 삽입됨" << endl;
-			if (!get_DB_login_info(
-				dbId, dbUserX, dbUserY, dbUserHp, dbUserLevel,
-				dbUserExp, dbUserSeedNum, dbUserMaxHp, dbUserDamage)) {
-				std::cout << "삽입 후 정보 조회 실패" << std::endl;
-				sc_packet_login_fail fail;
-				fail.size = sizeof(fail);
-				fail.type = S2C_P_LOGIN_FAIL;
-				session->registerSend(&fail);
-				disconnect(sessionId);
-				break;
-			}
-		}
-
-		session->_userInputId = dbId;
+        session->_userInputId = dbId;
 		session->object._x = dbUserX;
 		session->object._y = dbUserY;
 		session->object._hp = dbUserHp;
@@ -708,7 +689,7 @@ void processPacket(int sessionId, char* packetFromC) {
 		}
 		session->sendMonsterNearPacket(nearMons, cnt);
 
-	
+
 	}
 	break;
 	case C2S_P_ATTACK:
