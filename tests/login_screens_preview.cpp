@@ -21,9 +21,18 @@ int main() {
     initStartScreenInit();
     assert(hamsterCustomizer().load("assets/characters"));
     assert(hamsterCustomizer().setBackdrop(*startMainTx));
+    assert(clubhouseRenderer().load("assets/maps/clubhouse-sheet.png"));
     std::cout << "Backdrop prepared" << std::endl;
     sf::RenderTexture frame;
     assert(frame.create(900,800));
+    frame.clear();
+    clubhouseRenderer().draw(frame,3,2);
+    sf::Sprite resident(hamsterCustomizer().texture(0,0,0,0),{48,0,48,48});
+    resident.setOrigin(24,44); resident.setScale(2,2);
+    resident.setPosition((clubhouse::spawnX-3)*50.f+25,(clubhouse::spawnY-2)*50.f+45);
+    frame.draw(resident);
+    frame.display();
+    assert(frame.getTexture().copyToImage().saveToFile((root / "build/tests/clubhouse-map.png").string()));
     id_input = 321;
     inputNickname = sf::String(L"\uD584\uCC0C");
     inputAccountId = "321";

@@ -48,7 +48,11 @@ cl /nologo /EHsc /std:c++17 tests\startup_config_test.cpp /Fo:build\tests\ /Fe:b
 if not "%errorlevel%"=="0" goto failed
 build\tests\startup_config_test.exe
 if not "%errorlevel%"=="0" goto failed
-echo All 10 regression programs passed.
+cl /nologo /EHsc /std:c++17 tests\clubhouse_map_test.cpp /Fo:build\tests\ /Fe:build\tests\clubhouse_map_test.exe
+if not "%errorlevel%"=="0" goto failed
+build\tests\clubhouse_map_test.exe
+if not "%errorlevel%"=="0" goto failed
+echo All 11 regression programs passed.
 popd
 exit /b 0
 :failed

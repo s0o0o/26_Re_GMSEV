@@ -49,6 +49,8 @@
     <ClInclude Include="login_flow.hpp" />
     <ClInclude Include="ui_alignment.hpp" />
     <ClInclude Include="loading_screen.hpp" />
+    <ClInclude Include="clubhouse_renderer.hpp" />
+    <ClInclude Include="..\..\shared\clubhouse_map.hpp" />
     <ClInclude Include="..\..\shared\protocol.hpp">
       <Filter>헤더 파일</Filter>
     </ClInclude>
