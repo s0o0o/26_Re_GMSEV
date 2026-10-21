@@ -18,6 +18,7 @@ public:
     std::uint8_t selectedCharacter() const { return character_; }
 private:
     std::array<sf::Texture, HAMSTER_CHARACTER_APPEARANCES> textures_;
+    std::array<std::array<sf::Texture, 3>, HAMSTER_CHARACTER_KINDS> scarfIcons_;
     std::uint8_t selected_ = 0;
     std::uint8_t eyes_ = 0, scarf_ = 0;
     std::uint8_t character_ = 0;

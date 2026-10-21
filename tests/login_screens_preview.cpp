@@ -10,6 +10,14 @@ int main() {
     const auto root = std::filesystem::current_path();
     std::filesystem::current_path(root / "TP_2023192003_CLIENT/client_sample");
     assert(gameFont().loadFromFile("neodgm.ttf"));
+    for (const auto& value : {sf::String("Bijou"), sf::String("Connecting..."), sf::String(L"\uD584\uCC0C")}) {
+        sf::Text centered(value,gameFont(),22);
+        const sf::FloatRect area(190,610,230,52);
+        centerText(centered,area);
+        const auto bounds = centered.getGlobalBounds();
+        assert(std::abs(bounds.left+bounds.width/2-(area.left+area.width/2)) < 0.01f);
+        assert(std::abs(bounds.top+bounds.height/2-(area.top+area.height/2)) < 0.01f);
+    }
     initStartScreenInit();
     assert(hamsterCustomizer().load("assets/characters"));
     assert(hamsterCustomizer().setBackdrop(*startMainTx));
