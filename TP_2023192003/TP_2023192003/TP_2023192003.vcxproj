@@ -155,6 +155,8 @@
     <ClInclude Include="iocp_operation.hpp" />
     <ClInclude Include="game_object.hpp" />
     <ClInclude Include="monster_state.hpp" />
+    <ClInclude Include="monster_lifecycle.hpp" />
+    <ClInclude Include="..\..\shared\respawn_policy.hpp" />
     <ClInclude Include="game_session.hpp" />
     <ClInclude Include="session_registry.hpp" />
     <ClInclude Include="pathfinder.hpp" />
