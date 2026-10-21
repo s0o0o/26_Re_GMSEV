@@ -8,6 +8,10 @@ if errorlevel 1 (
 pushd "%~dp0.."
 if not exist build\tests mkdir build\tests
 if not exist build\tests goto failed
+cl /nologo /EHsc /std:c++17 tests\login_flow_test.cpp /Fo:build\tests\ /Fe:build\tests\login_flow_test.exe
+if not "%errorlevel%"=="0" goto failed
+build\tests\login_flow_test.exe
+if not "%errorlevel%"=="0" goto failed
 cl /nologo /EHsc /std:c++17 tests\login_input_test.cpp /Fo:build\tests\ /Fe:build\tests\login_input_test.exe
 if not "%errorlevel%"=="0" goto failed
 build\tests\login_input_test.exe
@@ -32,7 +36,7 @@ cl /nologo /EHsc /std:c++17 tests\stress_error_test.cpp /Fo:build\tests\ /Fe:bui
 if not "%errorlevel%"=="0" goto failed
 build\tests\stress_error_test.exe
 if not "%errorlevel%"=="0" goto failed
-echo All 6 regression programs passed.
+echo All 7 regression programs passed.
 popd
 exit /b 0
 :failed

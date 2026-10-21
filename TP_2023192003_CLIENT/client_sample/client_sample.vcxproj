@@ -140,12 +140,15 @@
   <ItemGroup>
     <ClCompile Include="client.cpp" />
     <ClCompile Include="hamster_customizer.cpp" />
+    <ClCompile Include="background_blur.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\shared\protocol.hpp" />
     <ClInclude Include="..\..\shared\login_input.hpp" />
     <ClInclude Include="..\..\shared\appearance.hpp" />
     <ClInclude Include="hamster_customizer.hpp" />
+    <ClInclude Include="background_blur.hpp" />
+    <ClInclude Include="login_flow.hpp" />
   </ItemGroup>
   <ItemGroup>
     <Image Include="chess2.png" />
