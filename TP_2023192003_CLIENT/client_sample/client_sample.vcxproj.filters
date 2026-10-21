@@ -25,6 +25,8 @@
     <Image Include="chess2.png">
       <Filter>리소스 파일</Filter>
     </Image>
+    <Image Include="assets\characters\hamtaro\*.png" />
+    <Image Include="assets\characters\bijou\*.png" />
     <Image Include="assets\appearance\body-eyeless.png" />
     <Image Include="assets\appearance\eyes-classic.png" />
     <Image Include="assets\appearance\eyes-round.png" />

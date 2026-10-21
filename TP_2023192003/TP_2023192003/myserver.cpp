@@ -517,7 +517,7 @@ void processPacket(int sessionId, char* packetFromC) {
 	case C2S_P_LOGIN:
 	{	// 로그인 패킷이 날아온거라면 DB 확인
 		cs_packet_login* p = reinterpret_cast<cs_packet_login*>(packetFromC);
-		if (!validFurColor(p->fur_color) || !validEyeStyle(p->eye_style) || !validScarfStyle(p->scarf_style) || p->inputId < 0 || !login_input::nickname(p->name, sizeof(p->name))) {
+		if (!validCharacterKind(p->character_kind) || !validFurColor(p->fur_color) || !validEyeStyle(p->eye_style) || !validScarfStyle(p->scarf_style) || p->inputId < 0 || !login_input::nickname(p->name, sizeof(p->name))) {
             sc_packet_login_fail fail{};
             fail.size = sizeof(fail);
             fail.type = S2C_P_LOGIN_FAIL;
@@ -546,6 +546,7 @@ void processPacket(int sessionId, char* packetFromC) {
 
         session->_userInputId = dbId;
         session->object._furColor = p->fur_color;
+        session->object._characterKind = p->character_kind;
         session->object._eyeStyle = p->eye_style;
         session->object._scarfStyle = p->scarf_style;
 		session->object._x = dbUserX;

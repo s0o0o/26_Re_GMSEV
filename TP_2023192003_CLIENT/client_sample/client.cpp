@@ -306,7 +306,7 @@ void client_initialize()
 	white_tile = OBJECT{ *board, 0, 0, TILE_WIDTH, TILE_WIDTH };
 	black_tile = OBJECT{ *board, 50, 0, TILE_WIDTH, TILE_WIDTH };
 	avatar = OBJECT{ *myHam, userTextureWidth, 0, userTextureWidth, userTextureHeight };
-    avatar.get_sprite().setTexture(hamsterCustomizer().texture(hamsterCustomizer().selected(), hamsterCustomizer().selectedEyes(), hamsterCustomizer().selectedScarf()));
+    avatar.get_sprite().setTexture(hamsterCustomizer().texture(hamsterCustomizer().selected(), hamsterCustomizer().selectedEyes(), hamsterCustomizer().selectedScarf(), hamsterCustomizer().selectedCharacter()));
 
 	// 프로필
 	profileSprite.setPosition(0 + 15, WINDOW_HEIGHT - profileHeight - 15);
@@ -333,7 +333,7 @@ void ProcessPacket(char* ptr)
 		sc_packet_avatar_info* packet = reinterpret_cast<sc_packet_avatar_info*>(ptr);
 		g_myid = packet->id;
 		avatar.id = g_myid;
-        avatar.get_sprite().setTexture(hamsterCustomizer().texture(packet->fur_color, packet->eye_style, packet->scarf_style));
+        avatar.get_sprite().setTexture(hamsterCustomizer().texture(packet->fur_color, packet->eye_style, packet->scarf_style, packet->character_kind));
 
 		avatar._hp = packet->hp;
 		hpText.setString(to_string(avatar._hp));
@@ -366,7 +366,7 @@ void ProcessPacket(char* ptr)
 		else if (id < MAX_USER) {
 			players[id] = OBJECT{ *myHam, userTextureWidth, 0, userTextureHeight, userTextureHeight };
 			players[id]._monType = my_packet->monType;
-            players[id].get_sprite().setTexture(hamsterCustomizer().texture(my_packet->fur_color, my_packet->eye_style, my_packet->scarf_style));
+            players[id].get_sprite().setTexture(hamsterCustomizer().texture(my_packet->fur_color, my_packet->eye_style, my_packet->scarf_style, my_packet->character_kind));
 			players[id].id = id;
 			players[id].move(my_packet->x, my_packet->y);
 			players[id].set_name(my_packet->name);
@@ -846,7 +846,7 @@ void beginLoginConnection() {
     s_socket.setBlocking(false);
     if (status != sf::Socket::Done) { failLogin("Cannot connect to server. Check server and retry."); return; }
     if (!gameResourcesReady) { client_initialize(); gameResourcesReady = true; }
-    avatar.get_sprite().setTexture(hamsterCustomizer().texture(hamsterCustomizer().selected(), hamsterCustomizer().selectedEyes(), hamsterCustomizer().selectedScarf()));
+    avatar.get_sprite().setTexture(hamsterCustomizer().texture(hamsterCustomizer().selected(), hamsterCustomizer().selectedEyes(), hamsterCustomizer().selectedScarf(), hamsterCustomizer().selectedCharacter()));
     const auto nickname = toUtf8(inputNickname);
     pendingLogin = {};
     pendingLogin.size = sizeof(pendingLogin);
@@ -855,6 +855,7 @@ void beginLoginConnection() {
     pendingLogin.fur_color = hamsterCustomizer().selected();
     pendingLogin.eye_style = hamsterCustomizer().selectedEyes();
     pendingLogin.scarf_style = hamsterCustomizer().selectedScarf();
+    pendingLogin.character_kind = hamsterCustomizer().selectedCharacter();
     strncpy_s(pendingLogin.name,nickname.c_str(),MAX_ID_LENGTH-1);
     avatar.set_name(pendingLogin.name);
     nameText.setString(fromUtf8(pendingLogin.name));
@@ -890,7 +891,7 @@ int main()
 	sf::RenderWindow window(sf::VideoMode(WINDOW_WIDTH, WINDOW_HEIGHT), "HAMSTER RPG 2023192003 김연수");
 	g_window = &window;
 	initStartScreenInit();
-    if (!hamsterCustomizer().load("character.png") || !hamsterCustomizer().setBackdrop(*startMainTx)) { std::cerr << "Character texture loading failed" << std::endl; return -1; }
+    if (!hamsterCustomizer().load("assets/characters") || !hamsterCustomizer().setBackdrop(*startMainTx)) { std::cerr << "Character texture loading failed" << std::endl; return -1; }
 	chatInit();
 	lodMapTexture();
 

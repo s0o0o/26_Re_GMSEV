@@ -17,12 +17,13 @@ void label(sf::RenderTarget& target, const sf::Font& font, const char* text,
 }
 }
 
-bool HamsterCustomizer::load(const std::string& path) {
+bool HamsterCustomizer::load(const std::string& root) {
     loaded_ = false;
-    const auto slash = path.find_last_of("/\\");
-    const std::string directory = (slash == std::string::npos ? "" : path.substr(0, slash + 1)) + "assets/appearance/";
+    const char* characterNames[] = {"hamtaro","bijou"};
+    for(std::uint8_t kind=0;kind<HAMSTER_CHARACTER_KINDS;++kind) {
+    const std::string directory = root + "/" + characterNames[kind] + "/";
     sf::Image original;
-    if (!original.loadFromFile(path) || original.getSize() != sf::Vector2u(192, 48)) return false;
+    if (!original.loadFromFile(directory+"character.png") || original.getSize() != sf::Vector2u(192, 48)) return false;
     sf::Image body;
     std::array<sf::Image, 3> eyes, scarves;
     const auto loadLayer = [&](sf::Image& image, const char* name) {
@@ -40,12 +41,14 @@ bool HamsterCustomizer::load(const std::string& path) {
             for (unsigned y = 0; y < 48; ++y) for (unsigned x = 0; x < 192; ++x) {
                 const auto p = variant.getPixel(x, y);
                 // Warm yellow fur only: preserve white belly, eyes, pink ears and outline.
-                if (p.a && p.r > 160 && p.g > 100 && p.b < 100 && p.r > p.g) {
+                const bool golden = kind == 0 && p.r > 160 && p.g > 100 && p.b < 100 && p.r > p.g;
+                const bool whiteFur = kind == 1 && (x/48 == 0 || y < 20) && p.r >= 220 && p.g >= 220 && p.b >= 200;
+                if (p.a && (golden || whiteFur)) {
                     const float shade = p.r / 255.f;
                     variant.setPixel(x, y, sf::Color(
-                        static_cast<sf::Uint8>(palette[i].r * shade),
-                        static_cast<sf::Uint8>(palette[i].g * shade),
-                        static_cast<sf::Uint8>(palette[i].b * shade), p.a));
+                        static_cast<sf::Uint8>((whiteFur ? 153.f+palette[i].r*.4f : palette[i].r) * shade),
+                        static_cast<sf::Uint8>((whiteFur ? 153.f+palette[i].g*.4f : palette[i].g) * shade),
+                        static_cast<sf::Uint8>((whiteFur ? 153.f+palette[i].b*.4f : palette[i].b) * shade), p.a));
                 }
             }
         }
@@ -58,18 +61,19 @@ bool HamsterCustomizer::load(const std::string& path) {
                 p.a = original.getPixel(x,y).a;
                 dressed.setPixel(x,y,p);
             }
-            auto& texture = textures_[appearanceIndex(i,e,s)];
+            auto& texture = textures_[characterAppearanceIndex(kind,i,e,s)];
             if (!texture.loadFromImage(dressed)) return false;
             texture.setSmooth(false);
         }
       }
     }
+    }
     loaded_ = true;
     return true;
 }
 
-const sf::Texture& HamsterCustomizer::texture(std::uint8_t color, std::uint8_t eyes, std::uint8_t scarf) const {
-    return textures_[appearanceIndex(validFurColor(color) ? color : 0,
+const sf::Texture& HamsterCustomizer::texture(std::uint8_t color, std::uint8_t eyes, std::uint8_t scarf, std::uint8_t kind) const {
+    return textures_[characterAppearanceIndex(validCharacterKind(kind) ? kind : 0,validFurColor(color) ? color : 0,
         validEyeStyle(eyes) ? eyes : 0, validScarfStyle(scarf) ? scarf : 0)];
 }
 
@@ -88,9 +92,12 @@ void HamsterCustomizer::handleEvent(const sf::Event& event, const sf::RenderWind
         if (event.key.code == sf::Keyboard::F2) eyes_ = 1;
         if (event.key.code == sf::Keyboard::F3) eyes_ = 2;
         if (event.key.code == sf::Keyboard::F4) scarf_ = (scarf_ + 1) % HAMSTER_SCARF_STYLES;
+        if (event.key.code == sf::Keyboard::F5) character_ = (character_ + 1) % HAMSTER_CHARACTER_KINDS;
     }
     if (event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Left) {
         const auto point = window.mapPixelToCoords({event.mouseButton.x, event.mouseButton.y});
+        if(sf::FloatRect(285,120,150,30).contains(point)) character_=0;
+        if(sf::FloatRect(465,120,150,30).contains(point)) character_=1;
         for (std::uint8_t i = 0; i < HAMSTER_FUR_COLORS; ++i) if (swatch(i).contains(point)) selected_ = i;
         for (std::uint8_t i=0;i<3;++i) {
             if (option(i,390).contains(point)) eyes_ = i;
@@ -112,16 +119,26 @@ void HamsterCustomizer::draw(sf::RenderTarget& target, const sf::Font& font) con
     target.draw(panel);
     label(target, font, "MAKE YOUR HAMSTER", 260, 86, 28);
     if (!loaded_) { label(target, font, "Character preview unavailable", 235, 230, 24); return; }
-    sf::Sprite preview(texture(selected_, eyes_, scarf_), {direction_ * 48, 0, 48, 48});
-    preview.setScale(3.5f, 3.5f);
-    preview.setPosition(366.f, 126.f);
+    const char* characterLabels[] = {"Hamtaro", "Bijou"};
+    for(int i=0;i<2;++i) {
+        sf::RectangleShape button({150,30});
+        button.setPosition(i == 0 ? 285.f : 465.f,120);
+        button.setFillColor(i == character_ ? sf::Color(242,212,155) : sf::Color(255,251,239));
+        button.setOutlineColor({130,86,54});
+        button.setOutlineThickness(i == character_ ? 3.f : 1.f);
+        target.draw(button);
+        label(target,font,characterLabels[i],i == 0 ? 315.f : 505.f,126,19);
+    }
+    sf::Sprite preview(texture(selected_, eyes_, scarf_, character_), {direction_ * 48, 0, 48, 48});
+    preview.setScale(3.f, 3.f);
+    preview.setPosition(378.f, 146.f);
     target.draw(preview);
-    label(target, font, names[selected_], 400, 301, 22);
+    label(target, font, character_ == 1 && selected_ == 0 ? "Snow" : names[selected_], 400, 301, 22);
     for (int i = 0; i < HAMSTER_FUR_COLORS; ++i) {
         const auto bounds = swatch(i);
         sf::RectangleShape button({bounds.width, bounds.height});
         button.setPosition(bounds.left, bounds.top);
-        button.setFillColor(palette[i]);
+        button.setFillColor(character_ == 1 && i == 0 ? sf::Color(255,248,232) : palette[i]);
         button.setOutlineColor(i == selected_ ? sf::Color(72, 46, 37) : sf::Color(200, 182, 156));
         button.setOutlineThickness(i == selected_ ? 5.f : 2.f);
         target.draw(button);
@@ -140,5 +157,5 @@ void HamsterCustomizer::draw(sf::RenderTarget& target, const sf::Font& font) con
         label(target,font,row == 0 ? eyeLabels[i] : scarfLabels[i],bounds.left+8,bounds.top+8,17);
     }
     label(target, font, "Left-Right: fur / Up-Down: turn", 255, 494, 17);
-    label(target, font, "Click choices / F1-F3: eyes / F4: scarf", 225, 522, 16);
+    label(target, font, "F1-F3: eyes / F4: scarf / F5: character", 220, 522, 16);
 }

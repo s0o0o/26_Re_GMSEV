@@ -5,6 +5,7 @@
 #include <iostream>
 
 namespace {
+std::string outputDirectory = "TP_2023192003_CLIENT/client_sample/assets/appearance/";
 struct Rect { unsigned x, y, w, h; };
 const std::array<Rect, 4> eyes = {{{56,17,10,9}, {75,17,11,9}, {110,17,12,9}, {169,17,13,9}}};
 const sf::Color ink(67, 20, 17), cream(255, 248, 232);
@@ -13,17 +14,21 @@ void rect(sf::Image& image, unsigned x, unsigned y, unsigned w, unsigned h, sf::
         image.setPixel(x + dx, y + dy, color);
 }
 bool save(const sf::Image& image, const char* name) {
-    return image.saveToFile(std::string("TP_2023192003_CLIENT/client_sample/assets/appearance/") + name + ".png");
+    return image.saveToFile(outputDirectory + name + ".png");
 }
 }
-int main() {
+int main(int argc, char** argv) {
+    const std::string input = argc > 1 ? argv[1] : "TP_2023192003_CLIENT/client_sample/character.png";
+    if (argc > 2) outputDirectory = argv[2];
+    const std::array<Rect,4> eyeRects = argc > 3 ?
+        std::array<Rect,4>{{{61,20,9,8},{76,20,9,8},{111,20,9,8},{168,20,9,8}}} : eyes;
     sf::Image original;
-    if (!original.loadFromFile("TP_2023192003_CLIENT/client_sample/character.png") ||
+    if (!original.loadFromFile(input) ||
         original.getSize() != sf::Vector2u(192, 48)) return 1;
     sf::Image body = original, classic, round, sleepy, empty;
     classic.create(192,48,sf::Color::Transparent);
     round = sleepy = empty = classic;
-    for (const auto& r : eyes) {
+    for (const auto& r : eyeRects) {
         for (unsigned y = r.y; y < r.y+r.h; ++y) for (unsigned x = r.x; x < r.x+r.w; ++x) {
             classic.setPixel(x,y,original.getPixel(x,y));
             auto skin = cream;
