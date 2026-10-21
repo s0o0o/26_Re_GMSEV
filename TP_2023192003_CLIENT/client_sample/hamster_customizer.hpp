@@ -8,6 +8,7 @@
 class HamsterCustomizer {
 public:
     bool load(const std::string& path);
+    bool setBackdrop(const sf::Texture& texture);
     void handleEvent(const sf::Event& event, const sf::RenderWindow& window);
     void draw(sf::RenderTarget& target, const sf::Font& font) const;
     const sf::Texture& texture(std::uint8_t color, std::uint8_t eyes = 0, std::uint8_t scarf = 0) const;
@@ -20,4 +21,6 @@ private:
     std::uint8_t eyes_ = 0, scarf_ = 0;
     int direction_ = 1;
     bool loaded_ = false;
+    sf::Texture blurredBackdrop_;
+    bool hasBackdrop_ = false;
 };

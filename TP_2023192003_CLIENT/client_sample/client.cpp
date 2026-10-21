@@ -13,7 +13,11 @@ using namespace std;
 #include "..\..\shared\protocol.hpp"
 #include "..\..\shared\login_input.hpp"
 #include "hamster_customizer.hpp"
-HamsterCustomizer hamsterCustomizer;
+#include "login_flow.hpp"
+HamsterCustomizer& hamsterCustomizer() {
+    static HamsterCustomizer instance;
+    return instance;
+}
 
 sf::TcpSocket s_socket;
 
@@ -66,7 +70,10 @@ chrono::system_clock::time_point HpTime;
 chrono::system_clock::time_point killTime;
 
 sf::RenderWindow* g_window;
-sf::Font g_font; 
+sf::Font& gameFont() {
+    static sf::Font font;
+    return font;
+}
 // text
 sf::Text nameText;
 sf::Text hpText;
@@ -85,13 +92,19 @@ sf::Text chatText;
 nearMonsterInfo nearMonsters[5];
 int nearMonCnt = 0;
 
-enum GAMESTATE {
-	startScreen,
-	GameScreen
-};
-
-GAMESTATE gameState = GAMESTATE::startScreen;
-
+using GAMESTATE = LoginStage;
+LoginFlow loginFlow;
+std::string loginStatus;
+bool startConnectionRequested = false;
+bool gameResourcesReady = false;
+cs_packet_login pendingLogin{};
+std::size_t loginBytesSent = 0;
+sf::Clock loginClock;
+void failLogin(const char* message) {
+    s_socket.disconnect();
+    loginFlow.fail();
+    loginStatus = message;
+}
 class OBJECT {
 private:
 	bool m_showing;
@@ -161,7 +174,7 @@ public:
 	}
 
 	void set_name(const char str[]) {
-		m_name.setFont(g_font);
+		m_name.setFont(gameFont());
 		m_name.setString(fromUtf8(str));
 		if (id < MAX_USER) m_name.setFillColor(sf::Color(0, 0, 0));
 		else m_name.setFillColor(sf::Color(rand() % 256, rand() % 256, rand() % 256));
@@ -173,7 +186,7 @@ public:
 	}
 
 	void set_chat(int id, const char str[]) {
-		m_chat.setFont(g_font);
+		m_chat.setFont(gameFont());
 		string sss = to_string(id) + " : " + str;
 		m_chat.setString(str);
 		m_chat.setFillColor(sf::Color::Blue);
@@ -286,14 +299,14 @@ void client_initialize()
 	killSprite.setTexture(*killTex);
 	chaseSprite.setTexture(*chaseTex);
 
-	if (false == g_font.loadFromFile("neodgm.ttf")) {
+	if (false == gameFont().loadFromFile("neodgm.ttf")) {
 		cout << "Font Loading Error!\n";
 		exit(-1);
 	}
 	white_tile = OBJECT{ *board, 0, 0, TILE_WIDTH, TILE_WIDTH };
 	black_tile = OBJECT{ *board, 50, 0, TILE_WIDTH, TILE_WIDTH };
 	avatar = OBJECT{ *myHam, userTextureWidth, 0, userTextureWidth, userTextureHeight };
-    avatar.get_sprite().setTexture(hamsterCustomizer.texture(hamsterCustomizer.selected(), hamsterCustomizer.selectedEyes(), hamsterCustomizer.selectedScarf()));
+    avatar.get_sprite().setTexture(hamsterCustomizer().texture(hamsterCustomizer().selected(), hamsterCustomizer().selectedEyes(), hamsterCustomizer().selectedScarf()));
 
 	// 프로필
 	profileSprite.setPosition(0 + 15, WINDOW_HEIGHT - profileHeight - 15);
@@ -320,7 +333,7 @@ void ProcessPacket(char* ptr)
 		sc_packet_avatar_info* packet = reinterpret_cast<sc_packet_avatar_info*>(ptr);
 		g_myid = packet->id;
 		avatar.id = g_myid;
-        avatar.get_sprite().setTexture(hamsterCustomizer.texture(packet->fur_color, packet->eye_style, packet->scarf_style));
+        avatar.get_sprite().setTexture(hamsterCustomizer().texture(packet->fur_color, packet->eye_style, packet->scarf_style));
 
 		avatar._hp = packet->hp;
 		hpText.setString(to_string(avatar._hp));
@@ -353,7 +366,7 @@ void ProcessPacket(char* ptr)
 		else if (id < MAX_USER) {
 			players[id] = OBJECT{ *myHam, userTextureWidth, 0, userTextureHeight, userTextureHeight };
 			players[id]._monType = my_packet->monType;
-            players[id].get_sprite().setTexture(hamsterCustomizer.texture(my_packet->fur_color, my_packet->eye_style, my_packet->scarf_style));
+            players[id].get_sprite().setTexture(hamsterCustomizer().texture(my_packet->fur_color, my_packet->eye_style, my_packet->scarf_style));
 			players[id].id = id;
 			players[id].move(my_packet->x, my_packet->y);
 			players[id].set_name(my_packet->name);
@@ -419,13 +432,13 @@ void ProcessPacket(char* ptr)
 	case S2C_P_AVATAR_LOGIN_OK:
 	{
 		cout << " S2C_P_AVATAR_LOGIN_OK 이거 날라옴!!" << endl;
-		gameState = GAMESTATE::GameScreen;
+		loginFlow.accept();
 		break;
 	}
 	case S2C_P_LOGIN_FAIL:
 	{
 		cout << " 로그인 실패 " << endl;
-		inputNickname.clear();
+		failLogin("Login rejected. Retry or go back to edit your ID.");
 		break;
 	}
 	case S2C_P_ATTACK_PtoN:
@@ -527,12 +540,11 @@ void ProcessPacket(char* ptr)
 	}
 }
 
+size_t in_packet_size = 0, saved_packet_size = 0;
+char packet_buffer[BUF_SIZE];
 void process_data(char* net_buf, size_t io_byte)
 {
 	char* ptr = net_buf;
-	static size_t in_packet_size = 0;
-	static size_t saved_packet_size = 0;
-	static char packet_buffer[BUF_SIZE];
 
 	while (0 != io_byte) {
 		if (0 == in_packet_size) {
@@ -555,6 +567,7 @@ void process_data(char* net_buf, size_t io_byte)
 				return;
 			}
 			ProcessPacket(packet_buffer);
+            if (loginFlow.stage() == GAMESTATE::CustomizeScreen) { in_packet_size = saved_packet_size = 0; return; }
 			ptr += in_packet_size - saved_packet_size;
 			io_byte -= in_packet_size - saved_packet_size;
 			in_packet_size = 0;
@@ -569,27 +582,27 @@ void process_data(char* net_buf, size_t io_byte)
 }
 
 void profileFontInit() {
-	nameText.setFont(g_font);
+	nameText.setFont(gameFont());
 	nameText.setFillColor(sf::Color::Black);
 	nameText.setStyle(sf::Text::Regular);
 	nameText.setPosition(0 + 250, WINDOW_HEIGHT - profileHeight - 7);
 
-	seedNumText.setFont(g_font);
+	seedNumText.setFont(gameFont());
 	seedNumText.setFillColor(sf::Color::Black);
 	seedNumText.setStyle(sf::Text::Regular);
 	seedNumText.setPosition(0 + 250 + 210, WINDOW_HEIGHT - profileHeight - 7);
 
-	levelText.setFont(g_font);
+	levelText.setFont(gameFont());
 	levelText.setFillColor(sf::Color::Black);
 	levelText.setStyle(sf::Text::Regular);
 	levelText.setPosition(0 + 250, WINDOW_HEIGHT - profileHeight + 25);
 
-	hpText.setFont(g_font);
+	hpText.setFont(gameFont());
 	hpText.setFillColor(sf::Color::Black);
 	hpText.setStyle(sf::Text::Regular);
 	hpText.setPosition(0 + 250, WINDOW_HEIGHT - profileHeight + 57);
 
-	maxHpText.setFont(g_font);
+	maxHpText.setFont(gameFont());
 	maxHpText.setFillColor(sf::Color::Black);
 	maxHpText.setStyle(sf::Text::Regular);
 	maxHpText.setPosition(0 + 250 + 40, WINDOW_HEIGHT - profileHeight + 57);
@@ -600,7 +613,7 @@ void initStartScreenInit() {
 	startMainTx->loadFromFile("main.png");
 	startBgSprite.setTexture(*startMainTx);
 
-	idInputText.setFont(g_font);
+	idInputText.setFont(gameFont());
 	idInputText.setCharacterSize(30);
 	idInputText.setFillColor(sf::Color::Black);
 	idInputText.setPosition(250, 300);
@@ -644,7 +657,7 @@ void client_main()
 	avatar.draw();
 	for (auto& pl : players) pl.second.draw();
 	sf::Text text;
-	text.setFont(g_font);
+	text.setFont(gameFont());
 	char buf[100];
 	sprintf_s(buf, "(%d, %d)", avatar.m_x, avatar.m_y);
 
@@ -660,12 +673,12 @@ void client_main()
 		g_window->draw(monProfileSprite); // 프로필그리는거
 
 
-		monHpText[i].setFont(g_font);
+		monHpText[i].setFont(gameFont());
 		monHpText[i].setFillColor(sf::Color::Black);
 		monHpText[i].setStyle(sf::Text::Regular);
 		monHpText[i].setPosition(0 + 250, 85 + 125 * i);
 
-		monIdText[i].setFont(g_font);
+		monIdText[i].setFont(gameFont());
 		monIdText[i].setFillColor(sf::Color::Black);
 		monIdText[i].setStyle(sf::Text::Regular);
 		monIdText[i].setPosition(0 + 250, 20 + 125 * i);
@@ -748,25 +761,40 @@ void send_packet(void* packet)
 	s_socket.send(packet, p[0], sent);
 }
 
-void drawStartScreen(sf::RenderWindow& window, const sf::String& nickname) {
+void drawStartScreen(sf::RenderTarget& window, const sf::String& nickname) {
 	window.draw(startBgSprite);
-    hamsterCustomizer.draw(window, g_font);
+    sf::RectangleShape field({426,64});
+    field.setPosition(246,641);
+    field.setFillColor({248,248,248});
+    window.draw(field);
+    sf::Text fieldLabel(choosingNickname ? "NAME:" : "ID:",gameFont(),28);
+    fieldLabel.setPosition(265,653);
+    fieldLabel.setFillColor(sf::Color(72,20,10));
+    window.draw(fieldLabel);
+    sf::RectangleShape hint({650,45});
+    hint.setPosition(125,550);
+    hint.setFillColor({255,248,228});
+    window.draw(hint);
+
 
 	// 실시간 ID 입력 표시
-	//g_font.loadFromFile("neodgm.ttf");
-	idInputText.setFont(g_font);
+	//gameFont().loadFromFile("neodgm.ttf");
+	idInputText.setFont(gameFont());
 	idInputText.setString(choosingNickname ? nickname : inputAccountId);
-	idInputText.setCharacterSize(53);
+	idInputText.setCharacterSize(38);
 	idInputText.setFillColor(sf::Color::Black);
-	idInputText.setPosition(395, 633);
-	window.draw(idInputText);
+	idInputText.setPosition(390, 643);
+	idInputText.setScale(1,1);
+    const auto inputWidth = idInputText.getLocalBounds().width;
+    if (inputWidth > 270) idInputText.setScale(270.f/inputWidth,1);
+    window.draw(idInputText);
     sf::Text prompt;
-    prompt.setFont(g_font);
-    prompt.setCharacterSize(22);
+    prompt.setFont(gameFont());
+    prompt.setCharacterSize(18);
     prompt.setFillColor(sf::Color::Black);
-    prompt.setPosition(30, 560);
+    prompt.setPosition(150, 563);
     prompt.setString(choosingNickname ?
-        "Nickname (1-12 letters / Korean / digits / _) - Enter to login, Esc for ID" :
+        "Nickname (1-12 chars) / Enter: customize / Esc: account ID" :
         "Account ID (digits) - Enter to choose nickname");
     window.draw(prompt);
 }
@@ -776,7 +804,7 @@ void chatInit() {
 	chatTx->loadFromFile("chat.png");
 	chatSprite.setTexture(*chatTx);
 
-	chatText.setFont(g_font);  // font는 기존에 사용하던 폰트
+	chatText.setFont(gameFont());  // font는 기존에 사용하던 폰트
 	chatText.setCharacterSize(25);
 	chatText.setFillColor(sf::Color::Blue);
 	chatText.setPosition(30, 600);  // 화면 하단
@@ -787,18 +815,74 @@ void drawGameScreen() {
 	client_main();
 }
 
+void drawCustomizationScreen(sf::RenderTarget& window) {
+    hamsterCustomizer().draw(window, gameFont());
+    sf::Text identity(sf::String("ID " + std::to_string(id_input) + " / ") + inputNickname, gameFont(), 22);
+    identity.setFillColor(sf::Color::White);
+    identity.setPosition(240,570);
+    window.draw(identity);
+    const bool connecting = loginFlow.stage() == GAMESTATE::ConnectingScreen;
+    for (int i=0;i<2;++i) {
+        sf::RectangleShape button({230,52});
+        button.setPosition(i == 0 ? 190.f : 480.f,610);
+        button.setFillColor(connecting ? sf::Color(140,140,140) : (i == 0 ? sf::Color(255,248,228) : sf::Color(237,193,107)));
+        window.draw(button);
+        sf::Text text(i == 0 ? "Back (Esc)" : (connecting ? "Connecting..." : "Connect (Enter)"),gameFont(),22);
+        text.setFillColor(sf::Color(72,46,37));
+        text.setPosition(i == 0 ? 225.f : 505.f,625);
+        window.draw(text);
+    }
+    sf::Text status(loginStatus,gameFont(),19);
+    status.setFillColor(sf::Color::White);
+    status.setPosition(170,690);
+    window.draw(status);
+}
+
+void beginLoginConnection() {
+    s_socket.disconnect();
+    in_packet_size = saved_packet_size = 0;
+    s_socket.setBlocking(true);
+    const auto status = s_socket.connect("127.0.0.1", GAME_PORT, sf::seconds(2));
+    s_socket.setBlocking(false);
+    if (status != sf::Socket::Done) { failLogin("Cannot connect to server. Check server and retry."); return; }
+    if (!gameResourcesReady) { client_initialize(); gameResourcesReady = true; }
+    avatar.get_sprite().setTexture(hamsterCustomizer().texture(hamsterCustomizer().selected(), hamsterCustomizer().selectedEyes(), hamsterCustomizer().selectedScarf()));
+    const auto nickname = toUtf8(inputNickname);
+    pendingLogin = {};
+    pendingLogin.size = sizeof(pendingLogin);
+    pendingLogin.type = C2S_P_LOGIN;
+    pendingLogin.inputId = id_input;
+    pendingLogin.fur_color = hamsterCustomizer().selected();
+    pendingLogin.eye_style = hamsterCustomizer().selectedEyes();
+    pendingLogin.scarf_style = hamsterCustomizer().selectedScarf();
+    strncpy_s(pendingLogin.name,nickname.c_str(),MAX_ID_LENGTH-1);
+    avatar.set_name(pendingLogin.name);
+    nameText.setString(fromUtf8(pendingLogin.name));
+    loginBytesSent = 0;
+    loginClock.restart();
+    loginStatus = "Connecting to your hamster world...";
+}
+
+void pumpLogin() {
+    if (loginClock.getElapsedTime() > sf::seconds(10)) { failLogin("Login timed out. Please retry."); return; }
+    if (loginBytesSent < sizeof(pendingLogin)) {
+        std::size_t sent = 0;
+        const auto status = s_socket.send(reinterpret_cast<const char*>(&pendingLogin)+loginBytesSent,sizeof(pendingLogin)-loginBytesSent,sent);
+        loginBytesSent += sent;
+        if (status == sf::Socket::Error || status == sf::Socket::Disconnected) { failLogin("Login send failed. Please retry."); return; }
+        if (loginBytesSent < sizeof(pendingLogin)) return;
+    }
+    char buffer[BUF_SIZE];
+    std::size_t received = 0;
+    const auto status = s_socket.receive(buffer,sizeof(buffer),received);
+    if (status == sf::Socket::Error || status == sf::Socket::Disconnected) { failLogin("Server disconnected. Please retry."); return; }
+    if (received) process_data(buffer,received);
+}
 int main()
 {
 	wcout.imbue(locale("korean"));
-	sf::Socket::Status status = s_socket.connect("127.0.0.1", GAME_PORT);
-	s_socket.setBlocking(false);
-	if (status != sf::Socket::Done) {
-		wcout << L"서버와 연결할 수 없습니다.\n";
-		exit(-1);
-	}
-
-	g_font.loadFromFile("neodgm.ttf");
-	if (!g_font.loadFromFile("neodgm.ttf")) {
+	gameFont().loadFromFile("neodgm.ttf");
+	if (!gameFont().loadFromFile("neodgm.ttf")) {
 		cout << "Font Loading Error!\n";
 		exit(-1);
 	}
@@ -806,7 +890,7 @@ int main()
 	sf::RenderWindow window(sf::VideoMode(WINDOW_WIDTH, WINDOW_HEIGHT), "HAMSTER RPG 2023192003 김연수");
 	g_window = &window;
 	initStartScreenInit();
-    if (!hamsterCustomizer.load("character.png")) { std::cerr << "Character texture loading failed" << std::endl; return -1; }
+    if (!hamsterCustomizer().load("character.png") || !hamsterCustomizer().setBackdrop(*startMainTx)) { std::cerr << "Character texture loading failed" << std::endl; return -1; }
 	chatInit();
 	lodMapTexture();
 
@@ -818,8 +902,8 @@ int main()
 			if (event.type == sf::Event::Closed)
 				window.close();
 
-			if (gameState == GAMESTATE::startScreen) {
-                hamsterCustomizer.handleEvent(event, window);
+			if (loginFlow.stage() == GAMESTATE::startScreen) {
+
 				if (event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::Escape) choosingNickname = false;
 				if (event.type == sf::Event::TextEntered && !choosingNickname) {
                     if (event.text.unicode == '\b' && !inputAccountId.isEmpty()) inputAccountId.erase(inputAccountId.getSize() - 1);
@@ -846,25 +930,23 @@ int main()
                     else if (!inputNickname.isEmpty()) {
 						const std::string nicknameUtf8 = toUtf8(inputNickname);
 						if (!login_input::nickname(nicknameUtf8.c_str(), nicknameUtf8.size() + 1)) continue;
-						client_initialize();
-						// 로그인 패킷 전송
-						cs_packet_login p{};
-						p.size = sizeof(p);
-						p.type = C2S_P_LOGIN;
-						p.inputId = id_input;
-                        p.fur_color = hamsterCustomizer.selected();
-                        p.eye_style = hamsterCustomizer.selectedEyes();
-                        p.scarf_style = hamsterCustomizer.selectedScarf();
-
-						strncpy_s(p.name, nicknameUtf8.c_str(), MAX_ID_LENGTH - 1);
-						send_packet(&p);
-
-						avatar.set_name(p.name);
-						nameText.setString(fromUtf8(p.name));
+						loginStatus.clear();
+                        loginFlow.finishCredentials();
 					}
 				}
 			}
-			else if (gameState == GAMESTATE::GameScreen) {
+			else if (loginFlow.stage() == GAMESTATE::CustomizeScreen) {
+                hamsterCustomizer().handleEvent(event, window);
+                const bool click = event.type == sf::Event::MouseButtonPressed && event.mouseButton.button == sf::Mouse::Left;
+                const auto point = click ? window.mapPixelToCoords({event.mouseButton.x,event.mouseButton.y}) : sf::Vector2f(-1,-1);
+                if ((event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::Escape) || sf::FloatRect(190,610,230,52).contains(point)) {
+                    loginFlow.back();
+                    loginStatus.clear();
+                } else if ((event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::Enter) || sf::FloatRect(480,610,230,52).contains(point)) {
+                    if (loginFlow.connect()) startConnectionRequested = true;
+                }
+            }
+            else if (loginFlow.stage() == GAMESTATE::GameScreen) {
 
 				if (event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::Tab) {
 					isChatMode = !isChatMode;
@@ -964,29 +1046,17 @@ int main()
 			}
 		}
 
-		window.clear();
-		if (gameState == GAMESTATE::startScreen) {
-			drawStartScreen(*g_window, inputNickname);
-			char net_buf[BUF_SIZE];
-			size_t   received;
-
-			auto recv_result = s_socket.receive(net_buf, BUF_SIZE, received);
-			if (recv_result == sf::Socket::Error)
-			{
-				wcout << L"Recv 에러!";
-				exit(-1);
-			}
-			if (recv_result == sf::Socket::Disconnected) {
-				wcout << L"Disconnected\n";
-				exit(-1);
-			}
-			if (recv_result != sf::Socket::NotReady)
-				if (received > 0) process_data(net_buf, received);
-		}
-		else if (gameState == GAMESTATE::GameScreen) {
-			client_main();
-		}
+        window.clear();
+        if (loginFlow.stage() == GAMESTATE::startScreen) {
+            drawStartScreen(window, inputNickname);
+        } else if (loginFlow.stage() == GAMESTATE::CustomizeScreen || loginFlow.stage() == GAMESTATE::ConnectingScreen) {
+            drawCustomizationScreen(window);
+            if (loginFlow.stage() == GAMESTATE::ConnectingScreen && !startConnectionRequested) pumpLogin();
+        } else if (loginFlow.stage() == GAMESTATE::GameScreen) {
+            client_main();
+        }
 		window.display();
+        if (startConnectionRequested && window.isOpen()) { startConnectionRequested = false; beginLoginConnection(); }
 	}
 	client_finish();
 

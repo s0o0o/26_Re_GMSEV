@@ -1,4 +1,5 @@
 #include "../TP_2023192003_CLIENT/client_sample/hamster_customizer.hpp"
+#include "../TP_2023192003_CLIENT/client_sample/background_blur.hpp"
 #include <cassert>
 #include <iostream>
 
@@ -11,6 +12,20 @@ int main() {
     assert(target.create(900, 800));
     sf::Texture background;
     assert(background.loadFromFile("TP_2023192003_CLIENT/client_sample/main.png"));
+    assert(customizer.setBackdrop(background));
+    sf::Image solid;
+    solid.create(3,2,sf::Color(123,90,45,255));
+    const auto uniform = blurBackground(solid);
+    assert(uniform.getSize() == solid.getSize());
+    assert(uniform.getPixel(0,0) == solid.getPixel(0,0));
+    assert(uniform.getPixel(2,1) == solid.getPixel(2,1));
+    sf::Image impulse;
+    impulse.create(33,33,sf::Color::Black);
+    impulse.setPixel(16,16,sf::Color::White);
+    const auto blurred = blurBackground(impulse);
+    assert(blurred.getPixel(16,16).r < 255);
+    assert(blurred.getPixel(17,16).r > 0);
+    assert(blurred.getPixel(16,17).r > 0);
     sf::RenderWindow inputWindow;
     sf::Event next{};
     next.type = sf::Event::KeyPressed;

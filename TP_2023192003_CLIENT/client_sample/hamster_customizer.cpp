@@ -1,4 +1,5 @@
 #include "hamster_customizer.hpp"
+#include "background_blur.hpp"
 
 namespace {
 const std::array<sf::Color, HAMSTER_FUR_COLORS> palette = {{
@@ -72,6 +73,11 @@ const sf::Texture& HamsterCustomizer::texture(std::uint8_t color, std::uint8_t e
         validEyeStyle(eyes) ? eyes : 0, validScarfStyle(scarf) ? scarf : 0)];
 }
 
+bool HamsterCustomizer::setBackdrop(const sf::Texture& texture) {
+    hasBackdrop_ = blurredBackdrop_.loadFromImage(blurBackground(texture.copyToImage()));
+    return hasBackdrop_;
+}
+
 void HamsterCustomizer::handleEvent(const sf::Event& event, const sf::RenderWindow& window) {
     if (event.type == sf::Event::KeyPressed) {
         if (event.key.code == sf::Keyboard::Right) selected_ = (selected_ + 1) % HAMSTER_FUR_COLORS;
@@ -94,6 +100,10 @@ void HamsterCustomizer::handleEvent(const sf::Event& event, const sf::RenderWind
 }
 
 void HamsterCustomizer::draw(sf::RenderTarget& target, const sf::Font& font) const {
+    if (hasBackdrop_) target.draw(sf::Sprite(blurredBackdrop_));
+    sf::RectangleShape dim(target.getView().getSize());
+    dim.setFillColor({0,0,0,100});
+    target.draw(dim);
     sf::RectangleShape panel({580.f, 480.f});
     panel.setPosition(160.f, 70.f);
     panel.setFillColor({255, 248, 228});
