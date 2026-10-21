@@ -22,6 +22,7 @@
     <ClCompile Include="game_session.cpp" />
     <ClCompile Include="session_packets.cpp" />
     <ClCompile Include="session_registry.cpp" />
+    <ClCompile Include="pathfinder.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\shared\protocol.hpp">
@@ -33,6 +34,7 @@
     <ClInclude Include="monster_state.hpp" />
     <ClInclude Include="game_session.hpp" />
     <ClInclude Include="session_registry.hpp" />
+    <ClInclude Include="pathfinder.hpp" />
     <ClInclude Include="world_map.hpp" />
   </ItemGroup>
   <ItemGroup>
