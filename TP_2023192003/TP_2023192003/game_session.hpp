@@ -28,7 +28,7 @@ public:
 
 	void sendSessionLoginPacket();
 	void sendSessioLoginOkPacket();
-	void sendMovePacket(int);
+	void sendMovePacket(int, std::uint32_t moveTime = 0);
 	void sendAddPlayerPacket(int);
 	void sendRemoveSessionPacket(int);
 	void sendChatPacket(int, const char*);

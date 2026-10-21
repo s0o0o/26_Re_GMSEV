@@ -5,10 +5,12 @@
 #include <cstdio>
 #include <cwchar>
 #include <cstdlib>
+#include <mutex>
 
 #pragma comment(lib, "odbc32.lib")
 
 namespace {
+std::mutex databaseMutex;
 SQLHENV henv = nullptr;
 SQLHDBC hdbc = nullptr;
 void HandleDiagnosticRecord(SQLHANDLE hHandle, SQLSMALLINT hType, RETCODE RetCode)
@@ -34,6 +36,7 @@ void HandleDiagnosticRecord(SQLHANDLE hHandle, SQLSMALLINT hType, RETCODE RetCod
 } // namespace
 
 bool initializeDB() {
+    std::lock_guard<std::mutex> guard(databaseMutex);
 	SQLRETURN ret;
 
 	ret = SQLAllocHandle(SQL_HANDLE_ENV, SQL_NULL_HANDLE, &henv);
@@ -55,6 +58,7 @@ bool initializeDB() {
 }
 
 void finalizeDB() {
+    std::lock_guard<std::mutex> guard(databaseMutex);
 	SQLDisconnect(hdbc);
 	SQLFreeHandle(SQL_HANDLE_DBC, hdbc);
 	SQLFreeHandle(SQL_HANDLE_ENV, henv);
@@ -63,6 +67,7 @@ void finalizeDB() {
 // 로그인할때 정보 확인용
 LoginLookupResult get_DB_login_info(int& db_id, int& db_user_x, int& db_user_y, int& db_user_hp,
     int& db_user_level, int& db_user_exp, int& db_user_seed_num, int& db_user_maxHp, int& db_user_damage) {
+    std::lock_guard<std::mutex> guard(databaseMutex);
     struct Statement {
         SQLHSTMT handle = SQL_NULL_HSTMT;
         ~Statement() { if (handle != SQL_NULL_HSTMT) SQLFreeHandle(SQL_HANDLE_STMT, handle); }
@@ -113,6 +118,7 @@ LoginLookupResult get_DB_login_info(int& db_id, int& db_user_x, int& db_user_y, 
 }
 
 bool update_user_info(int id, int x, int y, int seed, int hp, int level, int exp, int userMaxHp, int damage) {
+    std::lock_guard<std::mutex> guard(databaseMutex);
 	SQLEndTran(SQL_HANDLE_DBC, hdbc, SQL_ROLLBACK);  // 이전 트랜잭션 실패 가능성 대비
 
 	SQLHSTMT hstmt;
@@ -161,6 +167,7 @@ bool update_user_info(int id, int x, int y, int seed, int hp, int level, int exp
 }
 
 bool insert_new_user(int userId, const char* name) {
+    std::lock_guard<std::mutex> guard(databaseMutex);
 	SQLHSTMT hstmt;
 	SQLRETURN ret;
 

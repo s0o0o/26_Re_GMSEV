@@ -481,7 +481,9 @@ void doTimer(int timerIdx) {
 
 void disconnect(int sessionId) {
 	auto it = clients.find(sessionId);
+	if (it == clients.end() || !it->second) return;
 	std::shared_ptr<GAMESESSION> session = it->second;
+    const bool wasInGame = session->_state == ST_INGAME;
 
 	session->_vlL.lock();
 	unordered_set <int> vl = session->_viewList;
@@ -490,13 +492,14 @@ void disconnect(int sessionId) {
 		if (isMonster(p_id)) continue;
 		auto& pl = clients[p_id];
 		std::shared_ptr<GAMESESSION> vl_other = pl;
-		if (ST_INGAME != vl_other->_state) continue;
+		if (!vl_other || ST_INGAME != vl_other->_state) continue;
 
 		if (vl_other->object._id == sessionId) continue;
 		vl_other->sendRemoveSessionPacket(sessionId);
 	}
 	closesocket(session->_socket);
 	session->_state = ST_FREE;
+    if (!wasInGame) return;
 	if (update_user_info(session->_userInputId, session->object._x, session->object._y, session->object._seedNum,
 		session->object._hp, session->object._level, session->object._exp, session->object._maxHp, session->object._damage)) {
 		//cout << "없뎃성공" << endl;
@@ -622,7 +625,7 @@ void processPacket(int sessionId, char* packetFromC) {
 		unordered_set<int> _oldVl = session->_viewList;	// 지금 유저의. 이전 시야를 백업해둔다..
 		session->_vlL.unlock();
 
-		session->sendMovePacket(sessionId);	// 나한테 나 움직였다고 알리기
+		session->sendMovePacket(sessionId, p->move_time);	// 나한테 나 움직였다고 알리기
 		session->sendMapInfo(session->object._id, session->object._x, session->object._y);
 
 		for (auto& pl : _near_vlist) {	// nearlist돌면서... (이거 상대방기준임****)
@@ -931,7 +934,7 @@ void workerThread(HANDLE iocp) {
 		break;
 		case OP_SEND:
 		{
-
+            delete overEx;
 		}
 		break;
 		case OP_PLAYER_MOVE:

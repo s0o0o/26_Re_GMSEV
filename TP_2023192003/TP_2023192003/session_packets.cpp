@@ -28,12 +28,13 @@ void GAMESESSION::sendSessioLoginOkPacket() {
 	registerSend(&p);
 }
 
-void GAMESESSION::sendMovePacket(int sessionId) {
+void GAMESESSION::sendMovePacket(int sessionId, std::uint32_t moveTime) {
 	auto it = clients.find(sessionId);
 	if (it == clients.end() || !it->second) return;
 	std::shared_ptr<GAMESESSION> user = it->second;
 
-	sc_packet_move p;
+	sc_packet_move p{};
+	p.move_time = moveTime;
 	p.id = sessionId;
 	p.size = sizeof(sc_packet_move);
 	p.type = S2C_P_MOVE;

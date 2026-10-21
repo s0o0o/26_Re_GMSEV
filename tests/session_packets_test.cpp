@@ -22,6 +22,16 @@ int main() {
     receiver.sendAddPlayerPacket(123);
     assert(sent.empty());
 
+    clients[123] = std::make_shared<GAMESESSION>();
+    receiver.sendMovePacket(123, 9876);
+    sc_packet_move move{};
+    std::memcpy(&move, sent.back().data(), sizeof(move));
+    assert(move.move_time == 9876);
+    receiver.sendMovePacket(123);
+    std::memcpy(&move, sent.back().data(), sizeof(move));
+    assert(move.move_time == 0);
+    sent.clear();
+
     receiver._viewList.insert(999);
     receiver.sendRemoveSessionPacket(999);
     assert(sent.size() == 1 && receiver._viewList.count(999) == 0);

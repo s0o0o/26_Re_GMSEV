@@ -47,6 +47,7 @@ struct CLIENT {
 	int x;
 	int y;
 	atomic_bool connected;
+	atomic_bool socketOpen{false};
 
 	SOCKET client_socket;
 	OverlappedEx recv_over;
@@ -62,7 +63,7 @@ atomic_int num_connections;
 atomic_int client_to_close;
 atomic_int active_clients;
 
-int			global_delay;				// ms단위, 1000이 넘으면 클라이언트 증가 종료
+atomic_int global_delay{0};				// ms단위, 1000이 넘으면 클라이언트 증가 종료
 
 vector <thread*> worker_threads;
 thread test_thread;
@@ -95,14 +96,22 @@ void error_display(const char* msg, int err_no)
 
 void DisconnectClient(int ci)
 {
-	bool status = true;
-	if (true == atomic_compare_exchange_strong(&g_clients[ci].connected, &status, false)) {
-		closesocket(g_clients[ci].client_socket);
-		active_clients--;
-	}
-	// cout << "Client [" << ci << "] Disconnected!\n";
+    if (ci < 0 || ci >= MAX_CLIENTS) return;
+    if (g_clients[ci].connected.exchange(false)) --active_clients;
+    if (g_clients[ci].socketOpen.exchange(false)) closesocket(g_clients[ci].client_socket);
 }
 
+// A handled completion must never be inspected again by the worker.
+bool HandleFailedCompletion(BOOL ok, DWORD bytes, int ci, OverlappedEx* over)
+{
+    if (!over) return true;
+    if (ci < 0 || ci >= MAX_CLIENTS || !ok || bytes == 0) {
+        DisconnectClient(ci);
+        if (over->event_type == OP_SEND || over->event_type == OP_DO_MOVE) delete over;
+        return true;
+    }
+    return false;
+}
 void SendPacket(int cl, void* packet)
 {
 	int psize = reinterpret_cast<unsigned char*>(packet)[0];
@@ -117,8 +126,10 @@ void SendPacket(int cl, void* packet)
 		&over->over, NULL);
 	if (0 != ret) {
 		int err_no = WSAGetLastError();
-		if (WSA_IO_PENDING != err_no)
-			error_display("Error in SendPacket:", err_no);
+		if (WSA_IO_PENDING != err_no) {
+            delete over;
+            DisconnectClient(cl);
+        }
 	}
 	// std::cout << "Send Packet [" << ptype << "] To Client : " << cl << std::endl;
 }
@@ -128,7 +139,7 @@ void ProcessPacket(int ci, unsigned char packet[])
 	switch (packet[1]) {
 	case S2C_P_MOVE: {
 		sc_packet_move* move_packet = reinterpret_cast<sc_packet_move*>(packet);
-		if (move_packet->id < MAX_CLIENTS) {
+		if (move_packet->id >= 0 && move_packet->id < MAX_CLIENTS) {
 			int my_id = client_map[move_packet->id];
 			if (-1 != my_id) {
 				g_clients[my_id].x = move_packet->x;
@@ -136,7 +147,8 @@ void ProcessPacket(int ci, unsigned char packet[])
 			}
 			if (ci == my_id) {
 				if (0 != move_packet->move_time) {
-					auto d_ms = duration_cast<milliseconds>(high_resolution_clock::now().time_since_epoch()).count() - move_packet->move_time;
+					const auto now = static_cast<std::uint32_t>(duration_cast<milliseconds>(high_resolution_clock::now().time_since_epoch()).count());
+                    const auto d_ms = static_cast<std::int64_t>(static_cast<std::uint32_t>(now - move_packet->move_time));
 
 					if (global_delay < d_ms) global_delay++;
 					else if (global_delay > d_ms) global_delay--;
@@ -145,6 +157,11 @@ void ProcessPacket(int ci, unsigned char packet[])
 		}
 	}
 					   break;
+	case S2C_P_LOGIN_FAIL:
+        std::cout << "[LOAD] Login rejected for client " << ci << std::endl;
+        DisconnectClient(ci);
+        break;
+    case S2C_P_ATTACK_PtoN: break;
 	case S2C_P_ENTER: break;
 	case S2C_P_LEAVE: break;
 	case S2C_P_AVATAR_LOGIN_OK: break;
@@ -155,9 +172,11 @@ void ProcessPacket(int ci, unsigned char packet[])
 	case S2C_P_MONSTER_DIE: break;
 	case S2C_P_AVATAR_INFO:
 	{
-		g_clients[ci].connected = true;
-		active_clients++;
+
 		sc_packet_avatar_info* login_packet = reinterpret_cast<sc_packet_avatar_info*>(packet);
+		if (login_packet->id < 0 || login_packet->id >= MAX_CLIENTS) { DisconnectClient(ci); break; }
+        if (!g_clients[ci].socketOpen) break;
+        if (!g_clients[ci].connected.exchange(true)) ++active_clients;
 		int my_id = ci;
 		client_map[login_packet->id] = my_id;
 		g_clients[my_id].id = login_packet->id;
@@ -165,34 +184,21 @@ void ProcessPacket(int ci, unsigned char packet[])
 		g_clients[my_id].y = login_packet->y;
 	}
 	break;
-	default: MessageBox(hWnd, L"Unknown Packet Type", L"ERROR", 0);
-		while (true);
+	default: std::cout << "[LOAD] Unsupported packet type " << int(packet[1]) << std::endl; DisconnectClient(ci); break;
 	}
 }
 
 void Worker_Thread()
 {
 	while (true) {
-		DWORD io_size;
-		unsigned long long ci;
-		OverlappedEx* over;
+		DWORD io_size = 0;
+		unsigned long long ci = 0;
+		OverlappedEx* over = nullptr;
 		BOOL ret = GetQueuedCompletionStatus(g_hiocp, &io_size, &ci,
 			reinterpret_cast<LPWSAOVERLAPPED*>(&over), INFINITE);
 		// std::cout << "GQCS :";
 		int client_id = static_cast<int>(ci);
-		if (FALSE == ret) {
-			int err_no = WSAGetLastError();
-			if (64 == err_no) DisconnectClient(client_id);
-			else {
-				// error_display("GQCS : ", WSAGetLastError());
-				DisconnectClient(client_id);
-			}
-			if (OP_SEND == over->event_type) delete over;
-		}
-		if (0 == io_size) {
-			DisconnectClient(client_id);
-			continue;
-		}
+        if (HandleFailedCompletion(ret, io_size, client_id, over)) continue;
 		if (OP_RECV == over->event_type) {
 			//std::cout << "RECV from Client :" << ci;
 			//std::cout << "  IO_SIZE : " << io_size << std::endl;
@@ -228,7 +234,7 @@ void Worker_Thread()
 					io_size = 0;
 				}
 			}
-			if (invalidPacket) {
+			if (invalidPacket || !g_clients[ci].socketOpen) {
 				DisconnectClient(client_id);
 				continue;
 			}
@@ -303,8 +309,11 @@ void Adjust_Number_Of_Client()
 
 	increasing = true;
 	last_connect_time = high_resolution_clock::now();
-	g_clients[num_connections].client_socket = WSASocketW(AF_INET, SOCK_STREAM, IPPROTO_TCP, NULL, 0, WSA_FLAG_OVERLAPPED);
+	const int ci = num_connections++;
+	g_clients[ci].client_socket = WSASocketW(AF_INET, SOCK_STREAM, IPPROTO_TCP, NULL, 0, WSA_FLAG_OVERLAPPED);
 
+    if (g_clients[ci].client_socket == INVALID_SOCKET) return;
+    g_clients[ci].socketOpen = true;
 	SOCKADDR_IN ServerAddr;
 	ZeroMemory(&ServerAddr, sizeof(SOCKADDR_IN));
 	ServerAddr.sin_family = AF_INET;
@@ -312,43 +321,42 @@ void Adjust_Number_Of_Client()
 	ServerAddr.sin_addr.s_addr = inet_addr("127.0.0.1");
 
 
-	int Result = WSAConnect(g_clients[num_connections].client_socket, (sockaddr*)&ServerAddr, sizeof(ServerAddr), NULL, NULL, NULL, NULL);
+	int Result = WSAConnect(g_clients[ci].client_socket, (sockaddr*)&ServerAddr, sizeof(ServerAddr), NULL, NULL, NULL, NULL);
 	if (0 != Result) {
-		error_display("WSAConnect : ", GetLastError());
+		std::cout << "[LOAD] Connect failed: " << WSAGetLastError() << std::endl; DisconnectClient(ci); return;
 	}
 
-	g_clients[num_connections].curr_packet_size = 0;
-	g_clients[num_connections].prev_packet_data = 0;
-	ZeroMemory(&g_clients[num_connections].recv_over, sizeof(g_clients[num_connections].recv_over));
-	g_clients[num_connections].recv_over.event_type = OP_RECV;
-	g_clients[num_connections].recv_over.wsabuf.buf =
-		reinterpret_cast<CHAR*>(g_clients[num_connections].recv_over.IOCP_buf);
-	g_clients[num_connections].recv_over.wsabuf.len = sizeof(g_clients[num_connections].recv_over.IOCP_buf);
+	g_clients[ci].curr_packet_size = 0;
+	g_clients[ci].prev_packet_data = 0;
+	ZeroMemory(&g_clients[ci].recv_over, sizeof(g_clients[ci].recv_over));
+	g_clients[ci].recv_over.event_type = OP_RECV;
+	g_clients[ci].recv_over.wsabuf.buf =
+		reinterpret_cast<CHAR*>(g_clients[ci].recv_over.IOCP_buf);
+	g_clients[ci].recv_over.wsabuf.len = sizeof(g_clients[ci].recv_over.IOCP_buf);
 
 	DWORD recv_flag = 0;
-	CreateIoCompletionPort(reinterpret_cast<HANDLE>(g_clients[num_connections].client_socket), g_hiocp, num_connections, 0);
+	CreateIoCompletionPort(reinterpret_cast<HANDLE>(g_clients[ci].client_socket), g_hiocp, ci, 0);
 
-	cs_packet_login l_packet;
+	cs_packet_login l_packet{};
 
-	int temp = num_connections;
+	int temp = ci;
 	sprintf_s(l_packet.name, "%d", temp);
 	l_packet.size = sizeof(l_packet);
 	l_packet.type = C2S_P_LOGIN;
-	l_packet.inputId = rand() % 10000;
-	SendPacket(num_connections, &l_packet);
+	l_packet.inputId = ci;
+	SendPacket(ci, &l_packet);
 
 
-	int ret = WSARecv(g_clients[num_connections].client_socket, &g_clients[num_connections].recv_over.wsabuf, 1,
-		NULL, &recv_flag, &g_clients[num_connections].recv_over.over, NULL);
+	int ret = WSARecv(g_clients[ci].client_socket, &g_clients[ci].recv_over.wsabuf, 1,
+		NULL, &recv_flag, &g_clients[ci].recv_over.over, NULL);
 	if (SOCKET_ERROR == ret) {
 		int err_no = WSAGetLastError();
 		if (err_no != WSA_IO_PENDING)
 		{
-			error_display("RECV ERROR", err_no);
+			DisconnectClient(ci);
 			goto fail_to_connect;
 		}
 	}
-	num_connections++;
 fail_to_connect:
 	return;
 }
