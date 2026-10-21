@@ -35,6 +35,7 @@
     <ClInclude Include="..\..\shared\world_layout.hpp" />
     <ClInclude Include="..\..\shared\field_content.hpp" />
     <ClInclude Include="..\..\shared\appearance.hpp" />
+    <ClInclude Include="..\..\shared\combat_rules.hpp" />
     <ClInclude Include="..\..\shared\login_input.hpp" />
     <ClInclude Include="iocp_operation.hpp" />
     <ClInclude Include="game_object.hpp" />

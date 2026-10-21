@@ -151,6 +151,8 @@
     <ClInclude Include="login_flow.hpp" />
     <ClInclude Include="ui_alignment.hpp" />
     <ClInclude Include="loading_screen.hpp" />
+    <ClInclude Include="combat_hud.hpp" />
+    <ClInclude Include="..\..\shared\combat_rules.hpp" />
     <ClInclude Include="clubhouse_renderer.hpp" />
     <ClInclude Include="..\..\shared\clubhouse_map.hpp" />
     <ClInclude Include="..\..\shared\world_layout.hpp" />

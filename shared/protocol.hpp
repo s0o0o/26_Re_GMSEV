@@ -5,6 +5,7 @@
 #include <limits>
 #include <type_traits>
 #include "appearance.hpp"
+#include "combat_rules.hpp"
 
 using ObjectId = std::int32_t;
 
@@ -41,6 +42,7 @@ constexpr std::uint8_t S2C_P_ATTACK_NtoP = 15;
 constexpr std::uint8_t S2C_P_MONSTER_DIE = 16;
 constexpr std::uint8_t S2C_P_MONSTER_NEAR = 17;
 constexpr std::uint8_t S2C_P_MAPINFO = 18;
+constexpr std::uint8_t S2C_P_ATTACK_FEEDBACK = 19;
 
 constexpr std::uint8_t MOVE_UP = 1;
 constexpr std::uint8_t MOVE_DOWN = 2;
@@ -85,6 +87,7 @@ struct sc_packet_enter {
 	char name[MAX_ID_LENGTH];
 	std::int32_t monType;
 	std::int16_t x, y;
+    std::int16_t hp, max_hp;
 	std::uint8_t fur_color;
 	std::uint8_t eye_style, scarf_style;
 	std::uint8_t character_kind;
@@ -134,6 +137,10 @@ struct sc_packet_monster_die {
 	std::uint8_t size;
 	std::uint8_t type;
 	ObjectId id;
+};
+
+struct sc_packet_attack_feedback {
+    std::uint8_t size, type, reason;
 };
 
 struct nearMonsterInfo {
@@ -215,6 +222,7 @@ static_assert(valid_packet_layout<sc_packet_stat_change>(), "invalid packet layo
 static_assert(valid_packet_layout<sc_packet_login_fail>(), "invalid packet layout");
 static_assert(valid_packet_layout<sc_packet_attack_success>(), "invalid packet layout");
 static_assert(valid_packet_layout<sc_packet_monster_die>(), "invalid packet layout");
+static_assert(valid_packet_layout<sc_packet_attack_feedback>(), "invalid packet layout");
 static_assert(valid_packet_layout<sc_packet_monster_near>(), "invalid packet layout");
 static_assert(valid_packet_layout<sc_packet_mapInfo>(), "invalid packet layout");
 static_assert(valid_packet_layout<cs_packet_login>(), "invalid packet layout");
@@ -253,6 +261,7 @@ inline bool is_valid_server_packet(const std::uint8_t* packet, std::size_t size)
 	case S2C_P_ATTACK_PtoN: return size == sizeof(sc_packet_attack_success);
 	case S2C_P_MONSTER_DIE: return size == sizeof(sc_packet_monster_die);
 	case S2C_P_MAPINFO: return size == sizeof(sc_packet_mapInfo);
+    case S2C_P_ATTACK_FEEDBACK: return size == sizeof(sc_packet_attack_feedback) && validAttackFeedback(packet[2]);
 	case S2C_P_MONSTER_NEAR: {
 		const std::size_t base_size = offsetof(sc_packet_monster_near, monsters);
 		if (size < base_size) {

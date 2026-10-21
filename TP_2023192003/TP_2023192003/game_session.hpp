@@ -38,6 +38,8 @@ public:
 	void sendAttackPacket_PtoN(int, int);		// PlayertoMon
 	void sendAttackPacket_NtoP(int);		// MontoPlayer
 	void sendMonsterDiePacket(int);
+    void sendCombatUpdate(int attacker,int seeds,int target,int hp);
+    void sendAttackFeedback(AttackFeedback reason);
 	void sendMonsterNearPacket(nearMonsterInfo*, int);
 	void sendMapInfo(int, int, int);
 	void sendStatChange(int);

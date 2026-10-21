@@ -52,13 +52,16 @@ void GAMESESSION::sendAddPlayerPacket(int sessionId) {
 	if (it == clients.end() || !it->second) return;
 	std::shared_ptr<GAMESESSION> user = it->second;
 
-	sc_packet_enter p;
+    std::lock_guard<std::mutex> stats(user->monster.combatMutex);
+    if (user->monster._isDie) return;
+	sc_packet_enter p{};
 	p.id = sessionId;
 	sprintf_s(p.name, NAME_SIZE, "%s", user->object._name);
 
 	p.size = sizeof(p);
 	p.type = S2C_P_ENTER;
 	p.monType = user->monster._monType;
+    p.hp=user->object._hp; p.max_hp=user->object._maxHp;
 	p.fur_color = user->object._furColor;
 	p.eye_style = user->object._eyeStyle;
 	p.character_kind = user->object._characterKind;
@@ -101,15 +104,25 @@ void GAMESESSION::sendChatPacket(int sessionId, const char* message) {
 }
 
 void GAMESESSION::sendAttackPacket_PtoN(int targetId, int targetNewHp) {
-	sc_packet_attack_success p;
+    sendCombatUpdate(object._id,object._seedNum,targetId,targetNewHp);
+}
+
+void GAMESESSION::sendAttackFeedback(AttackFeedback reason) {
+    sc_packet_attack_feedback p{};
+    p.size=sizeof(p); p.type=S2C_P_ATTACK_FEEDBACK; p.reason=static_cast<std::uint8_t>(reason);
+    registerSend(&p);
+}
+
+void GAMESESSION::sendCombatUpdate(int attacker,int seeds,int targetId,int targetNewHp) {
+	sc_packet_attack_success p{};
 	p.size = sizeof(p);
 	p.type = S2C_P_ATTACK_PtoN;
 
 	p.targetId = targetId;
 	p.targetHp = targetNewHp;
 
-	p.attackerId = object._id;
-	p.seedNum = object._seedNum;
+	p.attackerId = attacker;
+	p.seedNum = seeds;
 	registerSend(&p);
 }
 

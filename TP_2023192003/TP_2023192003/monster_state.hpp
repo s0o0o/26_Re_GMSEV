@@ -9,6 +9,7 @@ struct lua_State;
 struct MonsterState {
     lua_State* _L = nullptr;
     std::mutex _ll;
+    std::mutex combatMutex;
     std::atomic<bool> _isActive{false};
     std::atomic<bool> _isMonsterChase{false};
     std::atomic<bool> _isDie{false};
