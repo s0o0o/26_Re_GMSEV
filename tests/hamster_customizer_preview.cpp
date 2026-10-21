@@ -5,7 +5,7 @@
 
 int main() {
     HamsterCustomizer customizer;
-    assert(customizer.load("TP_2023192003_CLIENT/client_sample/character.png"));
+    assert(customizer.load("TP_2023192003_CLIENT/client_sample/assets/characters"));
     sf::Font font;
     assert(font.loadFromFile("TP_2023192003_CLIENT/client_sample/neodgm.ttf"));
     sf::RenderTexture target;
@@ -54,17 +54,22 @@ int main() {
     assert(&customizer.texture(255) == &customizer.texture(0));
     assert(&customizer.texture(255,255,255) == &customizer.texture(0));
     sf::Image source;
-    assert(source.loadFromFile("TP_2023192003_CLIENT/client_sample/character.png"));
+    assert(source.loadFromFile("TP_2023192003_CLIENT/client_sample/assets/characters/hamtaro/character.png"));
     for (unsigned y=0;y<48;++y) for (unsigned x=0;x<192;++x)
         assert(original.getPixel(x,y) == source.getPixel(x,y));
-    for (std::uint8_t f=0;f<HAMSTER_FUR_COLORS;++f)
+    for(std::uint8_t kind=0;kind<HAMSTER_CHARACTER_KINDS;++kind) {
+      assert(source.loadFromFile(std::string("TP_2023192003_CLIENT/client_sample/assets/characters/") + (kind == 0 ? "hamtaro" : "bijou") + "/character.png"));
+      const auto natural = customizer.texture(0,0,0,kind).copyToImage();
+      for(unsigned y=0;y<48;++y)for(unsigned x=0;x<192;++x)assert(natural.getPixel(x,y) == source.getPixel(x,y));
+      for (std::uint8_t f=0;f<HAMSTER_FUR_COLORS;++f)
       for (std::uint8_t e=0;e<HAMSTER_EYE_STYLES;++e)
         for (std::uint8_t s=0;s<HAMSTER_SCARF_STYLES;++s) {
-            const auto variant = customizer.texture(f,e,s).copyToImage();
+            const auto variant = customizer.texture(f,e,s,kind).copyToImage();
             assert(variant.getSize() == source.getSize());
             for (unsigned y=0;y<48;++y) for (unsigned x=0;x<192;++x)
                 assert(variant.getPixel(x,y).a == source.getPixel(x,y).a);
         }
+    }
     next.key.code = sf::Keyboard::F2;
     customizer.handleEvent(next,inputWindow);
     assert(customizer.selectedEyes() == 1);
@@ -101,5 +106,33 @@ int main() {
     }
     sheet.display();
     assert(sheet.getTexture().copyToImage().saveToFile("build/tests/hamster-layer-contact-sheet.png"));
+    next.key.code = sf::Keyboard::F5;
+    customizer.handleEvent(next,inputWindow);
+    assert(customizer.selectedCharacter() == 1);
+    next.key.code = sf::Keyboard::F1;
+    customizer.handleEvent(next,inputWindow);
+    target.clear();
+    customizer.draw(target,font);
+    target.display();
+    assert(target.getTexture().copyToImage().saveToFile("build/tests/bijou-customization.png"));
+    sheet.clear(sf::Color(255,248,228));
+    for(int row=0;row<3;++row) {
+        sf::Text title(row == 0 ? "HAMTARO" : (row == 1 ? "BIJOU" : "BIJOU / ROUND / RED SCARF"),font,20);
+        title.setPosition(20,row*240.f+8);
+        title.setFillColor(sf::Color(72,46,37));
+        sheet.draw(title);
+        for(int d=0;d<4;++d) {
+            sf::Sprite sprite(customizer.texture(0,row == 2 ? 1 : 0,row == 2 ? 1 : 0,row == 0 ? 0 : 1),{d*48,0,48,48});
+            sprite.setScale(4,4);
+            sprite.setPosition(d*240.f+24,row*240.f+38);
+            sheet.draw(sprite);
+        }
+    }
+    sheet.display();
+    assert(sheet.getTexture().copyToImage().saveToFile("build/tests/two-character-contact-sheet.png"));
+    next.key.code = sf::Keyboard::F5;
+    customizer.handleEvent(next,inputWindow);
+    assert(customizer.selectedCharacter() == 0);
+    assert(&customizer.texture(0,0,0,255) == &customizer.texture(0));
     std::cout << "Customizer previews and palette checks passed.\n";
 }

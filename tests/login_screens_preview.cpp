@@ -11,7 +11,7 @@ int main() {
     std::filesystem::current_path(root / "TP_2023192003_CLIENT/client_sample");
     assert(gameFont().loadFromFile("neodgm.ttf"));
     initStartScreenInit();
-    assert(hamsterCustomizer().load("character.png"));
+    assert(hamsterCustomizer().load("assets/characters"));
     assert(hamsterCustomizer().setBackdrop(*startMainTx));
     std::cout << "Backdrop prepared" << std::endl;
     sf::RenderTexture frame;
@@ -31,6 +31,16 @@ int main() {
     frame.display();
     assert(frame.getTexture().copyToImage().saveToFile((root / "build/tests/customization-flow.png").string()));
     std::cout << "Customization rendered" << std::endl;
+    sf::Event choose{};
+    choose.type = sf::Event::KeyPressed;
+    choose.key.code = sf::Keyboard::F5;
+    sf::RenderWindow inputWindow;
+    hamsterCustomizer().handleEvent(choose,inputWindow);
+    assert(hamsterCustomizer().selectedCharacter() == 1);
+    frame.clear();
+    drawCustomizationScreen(frame);
+    frame.display();
+    assert(frame.getTexture().copyToImage().saveToFile((root / "build/tests/bijou-login-flow.png").string()));
     assert(loginFlow.connect());
     frame.clear();
     drawCustomizationScreen(frame);
@@ -38,6 +48,7 @@ int main() {
     assert(frame.getTexture().copyToImage().saveToFile((root / "build/tests/login-connecting.png").string()));
     failLogin("Offline test: retry is available.");
     assert(loginFlow.stage() == GAMESTATE::CustomizeScreen);
+    assert(hamsterCustomizer().selectedCharacter() == 1);
     assert(inputNickname == sf::String(L"\uD584\uCC0C"));
     assert(s_socket.getRemotePort() == 0);
     assert(!gameResourcesReady);

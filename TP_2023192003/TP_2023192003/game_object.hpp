@@ -11,4 +11,5 @@ struct GameObjectState {
     char _name[NAME_SIZE] = {};
     std::uint8_t _furColor = 0;
     std::uint8_t _eyeStyle = 0, _scarfStyle = 0;
+    std::uint8_t _characterKind = 0;
 };
