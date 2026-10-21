@@ -150,6 +150,7 @@
     <ClInclude Include="background_blur.hpp" />
     <ClInclude Include="login_flow.hpp" />
     <ClInclude Include="ui_alignment.hpp" />
+    <ClInclude Include="loading_screen.hpp" />
   </ItemGroup>
   <ItemGroup>
     <Image Include="chess2.png" />

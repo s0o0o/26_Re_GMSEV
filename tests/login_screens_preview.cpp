@@ -50,10 +50,19 @@ int main() {
     frame.display();
     assert(frame.getTexture().copyToImage().saveToFile((root / "build/tests/bijou-login-flow.png").string()));
     assert(loginFlow.connect());
+    loadingPhase = LoadingPhase::Waiting;
     frame.clear();
     drawCustomizationScreen(frame);
     frame.display();
     assert(frame.getTexture().copyToImage().saveToFile((root / "build/tests/login-connecting.png").string()));
+    for (int i=0;i<4;++i) {
+        frame.clear();
+        hamsterCustomizer().drawBackdrop(frame);
+        drawLoadingScreen(frame,gameFont(),hamsterCustomizer().texture(0,0,0,1),inputNickname,
+            static_cast<LoadingPhase>(i),i*.3f);
+        frame.display();
+        assert(frame.getTexture().copyToImage().saveToFile((root / ("build/tests/loading-phase-"+std::to_string(i)+".png")).string()));
+    }
     failLogin("Offline test: retry is available.");
     assert(loginFlow.stage() == GAMESTATE::CustomizeScreen);
     assert(hamsterCustomizer().selectedCharacter() == 1);
