@@ -483,6 +483,8 @@ void disconnect(int sessionId) {
 	auto it = clients.find(sessionId);
 	if (it == clients.end() || !it->second) return;
 	std::shared_ptr<GAMESESSION> session = it->second;
+    if (session->disconnectStarted.exchange(true)) return;
+    session->transportFailed = true;
     const bool wasInGame = session->_state == ST_INGAME;
 
 	session->_vlL.lock();
@@ -517,6 +519,7 @@ void processPacket(int sessionId, char* packetFromC) {
 	case C2S_P_LOGIN:
 	{	// 로그인 패킷이 날아온거라면 DB 확인
 		cs_packet_login* p = reinterpret_cast<cs_packet_login*>(packetFromC);
+        const auto loginStarted = GetTickCount64();
         std::cout << "[LOGIN] Received session=" << sessionId << " bytes=" << static_cast<unsigned>(p->size) << std::endl;
 		if (!validCharacterKind(p->character_kind) || !validFurColor(p->fur_color) || !validEyeStyle(p->eye_style) || !validScarfStyle(p->scarf_style) || p->inputId < 0 || !login_input::nickname(p->name, sizeof(p->name))) {
             sc_packet_login_fail fail{};
@@ -537,7 +540,7 @@ void processPacket(int sessionId, char* packetFromC) {
                     dbUserExp, dbUserSeedNum, dbUserMaxHp, dbUserDamage);
             },
             [&]() { return insert_new_user(dbId, p->name); });
-        std::cout << "[LOGIN] DB lookup end session=" << sessionId << " result=" << static_cast<int>(loginResult) << std::endl;
+        std::cout << "[LOGIN] DB lookup end session=" << sessionId << " result=" << static_cast<int>(loginResult) << " elapsed_ms=" << GetTickCount64()-loginStarted << std::endl;
         if (loginResult != LoginLookupResult::Found) {
             sc_packet_login_fail fail{};
             fail.size = sizeof(fail);
@@ -856,7 +859,7 @@ void workerThread(HANDLE iocp) {
 
 				clients[clientId] = newPlayer;
 				CreateIoCompletionPort(reinterpret_cast<HANDLE>(gCliSocket), iocp, clientId, 0);
-				newPlayer->registerRecv();
+				if (!newPlayer->registerRecv()) disconnect(clientId);
 				gCliSocket = WSASocket(AF_INET, SOCK_STREAM, 0, NULL, 0, WSA_FLAG_OVERLAPPED);
 			}
 			else {
@@ -902,7 +905,7 @@ void workerThread(HANDLE iocp) {
 			if (remainData > 0) {
 				memcpy(overEx->_sendBuf, p, remainData);
 			}
-			cli->registerRecv();
+			if (!cli->registerRecv()) disconnect(static_cast<int>(key));
 		}
 		break;
 		case OP_LOGIN_OK:
@@ -911,10 +914,19 @@ void workerThread(HANDLE iocp) {
 			auto it = clients.find(key);
 			std::shared_ptr<GAMESESSION> session = it->second;
 
-			session->_state = ST_INGAME;
-			session->sendSessionLoginPacket();	// 나한테 정보전송 -> 그래야 내가본다
+            if (session->disconnectStarted || session->transportFailed || session->_state != ST_ALLOC) {
+                delete overEx;
+                break;
+            }
+            session->sendSessionLoginPacket();	// 나한테 정보전송 -> 그래야 내가본다
 			session->sendSessioLoginOkPacket();
-            std::cout << "[LOGIN] Success response submitted session=" << key << std::endl;
+            if (session->transportFailed || session->disconnectStarted) {
+                delete overEx;
+                disconnect(static_cast<int>(key));
+                break;
+            }
+            session->_state = ST_INGAME;
+            std::cout << "[LOGIN] Success sends accepted session=" << key << std::endl;
             delete overEx;
 			session->sendMapInfo(session->object._id, session->object._x, session->object._y); // 맵 정보
 

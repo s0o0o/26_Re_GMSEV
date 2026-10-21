@@ -40,7 +40,11 @@ cl /nologo /EHsc /std:c++17 tests\database_write_test.cpp /Fo:build\tests\ /Fe:b
 if not "%errorlevel%"=="0" goto failed
 build\tests\database_write_test.exe
 if not "%errorlevel%"=="0" goto failed
-echo All 8 regression programs passed.
+cl /nologo /EHsc /std:c++17 tests\session_transport_test.cpp TP_2023192003\TP_2023192003\game_session.cpp /Fo:build\tests\ /Fe:build\tests\session_transport_test.exe /link ws2_32.lib
+if not "%errorlevel%"=="0" goto failed
+build\tests\session_transport_test.exe
+if not "%errorlevel%"=="0" goto failed
+echo All 9 regression programs passed.
 popd
 exit /b 0
 :failed

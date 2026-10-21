@@ -103,6 +103,8 @@ std::size_t loginBytesSent = 0;
 std::size_t loginBytesReceived = 0;
 sf::Clock loginClock;
 void failLogin(const char* message) {
+    std::cerr << "[LOGIN] Failed: " << message << " elapsed_ms=" << loginClock.getElapsedTime().asMilliseconds()
+        << " sent=" << loginBytesSent << " received=" << loginBytesReceived << std::endl;
     s_socket.disconnect();
     loginFlow.fail();
     loginStatus = message;
