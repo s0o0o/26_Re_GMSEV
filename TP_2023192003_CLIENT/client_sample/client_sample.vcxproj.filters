@@ -24,6 +24,13 @@
     <Image Include="chess2.png">
       <Filter>리소스 파일</Filter>
     </Image>
+    <Image Include="assets\appearance\body-eyeless.png" />
+    <Image Include="assets\appearance\eyes-classic.png" />
+    <Image Include="assets\appearance\eyes-round.png" />
+    <Image Include="assets\appearance\eyes-sleepy.png" />
+    <Image Include="assets\appearance\scarf-none.png" />
+    <Image Include="assets\appearance\scarf-red.png" />
+    <Image Include="assets\appearance\scarf-blue.png" />
     <Image Include="chessmap.bmp">
       <Filter>리소스 파일</Filter>
     </Image>

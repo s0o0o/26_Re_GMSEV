@@ -10,4 +10,5 @@ struct GameObjectState {
     short _damage = 0;
     char _name[NAME_SIZE] = {};
     std::uint8_t _furColor = 0;
+    std::uint8_t _eyeStyle = 0, _scarfStyle = 0;
 };
