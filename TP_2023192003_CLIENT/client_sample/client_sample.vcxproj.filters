@@ -47,6 +47,7 @@
     <ClInclude Include="hamster_customizer.hpp" />
     <ClInclude Include="background_blur.hpp" />
     <ClInclude Include="login_flow.hpp" />
+    <ClInclude Include="ui_alignment.hpp" />
     <ClInclude Include="..\..\shared\protocol.hpp">
       <Filter>헤더 파일</Filter>
     </ClInclude>

@@ -1,4 +1,5 @@
 #define _CRT_SECURE_NO_WARNINGS
+#include "ui_alignment.hpp"
 #include <SFML/Graphics.hpp>
 #include <SFML/Network.hpp>
 #include <iostream>
@@ -764,11 +765,11 @@ void send_packet(void* packet)
 void drawStartScreen(sf::RenderTarget& window, const sf::String& nickname) {
 	window.draw(startBgSprite);
     sf::RectangleShape field({426,64});
-    field.setPosition(246,641);
+    field.setPosition(237,641);
     field.setFillColor({248,248,248});
     window.draw(field);
     sf::Text fieldLabel(choosingNickname ? "NAME:" : "ID:",gameFont(),28);
-    fieldLabel.setPosition(265,653);
+    centerText(fieldLabel,{247,641,120,64});
     fieldLabel.setFillColor(sf::Color(72,20,10));
     window.draw(fieldLabel);
     sf::RectangleShape hint({650,45});
@@ -783,10 +784,7 @@ void drawStartScreen(sf::RenderTarget& window, const sf::String& nickname) {
 	idInputText.setString(choosingNickname ? nickname : inputAccountId);
 	idInputText.setCharacterSize(38);
 	idInputText.setFillColor(sf::Color::Black);
-	idInputText.setPosition(390, 643);
-	idInputText.setScale(1,1);
-    const auto inputWidth = idInputText.getLocalBounds().width;
-    if (inputWidth > 270) idInputText.setScale(270.f/inputWidth,1);
+    centerText(idInputText,{367,641,286,64});
     window.draw(idInputText);
     sf::Text prompt;
     prompt.setFont(gameFont());
@@ -796,6 +794,7 @@ void drawStartScreen(sf::RenderTarget& window, const sf::String& nickname) {
     prompt.setString(choosingNickname ?
         "Nickname (1-12 chars) / Enter: customize / Esc: account ID" :
         "Account ID (digits) - Enter to choose nickname");
+    centerText(prompt,{125,550,650,45});
     window.draw(prompt);
 }
 
@@ -819,7 +818,7 @@ void drawCustomizationScreen(sf::RenderTarget& window) {
     hamsterCustomizer().draw(window, gameFont());
     sf::Text identity(sf::String("ID " + std::to_string(id_input) + " / ") + inputNickname, gameFont(), 22);
     identity.setFillColor(sf::Color::White);
-    identity.setPosition(240,570);
+    centerText(identity,{160,563,580,40});
     window.draw(identity);
     const bool connecting = loginFlow.stage() == GAMESTATE::ConnectingScreen;
     for (int i=0;i<2;++i) {
@@ -829,12 +828,12 @@ void drawCustomizationScreen(sf::RenderTarget& window) {
         window.draw(button);
         sf::Text text(i == 0 ? "Back (Esc)" : (connecting ? "Connecting..." : "Connect (Enter)"),gameFont(),22);
         text.setFillColor(sf::Color(72,46,37));
-        text.setPosition(i == 0 ? 225.f : 505.f,625);
+        centerText(text,button.getGlobalBounds());
         window.draw(text);
     }
     sf::Text status(loginStatus,gameFont(),19);
     status.setFillColor(sf::Color::White);
-    status.setPosition(170,690);
+    centerText(status,{160,680,580,48});
     window.draw(status);
 }
 

@@ -149,6 +149,7 @@
     <ClInclude Include="hamster_customizer.hpp" />
     <ClInclude Include="background_blur.hpp" />
     <ClInclude Include="login_flow.hpp" />
+    <ClInclude Include="ui_alignment.hpp" />
   </ItemGroup>
   <ItemGroup>
     <Image Include="chess2.png" />
