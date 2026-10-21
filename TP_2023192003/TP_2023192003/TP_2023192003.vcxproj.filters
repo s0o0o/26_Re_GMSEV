@@ -41,6 +41,7 @@
     <ClInclude Include="game_object.hpp" />
     <ClInclude Include="monster_state.hpp" />
     <ClInclude Include="monster_lifecycle.hpp" />
+    <ClInclude Include="world_events.hpp" />
     <ClInclude Include="..\..\shared\respawn_policy.hpp" />
     <ClInclude Include="game_session.hpp" />
     <ClInclude Include="session_registry.hpp" />

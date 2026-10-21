@@ -15,6 +15,7 @@ struct MonsterState {
     respawn_policy::Tick respawnAt=0;
     std::atomic<bool> _isActive{false};
     std::atomic<bool> _isMonsterChase{false};
+    std::atomic<int> chaseTarget{-1};
     std::atomic<bool> _isDie{false};
     int _monType = 0;
     short _nextMonX = 0, _nextMonY = 0;

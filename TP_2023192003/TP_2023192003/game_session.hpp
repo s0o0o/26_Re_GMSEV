@@ -11,6 +11,8 @@
 // Connection, gameplay and AI data now have explicit boundaries.
 class GAMESESSION {
 public:
+    inline static std::atomic<std::uint64_t> nextConnectionId{1};
+    const std::uint64_t connectionId=nextConnectionId.fetch_add(1);
     OVER_EXP _recvOver;
     SOCKET _socket = 0;
     STATE _state = ST_FREE;
