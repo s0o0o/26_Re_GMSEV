@@ -9,4 +9,5 @@ struct GameObjectState {
     short _hp = 0, _maxHp = 0, _level = 0, _exp = 0, _seedNum = 0;
     short _damage = 0;
     char _name[NAME_SIZE] = {};
+    std::uint8_t _furColor = 0;
 };

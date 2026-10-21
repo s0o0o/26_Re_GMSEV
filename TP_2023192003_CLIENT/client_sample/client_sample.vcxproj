@@ -139,10 +139,13 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="client.cpp" />
+    <ClCompile Include="hamster_customizer.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\shared\protocol.hpp" />
     <ClInclude Include="..\..\shared\login_input.hpp" />
+    <ClInclude Include="..\..\shared\appearance.hpp" />
+    <ClInclude Include="hamster_customizer.hpp" />
   </ItemGroup>
   <ItemGroup>
     <Image Include="chess2.png" />
