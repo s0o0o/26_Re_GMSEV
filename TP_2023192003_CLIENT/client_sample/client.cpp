@@ -100,6 +100,7 @@ bool startConnectionRequested = false;
 bool gameResourcesReady = false;
 cs_packet_login pendingLogin{};
 std::size_t loginBytesSent = 0;
+std::size_t loginBytesReceived = 0;
 sf::Clock loginClock;
 void failLogin(const char* message) {
     s_socket.disconnect();
@@ -552,6 +553,7 @@ void process_data(char* net_buf, size_t io_byte)
 			in_packet_size = static_cast<std::uint8_t>(ptr[0]);
 			if (in_packet_size < PACKET_HEADER_SIZE || in_packet_size > BUF_SIZE) {
 				std::cerr << "Invalid packet size: " << in_packet_size << std::endl;
+                if (loginFlow.stage() == GAMESTATE::ConnectingScreen) failLogin("Invalid server packet. Rebuild server and client together.");
 				s_socket.disconnect();
 				in_packet_size = 0;
 				saved_packet_size = 0;
@@ -562,6 +564,7 @@ void process_data(char* net_buf, size_t io_byte)
 			memcpy(packet_buffer + saved_packet_size, ptr, in_packet_size - saved_packet_size);
 			if (!is_valid_server_packet(reinterpret_cast<const std::uint8_t*>(packet_buffer), in_packet_size)) {
 				std::cerr << "Invalid server packet" << std::endl;
+                if (loginFlow.stage() == GAMESTATE::ConnectingScreen) failLogin("Server protocol mismatch. Rebuild server and client together.");
 				s_socket.disconnect();
 				in_packet_size = 0;
 				saved_packet_size = 0;
@@ -837,11 +840,11 @@ void drawCustomizationScreen(sf::RenderTarget& window) {
     window.draw(status);
 }
 
-void beginLoginConnection() {
+void beginLoginConnection(unsigned short port = GAME_PORT) {
     s_socket.disconnect();
     in_packet_size = saved_packet_size = 0;
     s_socket.setBlocking(true);
-    const auto status = s_socket.connect("127.0.0.1", GAME_PORT, sf::seconds(2));
+    const auto status = s_socket.connect("127.0.0.1", port, sf::seconds(2));
     s_socket.setBlocking(false);
     if (status != sf::Socket::Done) { failLogin("Cannot connect to server. Check server and retry."); return; }
     if (!gameResourcesReady) { client_initialize(); gameResourcesReady = true; }
@@ -859,12 +862,21 @@ void beginLoginConnection() {
     avatar.set_name(pendingLogin.name);
     nameText.setString(fromUtf8(pendingLogin.name));
     loginBytesSent = 0;
+    loginBytesReceived = 0;
+    std::cout << "[LOGIN] Connected; request bytes=" << sizeof(pendingLogin) << std::endl;
     loginClock.restart();
     loginStatus = "Connecting to your hamster world...";
 }
 
-void pumpLogin() {
-    if (loginClock.getElapsedTime() > sf::seconds(10)) { failLogin("Login timed out. Please retry."); return; }
+void pumpLogin(sf::Time timeout = sf::seconds(10)) {
+    if (loginClock.getElapsedTime() > timeout) {
+        std::cerr << "[LOGIN] Timeout sent=" << loginBytesSent << "/" << sizeof(pendingLogin)
+            << " received=" << loginBytesReceived << " partial=" << saved_packet_size << std::endl;
+        failLogin(loginBytesSent < sizeof(pendingLogin) ? "Login send stalled. Check connection and retry." :
+            (loginBytesReceived == 0 ? "No login response. Check server DB/logs and rebuild both apps." :
+             "Incomplete login response. Check server logs and app versions."));
+        return;
+    }
     if (loginBytesSent < sizeof(pendingLogin)) {
         std::size_t sent = 0;
         const auto status = s_socket.send(reinterpret_cast<const char*>(&pendingLogin)+loginBytesSent,sizeof(pendingLogin)-loginBytesSent,sent);
@@ -876,7 +888,7 @@ void pumpLogin() {
     std::size_t received = 0;
     const auto status = s_socket.receive(buffer,sizeof(buffer),received);
     if (status == sf::Socket::Error || status == sf::Socket::Disconnected) { failLogin("Server disconnected. Please retry."); return; }
-    if (received) process_data(buffer,received);
+    if (received) { loginBytesReceived += received; process_data(buffer,received); }
 }
 int main()
 {
