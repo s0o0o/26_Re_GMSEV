@@ -33,4 +33,5 @@
 ## 명세 목록
 
 - [템플릿](specs/_template.md)
+- [비동기 접속 수명](specs/async-session-lifetime.md): 첫 사전 명세 적용 작업.
 - [세션 종료·재접속과 월드 이벤트](specs/session-world-lifecycle.md): 첫 사후 적용 사례. 구현된 동작과 미검증 네트워크 수명 경계를 분리한다.
