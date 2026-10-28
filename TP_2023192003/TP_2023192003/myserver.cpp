@@ -24,6 +24,7 @@
 #include "game_session.hpp"
 #include "monster_lifecycle.hpp"
 #include "world_events.hpp"
+#include "session_completion.hpp"
 
 using namespace std;
 
@@ -479,10 +480,9 @@ void doTimer(int timerIdx) {
 
 // 작동 부분 =============================================================
 
-void disconnect(int sessionId) {
-	auto it = clients.find(sessionId);
-	if (it == clients.end() || !it->second) return;
-	std::shared_ptr<GAMESESSION> session = it->second;
+void disconnect(const std::shared_ptr<GAMESESSION>& session) {
+    if(!session) return;
+    std::lock_guard<std::recursive_mutex> completionGuard(session->completionMutex);
     if (session->disconnectStarted.exchange(true)) return;
     session->transportFailed = true;
     const bool wasInGame = session->_state == ST_INGAME;
@@ -493,7 +493,7 @@ void disconnect(int sessionId) {
             sectors[x][y].erase(id);
         }
     });
-	closesocket(session->_socket);
+    session->closeTransport();
 	session->_state = ST_FREE;
     if (!wasInGame) return;
 	if (update_user_info(session->_userInputId, session->object._x, session->object._y, session->object._seedNum,
@@ -504,10 +504,10 @@ void disconnect(int sessionId) {
 }
 
 // 받았으면 보낼 준비
-void processPacket(int sessionId, char* packetFromC) {
+void processPacket(const std::shared_ptr<GAMESESSION>& session, char* packetFromC) {
 	//cout << "날아온 아이디 확인용 :" << sessionId << endl;
-	auto it = clients.find(sessionId);
-	std::shared_ptr<GAMESESSION> session = it->second;
+    if(!session || session->disconnectStarted || session->transportFailed) return;
+    const int sessionId=session->object._id;
 
 	switch (packetFromC[1]) {
 	case C2S_P_LOGIN:
@@ -565,6 +565,7 @@ void processPacket(int sessionId, char* packetFromC) {
 
 		OVER_EXP* ov = new OVER_EXP;
 		ov->_compType = OP_LOGIN_OK;
+        ov->owner=session;
 		        if (!PostQueuedCompletionStatus(g_hiocp,1,sessionId,&ov->_over)) {
             std::cerr << "[LOGIN] Completion enqueue failed: " << GetLastError() << std::endl;
             delete ov;
@@ -852,30 +853,34 @@ void workerThread(HANDLE iocp) {
 		ULONG_PTR key;
 		WSAOVERLAPPED* over = nullptr;
 		BOOL ret = GetQueuedCompletionStatus(iocp, &numBytes, &key, &over, INFINITE);
+        const DWORD completionError=ret ? ERROR_SUCCESS : GetLastError();
 		if (over == nullptr) {
 			cout << "[ERROR] GetQueuedCompletionStatus returned null overlapped\n";
 			continue;
 		}
 
 		OVER_EXP* overEx = reinterpret_cast<OVER_EXP*>(over);
-		if (FALSE == ret) {
-			if (overEx->_compType == OP_ACCEPT) cout << "Accept Error";
-			else {
-				cout << " GQCS Error on client[" << key << "]\n";
-				disconnect(static_cast<int>(key));
-				if (overEx->_compType == OP_SEND)
-					delete overEx;
-				continue;
-			}
-		}
-
-		if ((0 == numBytes) && ((overEx->_compType == OP_RECV) || (overEx->_compType == OP_SEND))) {
-			disconnect(static_cast<int>(key));
-			if (overEx->_compType == OP_SEND)
-				delete overEx;
-			continue;
-		}
-
+        std::unique_ptr<OVER_EXP> sessionOperation;
+        std::shared_ptr<GAMESESSION> completionOwner;
+        std::unique_lock<std::recursive_mutex> completionGuard;
+        if(sessionCompletionType(overEx->_compType)) {
+            sessionOperation.reset(overEx); // Frees success, cancellation and ignored completions once.
+            completionOwner=overEx->owner;
+            if(!completionOwner) continue;
+            completionGuard=std::unique_lock<std::recursive_mutex>(completionOwner->completionMutex);
+            if(overEx->_compType == OP_RECV) completionOwner->recvPending=false;
+            const auto decision=classifySessionCompletion(*overEx,key,ret != FALSE,numBytes);
+            if(decision == SessionCompletion::Ignore) continue;
+            if(decision == SessionCompletion::Disconnect) {
+                if(ret == FALSE) std::cerr << "[NET] Completion failed session=" << completionOwner->object._id
+                    << " connection=" << completionOwner->connectionId << " error=" << completionError << std::endl;
+                disconnect(completionOwner); continue;
+            }
+        } else if(ret == FALSE) {
+            if(overEx->_compType == OP_ACCEPT) std::cerr << "[NET] Accept completion failed" << std::endl;
+            else delete overEx;
+            continue;
+        }
         std::shared_ptr<GAMESESSION> aiOwner;
         std::unique_lock<std::recursive_mutex> aiGuard;
         if(overEx->_compType == OP_MONSTER_MOVE || overEx->_compType == OP_MONSTER_CHASE ||
@@ -910,7 +915,7 @@ void workerThread(HANDLE iocp) {
 
 				clients[clientId] = newPlayer;
 				CreateIoCompletionPort(reinterpret_cast<HANDLE>(gCliSocket), iocp, clientId, 0);
-				if (!newPlayer->registerRecv()) disconnect(clientId);
+				if (!newPlayer->registerRecv()) disconnect(newPlayer);
 				gCliSocket = WSASocket(AF_INET, SOCK_STREAM, 0, NULL, 0, WSA_FLAG_OVERLAPPED);
 			}
 			else {
@@ -924,11 +929,10 @@ void workerThread(HANDLE iocp) {
 		break;
 		case OP_RECV:
 		{
-			auto it = clients.find(key);
-			std::shared_ptr<GAMESESSION> cli = it->second;
+            auto cli=completionOwner;
 			int remainData = numBytes + cli->_prevRemainData;
 
-			OVER_EXP* recv_over = &cli->_recvOver;
+			OVER_EXP* recv_over = overEx;
 			//cout << " workerThread (OP_RECV) 확인용 " << key << " " << cli->object._id << endl;
 			char* p = recv_over->_sendBuf;
 			bool invalidPacket = false;
@@ -943,42 +947,41 @@ void workerThread(HANDLE iocp) {
 					invalidPacket = true;
 					break;
 				}
-				processPacket(static_cast<int>(key), p);
+				processPacket(cli, p);
 				p += packetSize;
 				remainData -= packetSize;
 			}
 			if (invalidPacket) {
-				disconnect(static_cast<int>(key));
+				disconnect(completionOwner);
 				continue;
 			}
 			cli->_prevRemainData = remainData;
 
 			if (remainData > 0) {
-				memcpy(overEx->_sendBuf, p, remainData);
+				memcpy(cli->_recvOver._sendBuf, p, remainData);
 			}
-			if (!cli->registerRecv()) disconnect(static_cast<int>(key));
+			if (!cli->registerRecv()) disconnect(completionOwner);
 		}
 		break;
 		case OP_LOGIN_OK:
 		{
 			//cout << " 로그인 성공 !!!! " << endl;
-			auto it = clients.find(key);
-			std::shared_ptr<GAMESESSION> session = it->second;
+            auto session=completionOwner;
 
             if (session->disconnectStarted || session->transportFailed || session->_state != ST_ALLOC) {
-                delete overEx;
+                // Released by sessionOperation.
                 break;
             }
             session->sendSessionLoginPacket();	// 나한테 정보전송 -> 그래야 내가본다
 			session->sendSessioLoginOkPacket();
             if (session->transportFailed || session->disconnectStarted) {
-                delete overEx;
-                disconnect(static_cast<int>(key));
+                // Released by sessionOperation.
+                disconnect(completionOwner);
                 break;
             }
             session->_state = ST_INGAME;
             std::cout << "[LOGIN] Success sends accepted session=" << key << std::endl;
-            delete overEx;
+            // Released by sessionOperation.
 			session->sendMapInfo(session->object._id, session->object._x, session->object._y); // 맵 정보
 
 			auto [sx, sy] = getSectorLocation(session->object._x, session->object._y);	// 로그인 후.. 나를 섹터에 등록
@@ -988,7 +991,7 @@ void workerThread(HANDLE iocp) {
 			}
 
 			// 이제 브로드캐스팅
-			std::unordered_set<int> _near = it->second->getNearBySessions();
+			std::unordered_set<int> _near = session->getNearBySessions();
 			for (auto& pl : _near) {	// 그리고 나서.... -> 로그인한유저 근처에 있는 애들한테 정보보내기
 				auto it2 = clients.find(pl);
 				std::shared_ptr<GAMESESSION> other = it2->second;
@@ -1015,7 +1018,7 @@ void workerThread(HANDLE iocp) {
 		break;
 		case OP_SEND:
 		{
-            delete overEx;
+            // Released by sessionOperation.
 		}
 		break;
 		case OP_PLAYER_MOVE:
