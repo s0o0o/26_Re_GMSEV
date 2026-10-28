@@ -1,6 +1,6 @@
 # 명세: 비동기 완료의 접속 소유권과 재접속 격리
 
-- 상태: 구현 중 (사전 명세)
+- 상태: 검증 완료 (아래 제한된 범위, 사전 명세)
 - 이슈: [#29](https://github.com/s0o0o/26_Re_GMSEV/issues/29)
 - 기준: `81b212f`, 2026-10-28
 - 관련: [세션·월드 명세](session-world-lifecycle.md), [SDD 절차](../sdd.md)
@@ -45,15 +45,33 @@
 
 | 작업 | 연결 AC | 내용 | 상태 |
 | --- | --- | --- | --- |
-| T-01 | AC-01, AC-03, AC-04 | 작업 owner/heap receive, 제출·close 잠금, pending 보호 | 예정 |
-| T-02 | AC-02 | worker와 processPacket/disconnect를 원래 객체로 고정; 로그인 owner | 예정 |
-| T-03 | AC-01~04 | DB 없는 취소/지연/분할/교체 테스트 및 기존 테스트 적응 | 예정 |
-| T-04 | AC-05 | 빌드·회귀·문서 검사, 결과 기록 | 예정 |
+| T-01 | AC-01, AC-03, AC-04 | 작업 owner/heap receive, 제출·close 잠금, pending 보호 | 구현·테스트 통과 |
+| T-02 | AC-02 | worker와 processPacket/disconnect를 원래 객체로 고정; 로그인 owner | 구현·코드 대조 + 공통 판정 테스트 통과 |
+| T-03 | AC-01~04 | DB 없는 취소/지연/분할/교체 테스트 및 기존 테스트 적응 | 실행 통과 |
+| T-04 | AC-05 | 빌드·회귀·문서 검사, 결과 기록 | 실행 통과 |
 
 ## 검증 결과
 
-사전 코드 확인만 수행. 실행 결과는 구현 후 날짜·명령·한계와 함께 추가한다.
+### 사전 기록
+
+`39e98dd`에서 구현 전에 이 명세와 완료 기준을 커밋했다. 당시에는 코드 확인만 수행했고 실행 통과를 기록하지 않았다.
+
+### 2026-10-28 실행·코드 대조
+
+대상: `39e98dd` 이후 이번 feature 브랜치의 구현 변경. 최종 구현/병합 SHA는 #29에 기록한다. 환경: Windows, MSVC x64, assertions 활성.
+
+- AC-01~04: [session_lifetime_test.cpp](../../tests/session_lifetime_test.cpp) 실행 통과. 실제 임시 포트 TCP/IOCP로 지연 SEND, pending RECV 취소와 LOGIN_OK 큐를 확인했다. 원래 owner/weak_ptr 수명, 같은 ID 교체 후 새 객체의 플래그·상태·버퍼 불변, 즉시 실패 해제, 중복 RECV 거부, 버퍼 경계 및 소유권 없는 세션 거부를 검사한다.
+- AC-04: 한 바이트씩 전송하며 다음 작업에 prefix가 보존되는 것을 검사한다. 테스트에서 fragment를 직접 보관하므로 서버 worker의 파서 전체를 실행한 E2E 검증은 아니다. worker의 복사 대상과 원래 owner 사용은 코드 대조했다.
+- AC-02: 실제 종료·DB 저장 함수를 테스트 서버에서 실행하지 않고, **생산 worker가 사용하는 동일한 완료 판정 함수**로 Ignore/Disconnect/Process를 확인한다. 잘못된 key, 성공/오류/0바이트 및 전송 실패 상태의 정리 분기를 검사했다. worker의 RAII 해제와 원래 객체 전달은 코드 대조했다. 전송 실패 뒤 shutdown으로 깨운 완료는 무시하지 않고 Disconnect로 처리한다.
+- 명령: x64 Native Tools Command Prompt에서 `tests\run-regressions.cmd` → 전체 16개 통과. 수명 테스트를 같은 runner의 cl 명령으로 다시 빌드하고 `build\tests\session_lifetime_test.exe`를 10회 반복 → 20회 취소/재사용 × 10 = 추가 200회 통과.
+- AC-05: MSBuild `TP_2023192003/TP_2023192003.sln /t:Build /p:Configuration=Debug /p:Platform=x64` 및 Release 통과. 기존 C4244·LNK4098 경고 유지. Debug 실행 파일 `--startup-check` 통과(DB·네트워크 없음). 클라이언트/프로토콜 파일 diff 없음.
+- 실패 이력: 추가 경계 테스트의 initializer list에 signed/unsigned 혼합으로 컴파일 오류가 발생해 명시적 int 변환 후 재빌드·반복 검증했다. 통과 결과와 구분해 남긴다.
+- 문서 UTF-8·상대 링크 및 `git diff --check` 검증은 [27단계 기록](../refactoring-step-27.md)에 연결한다.
 
 ## 인계
 
-커밋·병합 결과는 #29에 연결한다. 전체 worker/timer와 DB·실제 화면 부하는 별도 검증이다. 다음 작업은 검증 중 확인된 남은 위험을 바탕으로 정한다.
+커밋·병합 결과는 #29에 연결한다. 전체 worker/timer와 DB·실제 화면 부하는 별도 검증이다. 정상 ID 재사용은 기존 세션의 disconnectStarted 설정 후 ST_FREE가 되는 현재 경로를 전제로 한다. 임의로 살아 있는 registry 항목을 덮어쓰는 운영 경로를 허용하는 설계가 아니다.
+
+남은 위험: 전체 registry mapped shared_ptr/게임 데이터 동시성, 서버 종료 시 drain, 부분 송신 재시도, 실제 DB 계정 접속 부하. 이번 수정만으로 #10/#19의 실제 원인이 확정되거나 장시간 동접 안정성이 보증되지는 않는다.
+
+다음 작업: 반복 접속/해제와 패킷 분할을 DB 없이 실제 worker 경로로 통과시키는 서버 통합 하네스의 범위를 별도 명세로 정한다.

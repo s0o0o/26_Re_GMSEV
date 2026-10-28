@@ -1,6 +1,8 @@
 #pragma once
 #include <WS2tcpip.h>
 #include <cstring>
+#include <memory>
+class GAMESESSION;
 #include "server_config.hpp"
 
 enum COMP_TYPE {
@@ -15,6 +17,7 @@ public:
 	WSABUF				_wasBuf;
 	char				_sendBuf[BUF_SIZE];
 
+    std::shared_ptr<GAMESESSION> owner; // Original connection survives until completion.
     std::uint64_t generation=0;
     std::uint64_t playerConnectionId=0;
 	COMP_TYPE			_compType;

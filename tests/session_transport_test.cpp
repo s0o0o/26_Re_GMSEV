@@ -8,7 +8,8 @@ int main() {
     sc_packet_avatar_login_ok packet{};
     packet.size = sizeof(packet); packet.type = S2C_P_AVATAR_LOGIN_OK;
     {
-        GAMESESSION broken;
+        auto owned=std::make_shared<GAMESESSION>();
+        auto& broken=*owned;
         broken._socket = INVALID_SOCKET;
         broken.registerSend(&packet);
         assert(broken.transportFailed);
@@ -16,7 +17,8 @@ int main() {
         assert(!broken.registerRecv());
     }
     {
-        GAMESESSION broken;
+        auto owned=std::make_shared<GAMESESSION>();
+        auto& broken=*owned;
         broken._socket = INVALID_SOCKET;
         assert(!broken.registerRecv());
         assert(broken.transportFailed);
@@ -33,7 +35,9 @@ int main() {
     assert(getsockname(listener,reinterpret_cast<sockaddr*>(&address),&length) == 0);
     SOCKET peer = socket(AF_INET,SOCK_STREAM,IPPROTO_TCP);
     assert(connect(peer,reinterpret_cast<sockaddr*>(&address),length) == 0);
-    GAMESESSION session;
+    auto owned=std::make_shared<GAMESESSION>();
+    auto& session=*owned;
+    session.object._id=123;
     session._socket = accept(listener,nullptr,nullptr);
     assert(session._socket != INVALID_SOCKET);
     HANDLE port = CreateIoCompletionPort(reinterpret_cast<HANDLE>(session._socket),nullptr,123,0);
@@ -46,7 +50,11 @@ int main() {
     ULONG_PTR key = 0;
     OVERLAPPED* over = nullptr;
     assert(GetQueuedCompletionStatus(port,&bytes,&key,&over,2000));
-    assert(over == &session._recvOver._over && bytes == sizeof(input) && key == 123);
+    assert(over != &session._recvOver._over && bytes == sizeof(input) && key == 123);
+    auto receiveOperation=reinterpret_cast<OVER_EXP*>(over);
+    assert(receiveOperation->owner == owned && receiveOperation->_compType == OP_RECV);
+    session.recvPending=false;
+    delete receiveOperation;
     session.registerSend(&packet);
     assert(!session.transportFailed);
     assert(GetQueuedCompletionStatus(port,&bytes,&key,&over,2000));

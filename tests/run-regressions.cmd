@@ -68,7 +68,11 @@ cl /nologo /EHsc /std:c++17 tests\world_loopback_test.cpp TP_2023192003\TP_20231
 if not "%errorlevel%"=="0" goto failed
 build\tests\world_loopback_test.exe
 if not "%errorlevel%"=="0" goto failed
-echo All 15 regression programs passed.
+cl /nologo /EHsc /std:c++17 tests\session_lifetime_test.cpp TP_2023192003\TP_2023192003\game_session.cpp TP_2023192003\TP_2023192003\session_registry.cpp /Fo:build\tests\ /Fe:build\tests\session_lifetime_test.exe /link ws2_32.lib
+if not "%errorlevel%"=="0" goto failed
+build\tests\session_lifetime_test.exe
+if not "%errorlevel%"=="0" goto failed
+echo All 16 regression programs passed.
 popd
 exit /b 0
 :failed

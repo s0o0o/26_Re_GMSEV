@@ -6,16 +6,20 @@
 #include <mutex>
 #include <atomic>
 #include <unordered_set>
+#include <memory>
 
-// Transitional aggregate: existing worker code keeps the same session lifetime.
-// Connection, gameplay and AI data now have explicit boundaries.
-class GAMESESSION {
+// Pending I/O owns this connection through its operation, independently of registry ID reuse.
+// Gameplay and AI data remain in this transitional aggregate.
+class GAMESESSION : public std::enable_shared_from_this<GAMESESSION> {
 public:
     inline static std::atomic<std::uint64_t> nextConnectionId{1};
     const std::uint64_t connectionId=nextConnectionId.fetch_add(1);
-    OVER_EXP _recvOver;
-    SOCKET _socket = 0;
-    STATE _state = ST_FREE;
+    OVER_EXP _recvOver; // Saved fragment only; pending OS receives use owned heap operations.
+    SOCKET _socket = INVALID_SOCKET;
+    std::atomic<STATE> _state{ST_FREE};
+    std::mutex transportMutex;
+    std::recursive_mutex completionMutex;
+    std::atomic<bool> recvPending{false};
     int _prevRemainData = 0;
     int _userInputId = 0;
     std::atomic<bool> transportFailed{false};
@@ -30,6 +34,7 @@ public:
 
 	bool registerRecv();
 	void registerSend(void*);
+    void closeTransport();
 
 	void sendSessionLoginPacket();
 	void sendSessioLoginOkPacket();
