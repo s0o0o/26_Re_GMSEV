@@ -21,7 +21,7 @@ template<class Packet> Packet read(int id,std::size_t index) {
 }
 std::shared_ptr<GAMESESSION> add(int id) {
     auto s=std::make_shared<GAMESESSION>(); s->object._id=id; s->_state=ST_INGAME;
-    clients[id]=s; return s;
+    clients.set(id,s); return s;
 }
 int main() {
     auto a=add(1),b=add(2),closed=add(3),login=add(4),npc=add(MAX_USER),other=add(MAX_USER+1);
@@ -39,7 +39,7 @@ int main() {
         auto attack=read<sc_packet_attack_success>(id,0);
         assert(attack.attackerId == 1 && attack.targetId == MAX_USER && attack.targetHp == 0 && attack.seedNum == 2);
         assert(read<sc_packet_monster_die>(id,1).id == MAX_USER);
-        assert(!clients[id]->_viewList.count(MAX_USER));
+        assert(!clients.get(id)->_viewList.count(MAX_USER));
     }
     assert(packets[3].empty() && packets[4].empty() && packets[MAX_USER].empty() && packets[999].empty());
     assert(!reviveMonster(npc->object,npc->monster,30999));
@@ -49,7 +49,7 @@ int main() {
     for(int id : {1,2}) {
         auto enter=read<sc_packet_enter>(id,2);
         assert(enter.hp == 5 && enter.max_hp == 5 && enter.x == field_content::monsters[0].x);
-        assert(clients[id]->_viewList.count(MAX_USER));
+        assert(clients.get(id)->_viewList.count(MAX_USER));
     }
     initializeFieldMap(); const auto seed=field_content::seeds[0];
     assert(collectSeed(seed.x,seed.y,1000));

@@ -1,11 +1,15 @@
 #pragma once
 #include "session_registry.hpp"
 
+// Only player login publication and logout detachment share this gate.
+// Never acquire another session's completionMutex while holding it.
+inline std::recursive_mutex playerPresenceMutex;
+
 inline bool currentWorldPlayer(int id,std::uint64_t connectionId) {
-    auto it=clients.find(id);
-    return id >= 0 && id < MAX_USER && it != clients.end() && it->second &&
-        it->second->connectionId == connectionId && it->second->_state == ST_INGAME &&
-        !it->second->disconnectStarted && !it->second->transportFailed;
+    auto player=clients.get(id);
+    return id >= 0 && id < MAX_USER && player &&
+        player->connectionId == connectionId && player->_state == ST_INGAME &&
+        !player->disconnectStarted && !player->transportFailed;
 }
 
 // Shared production/test fan-out: only live player connections receive events.
@@ -13,9 +17,8 @@ template<class Action>
 void forWorldPlayers(const std::unordered_set<int>& audience,Action action) {
     for(int id : audience) {
         if(id < 0 || id >= MAX_USER) continue;
-        auto it=clients.find(id);
-        if(it == clients.end() || !it->second) continue;
-        auto player=it->second;
+        auto player=clients.get(id);
+        if(!player) continue;
         if(player->_state != ST_INGAME || player->disconnectStarted || player->transportFailed) continue;
         action(*player);
     }
@@ -39,7 +42,7 @@ void detachWorldPresence(GAMESESSION& leaving,RemoveSector removeSector) {
     removeSector(id);
     { std::lock_guard<std::mutex> lock(leaving._vlL); leaving._viewList.clear(); }
     // Scan observers, not just leaving's list: visibility can be asymmetric.
-    for(auto& entry : clients) {
+    for(auto& entry : clients.snapshot()) {
         auto other=entry.second;
         if(!other || other.get() == &leaving) continue;
         if(entry.first >= MAX_USER) {

@@ -17,16 +17,16 @@ int main() {
     receiver.sendMovePacket(123);
     receiver.sendAddPlayerPacket(123);
     assert(sent.empty());
-    clients[123] = nullptr;
+    clients.set(123,nullptr);
     receiver.sendMovePacket(123);
     receiver.sendAddPlayerPacket(123);
     assert(sent.empty());
 
-    clients[123] = std::make_shared<GAMESESSION>();
-    clients[123]->object._furColor = 3;
-    clients[123]->object._eyeStyle = 1;
-    clients[123]->object._scarfStyle = 2;
-    clients[123]->object._characterKind = 1;
+    clients.set(123,std::make_shared<GAMESESSION>());
+    clients.get(123)->object._furColor = 3;
+    clients.get(123)->object._eyeStyle = 1;
+    clients.get(123)->object._scarfStyle = 2;
+    clients.get(123)->object._characterKind = 1;
     receiver.sendAddPlayerPacket(123);
     sc_packet_enter entered{};
     std::memcpy(&entered, sent.back().data(), sizeof(entered));
@@ -72,13 +72,13 @@ int main() {
     assert(is_valid_server_packet(reinterpret_cast<const std::uint8_t*>(sent.back().data()),sent.back().size()));
     sent.back()[2]=static_cast<char>(255);
     assert(!is_valid_server_packet(reinterpret_cast<const std::uint8_t*>(sent.back().data()),sent.back().size()));
-    clients[MAX_USER]=std::make_shared<GAMESESSION>();
-    clients[MAX_USER]->object._hp=2; clients[MAX_USER]->object._maxHp=5;
+    clients.set(MAX_USER,std::make_shared<GAMESESSION>());
+    clients.get(MAX_USER)->object._hp=2; clients.get(MAX_USER)->object._maxHp=5;
     receiver.sendAddPlayerPacket(MAX_USER);
     std::memcpy(&entered,sent.back().data(),sizeof(entered));
     assert(entered.hp == 2 && entered.max_hp == 5);
     const auto beforeDead=sent.size();
-    clients[MAX_USER]->monster._isDie=true;
+    clients.get(MAX_USER)->monster._isDie=true;
     receiver.sendAddPlayerPacket(MAX_USER);
     assert(sent.size() == beforeDead);
 

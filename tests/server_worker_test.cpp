@@ -9,15 +9,17 @@ void workerTestObserve(const std::shared_ptr<GAMESESSION>&,const char*);
 #include <cassert>
 #include <condition_variable>
 #include <map>
+#include <set>
 
 namespace fixture {
 using Clock=std::chrono::steady_clock;
 struct Snapshot {
-    int id=-1,x=0,y=0,fragment=0,sectorRefs=0,otherViewRefs=0;
+    int id=-1,x=0,y=0,fragment=0,sectorRefs=0,otherViewRefs=0,account=0;
     std::size_t ownView=0,serial=0;
     std::uint64_t connection=0;
     STATE state=ST_FREE;
     std::weak_ptr<GAMESESSION> owner;
+    std::unordered_set<int> visible;
 };
 std::mutex mutex;
 std::condition_variable changed;
@@ -143,15 +145,16 @@ void movePair(Peer& peer,std::uint32_t token) {
 } // namespace fixture
 
 void workerTestObserve(const std::shared_ptr<GAMESESSION>& session,const char* event) {
-    // Called only on the one fixture worker. No live registry reads from the test thread.
+    // Called on workers; stationary-player mode does not mutate coordinates after login.
     fixture::Snapshot snapshot;
     snapshot.id=session->object._id; snapshot.connection=session->connectionId; snapshot.state=session->_state;
     snapshot.x=session->object._x; snapshot.y=session->object._y; snapshot.fragment=session->_prevRemainData; snapshot.owner=session;
-    { std::lock_guard<std::mutex> lock(session->_vlL); snapshot.ownView=session->_viewList.size(); }
+    snapshot.account=session->_userInputId;
+    { std::lock_guard<std::mutex> lock(session->_vlL); snapshot.ownView=session->_viewList.size(); snapshot.visible=session->_viewList; }
     for(int x=0;x<MAX_SECTOR_X;++x) for(int y=0;y<MAX_SECTOR_Y;++y) {
         std::lock_guard<std::mutex> lock(sectorLock[x][y]); snapshot.sectorRefs+=static_cast<int>(sectors[x][y].count(snapshot.id));
     }
-    for(const auto& entry : clients) if(entry.second && entry.second != session) {
+    for(const auto& entry : clients.snapshot()) if(entry.second && entry.second != session) {
         std::lock_guard<std::mutex> lock(entry.second->_vlL);
         snapshot.otherViewRefs+=static_cast<int>(entry.second->_viewList.count(snapshot.id));
     }
@@ -174,6 +177,128 @@ bool update_user_info(int id,int,int,int,int,int,int,int,int) {
     std::lock_guard<std::mutex> lock(fixture::mutex); ++fixture::saves[id]; return true;
 }
 
+namespace fixture {
+void stopWorkers(std::vector<std::thread>& workers) {
+    assert(closesocket(gCliSocket) == 0); assert(closesocket(gServerSocket) == 0);
+    for(std::size_t i=0;i<workers.size();++i) assert(PostQueuedCompletionStatus(g_hiocp,0,0,nullptr));
+    for(auto& worker : workers) worker.join();
+}
+#ifdef GMSEV_MULTIWORKER_TEST
+template<class Action> void parallelPeers(int count,Action action) {
+    std::mutex gate; std::condition_variable ready;
+    int arrived=0; bool start=false; std::vector<std::thread> threads;
+    for(int i=0;i<count;++i) threads.emplace_back([&,i] {
+        { std::unique_lock<std::mutex> lock(gate); ++arrived; ready.notify_all(); ready.wait(lock,[&] { return start; }); }
+        action(i);
+    });
+    { std::unique_lock<std::mutex> lock(gate); ready.wait(lock,[&] { return arrived == count; }); start=true; ready.notify_all(); }
+    for(auto& thread : threads) thread.join();
+}
+void runMultiworker(const sockaddr_in& address,std::vector<std::thread>& workers) {
+    constexpr int count=16,rounds=5;
+    std::vector<std::weak_ptr<GAMESESSION>> previous;
+    for(int round=0;round<rounds;++round) {
+        std::size_t before;
+        { std::lock_guard<std::mutex> lock(mutex); before=sequence; }
+        std::vector<Peer> peers(count);
+        parallelPeers(count,[&](int i) {
+            auto socket=::socket(AF_INET,SOCK_STREAM,IPPROTO_TCP); assert(socket != INVALID_SOCKET);
+            DWORD timeout=3000;
+            assert(setsockopt(socket,SOL_SOCKET,SO_RCVTIMEO,reinterpret_cast<char*>(&timeout),sizeof(timeout)) == 0);
+            assert(setsockopt(socket,SOL_SOCKET,SO_SNDTIMEO,reinterpret_cast<char*>(&timeout),sizeof(timeout)) == 0);
+            assert(connect(socket,reinterpret_cast<const sockaddr*>(&address),sizeof(address)) == 0);
+            peers[i].socket=socket;
+        });
+        {
+            std::unique_lock<std::mutex> lock(mutex);
+            assert(changed.wait_for(lock,std::chrono::seconds(3),[&] {
+                int accepted=0;
+                for(const auto& entry : observed) if(entry.first.second == "accept" && entry.second.serial > before) {
+                    assert(entry.second.state == ST_ALLOC && entry.second.ownView == 0 && entry.second.sectorRefs == 0);
+                    ++accepted;
+                }
+                return accepted == count;
+            }));
+        }
+        for(const auto& weak : previous) assert(weak.expired()); previous.clear();
+        const int initial=(round == rounds-1) ? count/2 : count;
+        parallelPeers(initial,[&](int i) {
+            auto request=loginPacket(20000+round*100+i);
+            sendBytes(peers[i],reinterpret_cast<char*>(&request),sizeof(request));
+        });
+        std::set<int> ids;
+        auto finishLogins=[&](int begin,int end) {
+        for(int i=begin;i<end;++i) {
+            auto info=decode<sc_packet_avatar_info>(receive(peers[i]));
+            assert(info.type == S2C_P_AVATAR_INFO && info.x == clubhouse::spawnX && info.y == clubhouse::spawnY);
+            assert(info.id >= 0 && info.id < count && ids.insert(info.id).second);
+            assert(decode<sc_packet_avatar_login_ok>(expect(peers[i],S2C_P_AVATAR_LOGIN_OK)).id == info.id);
+            for(int chunk=0;chunk<4;++chunk) expect(peers[i],S2C_P_MAPINFO);
+            std::unique_lock<std::mutex> lock(mutex);
+            assert(changed.wait_for(lock,std::chrono::seconds(3),[&] {
+                for(const auto& entry : observed) if(entry.first.second == "login" && entry.second.account == 20000+round*100+i) {
+                    peers[i].accepted=entry.second; return true;
+                }
+                return false;
+            }));
+            assert(peers[i].accepted.id == info.id && peers[i].accepted.state == ST_INGAME);
+        }
+        };
+        auto probe=[&](Peer& peer,const std::set<int>& live) {
+            auto operation=new OVER_EXP; operation->_compType=OP_LOGIN_FAIL; operation->owner=peer.accepted.owner.lock();
+            assert(operation->owner && PostQueuedCompletionStatus(g_hiocp,1,peer.accepted.id,&operation->_over));
+            waitSnapshot(peer.accepted.connection,"probe",[&](const Snapshot& s) {
+                return s.state == ST_INGAME && s.ownView == live.size()-1 && s.sectorRefs == 1 &&
+                    !s.visible.count(peer.accepted.id) && std::all_of(s.visible.begin(),s.visible.end(),[&](int id) { return live.count(id) != 0; });
+            });
+        };
+        finishLogins(0,initial);
+        for(int i=0;i<initial;++i) {
+            auto& peer=peers[i];
+            std::set<int> seen;
+            for(int n=0;n<initial-1;++n) {
+                auto enter=decode<sc_packet_enter>(expect(peer,S2C_P_ENTER));
+                assert(enter.id != peer.accepted.id && ids.count(enter.id) && seen.insert(enter.id).second);
+            }
+            probe(peer,ids);
+        }
+        auto close=[&](int i) { assert(closesocket(peers[i].socket) == 0); peers[i].socket=INVALID_SOCKET; };
+        if(initial != count) {
+            // Eight logouts race with eight logins, not just separate phases.
+            parallelPeers(count,[&](int i) {
+                if(i<initial) close(i);
+                else {
+                    auto request=loginPacket(20000+round*100+i);
+                    sendBytes(peers[i],reinterpret_cast<char*>(&request),sizeof(request));
+                }
+            });
+            for(int i=0;i<initial;++i) waitSnapshot(peers[i].accepted.connection,"disconnect",[](const Snapshot& s) { return s.state == ST_FREE; });
+            finishLogins(initial,count);
+            std::set<int> live;
+            for(int i=initial;i<count;++i) live.insert(peers[i].accepted.id);
+            for(int i=initial;i<count;++i) probe(peers[i],live);
+            parallelPeers(count-initial,[&](int i) { close(i+initial); });
+        } else {
+            parallelPeers(count,close);
+        }
+        for(int i=0;i<count;++i) {
+            auto closed=waitSnapshot(peers[i].accepted.connection,"disconnect",[](const Snapshot& s) { return s.state == ST_FREE; });
+            assert(closed.ownView == 0 && closed.sectorRefs == 0 && closed.otherViewRefs == 0);
+            assert(saveCount(20000+round*100+i) == 2); previous.push_back(closed.owner);
+        }
+        auto drained=[&] { for(const auto& weak : previous) if(weak.use_count() != 1) return false; return true; };
+        const auto deadline=Clock::now()+std::chrono::seconds(3);
+        while(!drained() && Clock::now()<deadline) std::this_thread::yield();
+        assert(drained()); // Only FREE registry slots retain connections; no operation owns them.
+    }
+    stopWorkers(workers);
+    for(const auto& entry : clients.snapshot()) assert(entry.second && entry.second->_state == ST_FREE);
+    clients.clear(); for(const auto& weak : previous) assert(weak.expired());
+    for(const auto& entry : observed) assert(entry.second.owner.expired());
+}
+#endif
+}
+
 int main() {
     using namespace fixture;
     WSADATA data{}; assert(WSAStartup(MAKEWORD(2,2),&data) == 0);
@@ -189,7 +314,12 @@ int main() {
     gOverExp._compType=OP_ACCEPT;
     const auto accepted=AcceptEx(gServerSocket,gCliSocket,gOverExp._sendBuf,0,sizeof(sockaddr_in)+16,sizeof(sockaddr_in)+16,nullptr,&gOverExp._over);
     assert(accepted || WSAGetLastError() == WSA_IO_PENDING);
-    std::thread worker(workerThread,g_hiocp);
+    std::vector<std::thread> workers;
+#ifdef GMSEV_MULTIWORKER_TEST
+    for(int i=0;i<4;++i) workers.emplace_back(workerThread,g_hiocp);
+    runMultiworker(address,workers);
+#else
+    workers.emplace_back(workerThread,g_hiocp);
     auto watcher=connectPeer(address,0); assert(watcher.accepted.id == 0); login(watcher,10,false);
     std::uint64_t last=watcher.accepted.connection;
     // Unauthenticated MOVE + LOGIN in one TCP write must not produce a MOVE response first.
@@ -260,11 +390,15 @@ int main() {
     // The free registry slot is now the only strong reference; no session operation remains.
     assert(previousWeak.use_count() == 1 && watcher.accepted.owner.use_count() == 1);
     // No active session remains. Stop the worker with an internal, non-network control post.
-    assert(closesocket(gCliSocket) == 0); assert(closesocket(gServerSocket) == 0);
-    assert(PostQueuedCompletionStatus(g_hiocp,0,0,nullptr)); worker.join();
-    for(const auto& entry : clients) assert(!entry.second || entry.second->_state == ST_FREE);
+    stopWorkers(workers);
+    for(const auto& entry : clients.snapshot()) assert(!entry.second || entry.second->_state == ST_FREE);
     clients.clear(); assert(previousWeak.expired() && watcher.accepted.owner.expired());
     for(const auto& entry : observed) assert(entry.second.owner.expired());
+#endif
     CloseHandle(g_hiocp); WSACleanup();
+#ifdef GMSEV_MULTIWORKER_TEST
+    std::cout << "Production worker: 4 workers, 16 stationary peers x 5 batches including login/logout overlap passed (DB stub)\n";
+#else
     std::cout << "Production worker: fragmented login, coalesced moves, cleanup and 30 reconnect cycles passed (DB stub, one worker)\n";
+#endif
 }

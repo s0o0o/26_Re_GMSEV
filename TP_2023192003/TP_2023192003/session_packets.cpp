@@ -33,9 +33,8 @@ void GAMESESSION::sendSessioLoginOkPacket() {
 }
 
 void GAMESESSION::sendMovePacket(int sessionId, std::uint32_t moveTime) {
-	auto it = clients.find(sessionId);
-	if (it == clients.end() || !it->second) return;
-	std::shared_ptr<GAMESESSION> user = it->second;
+	auto user = clients.get(sessionId);
+	if (!user) return;
 
 	sc_packet_move p{};
 	p.move_time = moveTime;
@@ -48,9 +47,8 @@ void GAMESESSION::sendMovePacket(int sessionId, std::uint32_t moveTime) {
 }
 
 void GAMESESSION::sendAddPlayerPacket(int sessionId) {
-	auto it = clients.find(sessionId);
-	if (it == clients.end() || !it->second) return;
-	std::shared_ptr<GAMESESSION> user = it->second;
+	auto user = clients.get(sessionId);
+	if (!user) return;
 
     std::lock_guard<std::recursive_mutex> stats(user->monster.combatMutex);
     if (user->monster._isDie) return;

@@ -26,7 +26,7 @@ int main() {
         auto session=std::make_shared<GAMESESSION>(); session->object._id=7; session->_state=ST_ALLOC;
         session->_socket=accept(listener,nullptr,nullptr); assert(session->_socket != INVALID_SOCKET);
         assert(CreateIoCompletionPort(reinterpret_cast<HANDLE>(session->_socket),port,7,0));
-        clients[7]=session; return session;
+        clients.set(7,session); return session;
     };
     auto take=[&]() {
         DWORD bytes=0; ULONG_PTR key=0; OVERLAPPED* over=nullptr;
@@ -71,7 +71,7 @@ int main() {
             std::memcpy(session->_recvOver._sendBuf,c.operation->_sendBuf,i+1);
         }
         session->_prevRemainData=0;
-        session->closeTransport(); clients[7]=nullptr; closesocket(peer);
+        session->closeTransport(); clients.set(7,nullptr); closesocket(peer);
     }
     // A successful queued send keeps its old owner alive even after slot replacement.
     {
@@ -80,7 +80,7 @@ int main() {
         sc_packet_avatar_login_ok packet{}; packet.size=sizeof(packet); packet.type=S2C_P_AVATAR_LOGIN_OK;
         old->registerSend(&packet); assert(!old->transportFailed);
         auto replacement=std::make_shared<GAMESESSION>(); replacement->object._id=7;
-        replacement->_recvOver._sendBuf[0]=42; clients[7]=replacement;
+        replacement->_recvOver._sendBuf[0]=42; clients.set(7,replacement);
         old.reset(); assert(!weak.expired());
         auto c=take(); assert(c.operation->_compType == OP_SEND && c.operation->owner->connectionId == oldConnection);
         assert(c.success && c.bytes == sizeof(packet));
@@ -88,7 +88,7 @@ int main() {
         assert(classifySessionCompletion(*c.operation,c.key,c.success,c.bytes) == SessionCompletion::Ignore);
         assert(!replacement->disconnectStarted && replacement->_recvOver._sendBuf[0] == 42);
         c.operation.reset(); assert(weak.expired());
-        clients[7]=nullptr; closesocket(peer);
+        clients.set(7,nullptr); closesocket(peer);
     }
     // Queue LOGIN_OK and cancel RECV; drain both only after reusing the numeric ID.
     for(int iteration=0;iteration<20;++iteration) {
@@ -100,7 +100,7 @@ int main() {
         old->closeTransport();
         auto replacement=std::make_shared<GAMESESSION>(); replacement->object._id=7; replacement->_state=ST_ALLOC;
         replacement->_prevRemainData=3; replacement->_recvOver._sendBuf[0]=99;
-        clients[7]=replacement; old.reset(); assert(!weak.expired());
+        clients.set(7,replacement); old.reset(); assert(!weak.expired());
         int receives=0,logins=0;
         for(int i=0;i<2;++i) {
             auto c=take(); assert(c.operation->owner->connectionId == oldConnection);
@@ -121,7 +121,7 @@ int main() {
         assert(classifySessionCompletion(fake,7,true,0) == SessionCompletion::Disconnect);
         replacement->transportFailed=true;
         assert(classifySessionCompletion(fake,7,true,1) == SessionCompletion::Disconnect); // Shutdown wake still cleans up.
-        clients[7]=nullptr; closesocket(peer);
+        clients.set(7,nullptr); closesocket(peer);
     }
     clients.clear(); closesocket(listener); CloseHandle(port); WSACleanup();
     std::cout << "Session IOCP ownership, cancellation, reuse and fragmentation checks passed\n";
