@@ -495,12 +495,20 @@ void disconnect(const std::shared_ptr<GAMESESSION>& session) {
     });
     session->closeTransport();
 	session->_state = ST_FREE;
-    if (!wasInGame) return;
+    if (!wasInGame) {
+#ifdef GMSEV_WORKER_TEST
+        workerTestObserve(session,"disconnect");
+#endif
+        return;
+    }
 	if (update_user_info(session->_userInputId, session->object._x, session->object._y, session->object._seedNum,
 		session->object._hp, session->object._level, session->object._exp, session->object._maxHp, session->object._damage)) {
 		//cout << "없뎃성공" << endl;
 	}
 	else cout << "업뎃실패. " << endl;
+#ifdef GMSEV_WORKER_TEST
+    workerTestObserve(session,"disconnect");
+#endif
 }
 
 // 받았으면 보낼 준비
@@ -508,6 +516,9 @@ void processPacket(const std::shared_ptr<GAMESESSION>& session, char* packetFrom
 	//cout << "날아온 아이디 확인용 :" << sessionId << endl;
     if(!session || session->disconnectStarted || session->transportFailed) return;
     const int sessionId=session->object._id;
+    if(packetFromC[1] == C2S_P_LOGIN) {
+        if(session->_state != ST_ALLOC) return;
+    } else if(session->_state != ST_INGAME) return;
 
 	switch (packetFromC[1]) {
 	case C2S_P_LOGIN:
@@ -854,6 +865,7 @@ void workerThread(HANDLE iocp) {
 		WSAOVERLAPPED* over = nullptr;
 		BOOL ret = GetQueuedCompletionStatus(iocp, &numBytes, &key, &over, INFINITE);
         const DWORD completionError=ret ? ERROR_SUCCESS : GetLastError();
+        if(ret && !over && numBytes == 0 && key == 0) return; // Internal posted worker-stop signal.
 		if (over == nullptr) {
 			cout << "[ERROR] GetQueuedCompletionStatus returned null overlapped\n";
 			continue;
@@ -870,7 +882,12 @@ void workerThread(HANDLE iocp) {
             completionGuard=std::unique_lock<std::recursive_mutex>(completionOwner->completionMutex);
             if(overEx->_compType == OP_RECV) completionOwner->recvPending=false;
             const auto decision=classifySessionCompletion(*overEx,key,ret != FALSE,numBytes);
-            if(decision == SessionCompletion::Ignore) continue;
+            if(decision == SessionCompletion::Ignore) {
+#ifdef GMSEV_WORKER_TEST
+                workerTestObserve(completionOwner,"ignored");
+#endif
+                continue;
+            }
             if(decision == SessionCompletion::Disconnect) {
                 if(ret == FALSE) std::cerr << "[NET] Completion failed session=" << completionOwner->object._id
                     << " connection=" << completionOwner->connectionId << " error=" << completionError << std::endl;
@@ -916,6 +933,9 @@ void workerThread(HANDLE iocp) {
 				clients[clientId] = newPlayer;
 				CreateIoCompletionPort(reinterpret_cast<HANDLE>(gCliSocket), iocp, clientId, 0);
 				if (!newPlayer->registerRecv()) disconnect(newPlayer);
+#ifdef GMSEV_WORKER_TEST
+                workerTestObserve(newPlayer,"accept");
+#endif
 				gCliSocket = WSASocket(AF_INET, SOCK_STREAM, 0, NULL, 0, WSA_FLAG_OVERLAPPED);
 			}
 			else {
@@ -960,7 +980,10 @@ void workerThread(HANDLE iocp) {
 			if (remainData > 0) {
 				memcpy(cli->_recvOver._sendBuf, p, remainData);
 			}
-			if (!cli->registerRecv()) disconnect(completionOwner);
+			#ifdef GMSEV_WORKER_TEST
+            workerTestObserve(cli,"receive");
+#endif
+            if (!cli->registerRecv()) disconnect(completionOwner);
 		}
 		break;
 		case OP_LOGIN_OK:
@@ -1009,6 +1032,9 @@ void workerThread(HANDLE iocp) {
 				}
 				session->sendAddPlayerPacket(other->object._id);	//이제 나한테.. 상대방정보 알리기
 			}
+#ifdef GMSEV_WORKER_TEST
+            workerTestObserve(session,"login");
+#endif
 		}
 		break;
 		case OP_LOGIN_FAIL:
@@ -1226,4 +1252,5 @@ int main(int argc, char* argv[])
 
 	closesocket(gServerSocket);
 	WSACleanup();
+    return 0;
 }
