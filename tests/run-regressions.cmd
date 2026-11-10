@@ -86,7 +86,13 @@ build\tests\world_state_test.exe
 if not "%errorlevel%"=="0" goto failed
 call tests\run-server-world.cmd
 if not "%errorlevel%"=="0" goto failed
-echo All 21 regression programs passed.
+cl /nologo /EHsc /MD /std:c++17 tests\npc_script_test.cpp /Fo:build\tests\ /Fe:build\tests\npc_script_test.exe /link /LIBPATH:TP_2023192003\TP_2023192003 lua54.lib
+if not "%errorlevel%"=="0" goto failed
+build\tests\npc_script_test.exe
+if not "%errorlevel%"=="0" goto failed
+call tests\run-server-lua.cmd
+if not "%errorlevel%"=="0" goto failed
+echo All 23 regression programs passed.
 popd
 exit /b 0
 :failed

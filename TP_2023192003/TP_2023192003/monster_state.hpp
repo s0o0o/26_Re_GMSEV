@@ -2,13 +2,17 @@
 
 #include <atomic>
 #include <mutex>
+#include <memory>
+#include <string>
 #include "../../shared/respawn_policy.hpp"
 
 struct lua_State;
 
-// Lua lifetime is still managed by the existing server initialization code.
+// Lua's custom deleter is installed where the VM is created, not in this header.
 struct MonsterState {
-    lua_State* _L = nullptr;
+    std::shared_ptr<lua_State> script;
+    bool scriptDisabled=false; // World-protected; failures disable only this NPC's script.
+    std::string scriptError;
     std::mutex _ll;
     std::recursive_mutex combatMutex;
     std::atomic<std::uint64_t> generation{0};

@@ -25,6 +25,7 @@
 #include "monster_lifecycle.hpp"
 #include "world_events.hpp"
 #include "session_completion.hpp"
+#include "npc_script.hpp"
 
 using namespace std;
 
@@ -188,30 +189,58 @@ std::unordered_set<int> GAMESESSION::getNearBySessions() {
 // NPC + lua =============================================================
 
 int API_get_x(lua_State* L) {
-    const int id=static_cast<int>(luaL_checkinteger(L,1));
+    const lua_Integer raw=luaL_checkinteger(L,1);
+    luaL_argcheck(L,raw >= 0 && raw <= INT_MAX,1,"id out of range");
+    const int id=static_cast<int>(raw);
     WorldStateLock stateLock; // Validate Lua arguments before RAII locks.
     const auto it=clients.get(id);
-    lua_pushinteger(L,it ? it->object._x : 0);
+    if(it) lua_pushinteger(L,it->object._x); else lua_pushnil(L);
     return 1;
 }
 int API_get_y(lua_State* L) {
-    const int id=static_cast<int>(luaL_checkinteger(L,1));
+    const lua_Integer raw=luaL_checkinteger(L,1);
+    luaL_argcheck(L,raw >= 0 && raw <= INT_MAX,1,"id out of range");
+    const int id=static_cast<int>(raw);
     WorldStateLock stateLock; // Validate Lua arguments before RAII locks.
     const auto it=clients.get(id);
-    lua_pushinteger(L,it ? it->object._y : 0);
+    if(it) lua_pushinteger(L,it->object._y); else lua_pushnil(L);
     return 1;
 }
 int API_SendMessage(lua_State* L) {
-    const int sender=static_cast<int>(luaL_checkinteger(L,1));
-    const int receiver=static_cast<int>(luaL_checkinteger(L,2));
+    const lua_Integer sender=luaL_checkinteger(L,1);
+    const lua_Integer rawReceiver=luaL_checkinteger(L,2);
+    luaL_argcheck(L,rawReceiver >= 0 && rawReceiver < MAX_USER,2,"player id out of range");
+    const int receiver=static_cast<int>(rawReceiver);
     const char* message=luaL_checkstring(L,3);
+    luaL_argcheck(L,lua_isinteger(L,lua_upvalueindex(1)) && sender == lua_tointeger(L,lua_upvalueindex(1)),1,"sender is not this NPC");
     WorldStateLock stateLock; // Validate Lua arguments before RAII locks.
     const auto it=clients.get(receiver);
-    if (it && isPlayer(receiver) && it->_state == ST_INGAME)
-        it->sendChatPacket(sender,message);
+    if (it && isPlayer(receiver) && it->_state == ST_INGAME && !it->disconnectStarted && !it->transportFailed)
+        it->sendChatPacket(static_cast<int>(sender),message);
     return 0;
 }
 
+void disableNpcScript(GAMESESSION& npc,const char* event,const std::string& error) {
+    if(npc.monster.scriptDisabled) return;
+    npc.monster.scriptDisabled=true; npc.monster.scriptError=error;
+    std::cerr << "[AI] Lua disabled npc=" << npc.object._id << " event=" << event << " error=" << error << std::endl;
+}
+int npcDirection(GAMESESSION& npc) {
+    if(!npc.monster.scriptDisabled) {
+        std::lock_guard<std::mutex> scriptGuard(npc.monster._ll);
+        std::string error; int direction=0;
+        if(npc_script::direction(npc.monster.script.get(),direction,error)) return direction;
+        disableNpcScript(npc,"choose_direction",error);
+    }
+    return rand()%4; // Script failure cannot take down movement for the whole server.
+}
+void resumeNpcRoaming(GAMESESSION& npc) {
+    npc.monster.chaseTarget=-1; npc.monster._isMonsterChase=false;
+    if(!npc.monster._isActive || npc.monster._isDie) return;
+    const int idx=get_timer_queue_index(npc.object._id);
+    std::lock_guard<std::mutex> guard(timerLocks[idx]);
+    timerQueues[idx].emplace(TIMER_EVENT{npc.object._id,std::chrono::steady_clock::now()+1s,EV_RANDOM_MOVE,0,npc.monster.generation.load()});
+}
 void wakeUpMonster(int monId, int playerId) {
     WorldStateLock stateLock;
 	//cout << "montser 깨워지냐 " << endl;
@@ -229,7 +258,7 @@ void wakeUpMonster(int monId, int playerId) {
     if(!player || !currentWorldPlayer(playerId,player->connectionId)) { delete exover; return; }
     exover->playerConnectionId=player->connectionId;
 
-	PostQueuedCompletionStatus(g_hiocp, 1, monId, &exover->_over);
+    if(!PostQueuedCompletionStatus(g_hiocp,1,monId,&exover->_over)) { delete exover; return; }
 	if (monster->monster._isActive.exchange(true) == false) {
 		int idx = get_timer_queue_index(monster->object._id);
 		if (idx < 0 || idx >= TIMER_THREAD_COUNT) {
@@ -245,7 +274,7 @@ void wakeUpMonster(int monId, int playerId) {
 void trySleepMonster(std::shared_ptr<GAMESESSION> monster) {
     WorldStateLock stateLock;
 	auto _near = monster->getNearBySessions();
-	if (_near.size() == 0) return;
+
 
 	for (auto& c : _near) {
 		auto near_it = clients.get(c);
@@ -259,6 +288,8 @@ void trySleepMonster(std::shared_ptr<GAMESESSION> monster) {
 		}
 	}
 	monster->monster._isActive = false;
+    monster->monster._isMonsterChase=false; monster->monster.chaseTarget=-1;
+    ++monster->monster.generation;
 }
 
 void doMonsterRandomMoving(int monId) {
@@ -284,7 +315,7 @@ void doMonsterRandomMoving(int monId) {
 	short y = monster->object._y;
 	short old_x = x;
 	short old_y = y;
-	switch (rand() % 4) {
+	switch (npcDirection(*monster)) {
 	case 0: if (x < (MAP_WIDTH - 1)) x++; break;
 	case 1: if (x > 0) x--; break;
 	case 2: if (y < (MAP_HEIGHT - 1)) y++; break;
@@ -370,34 +401,12 @@ bool monsterInit(int count)
 
 		clients.set(i,newMonster);
 
-        auto L = newMonster->monster._L = luaL_newstate();
-        if (!L) { std::cerr << "[STARTUP] Lua allocation failed monster=" << i << std::endl; return false; }
-        luaL_openlibs(L);
-        const auto failScript = [&]() {
-            std::cerr << "[STARTUP] npc.lua failed monster=" << i << ": " << lua_tostring(L,-1) << std::endl;
-            lua_close(L);
-            newMonster->monster._L = nullptr;
+        auto loaded=npc_script::loadFile("npc.lua",i,{API_get_x,API_get_y,API_SendMessage});
+        if(!loaded) {
+            std::cerr << "[STARTUP] npc.lua failed monster=" << i << " error=" << loaded.error << std::endl;
             return false;
-        };
-        if (luaL_loadfile(L,"npc.lua") != LUA_OK) return failScript();
-        if (lua_pcall(L,0,0,0) != LUA_OK) return failScript();
-        lua_getglobal(L,"set_uid");
-        lua_pushinteger(L,i);
-        if (lua_pcall(L,1,0,0) != LUA_OK) return failScript();
-
-		lua_register(L, "API_SendMessage", API_SendMessage);
-		lua_register(L, "API_get_x", API_get_x);
-		lua_register(L, "API_get_y", API_get_y);
-        // Validate the real Lua callback stack contract while initializing each NPC.
-        for (const char* callback : {"API_get_x","API_get_y"}) {
-            lua_getglobal(L,callback); lua_pushinteger(L,i);
-            if (lua_pcall(L,1,1,0) != LUA_OK) return failScript();
-            const int expected=std::strcmp(callback,"API_get_x") == 0 ? newMonster->object._x : newMonster->object._y;
-            const bool matches=lua_isinteger(L,-1) && lua_tointeger(L,-1) == expected;
-            lua_pop(L,1);
-            if (!matches) { std::cerr << "[STARTUP] NPC callback mismatch\n"; return false; }
         }
-
+        newMonster->monster.script=std::move(loaded.state);
 		// 딱히 필요없지 않나..?
 		auto [sx, sy] = getSectorLocation(newMonster->object._x, newMonster->object._y);
 		{
@@ -414,74 +423,33 @@ bool monsterInit(int count)
 
 // timer 함수 =================================================================
 
+bool dispatchDueTimer(int timerIdx,std::chrono::steady_clock::time_point now) {
+    std::lock_guard<std::mutex> guard(timerLocks[timerIdx]);
+    if(timerQueues[timerIdx].empty() || timerQueues[timerIdx].top().wakeup_time > now) return false;
+    const auto event=timerQueues[timerIdx].top(); timerQueues[timerIdx].pop();
+    auto npc=clients.get(event.obj_id);
+    if(!isMonster(event.obj_id) || !npc || !npc->monster._isActive ||
+       !respawn_policy::accepts(event.generation,npc->monster.generation.load(),npc->monster._isDie.load())) return true;
+    if(event.event_id == EV_RUN) return true; // Reserved: there is no producer or run behavior.
+    auto operation=new OVER_EXP;
+    operation->generation=event.generation; operation->_playerId=event.target_id;
+    operation->_compType=event.event_id == EV_CHASE ? OP_MONSTER_CHASE : OP_MONSTER_MOVE;
+    if(!PostQueuedCompletionStatus(g_hiocp,1,event.obj_id,&operation->_over)) delete operation;
+    return true;
+}
 void doTimer(int timerIdx) {
-	using namespace chrono;
+    using namespace std::chrono;
     auto nextWorldTick=steady_clock::now();
-	do {
-		do {
-			std::lock_guard<std::mutex> lock(timerLocks[timerIdx]);
-			if (timerQueues[timerIdx].empty()) break;
-
-			auto& k = timerQueues[timerIdx].top();	// top에서 꺼냈는데, 
-			if (k.wakeup_time > steady_clock::now()) {	// 걔가 아직 시간이 안됐으면..
-				break;
-			}
-
-			// timer에서 꺼냈을 때
-			if (isMonster(k.obj_id)) {
-				auto npc_it = clients.get(k.obj_id);
-				if (npc_it != nullptr) {
-					std::shared_ptr<GAMESESSION> npc = npc_it;
-					//std::lock_guard<std::mutex> lock(timer_locks[idx]);
-					if (!respawn_policy::accepts(k.generation,npc->monster.generation.load(),npc->monster._isDie.load()) || npc->monster._isActive == false) {
-						timerQueues[timerIdx].pop(); // 그냥 버림
-						continue;
-					}
-				}
-			}
-
-			// 시간이 된 이벤트들을 처리하는..
-			switch (k.event_id) {			// 시간이됐다면,여기로넘어왔을테니..
-			case EV_RANDOM_MOVE: {
-				OVER_EXP* o = new OVER_EXP;
-                o->generation=k.generation;
-				o->_compType = OP_MONSTER_MOVE;	// npc움직였다고 해주기
-				PostQueuedCompletionStatus(g_hiocp, 1, k.obj_id, &o->_over);
-				// 이거 처리해줘~라고 직접!!이벤트 던지는 함수임 
-				break;
-			}
-			case EV_RUN: {
-				OVER_EXP* ov = new OVER_EXP;
-                ov->generation=k.generation;
-				ov->_compType = OP_NPC_RUN;
-				ov->_playerId = k.target_id;
-				PostQueuedCompletionStatus(g_hiocp, 1, k.obj_id, &ov->_over);
-				break;
-			}
-			case EV_CHASE: {
-				cout << "ev_chase도착" << endl;
-				OVER_EXP* ov = new OVER_EXP;
-                ov->generation=k.generation;
-				ov->_compType = OP_MONSTER_CHASE;	
-				ov->_playerId = k.target_id;
-				PostQueuedCompletionStatus(g_hiocp, 1, k.obj_id, &ov->_over);
-				break;
-			}
-			}
-			timerQueues[timerIdx].pop();			// 이벤트 처리했으면 큐에서 제거..
-
-		} while (true);
-		        if (timerIdx == 0 && steady_clock::now() >= nextWorldTick) {
+    while(true) {
+        while(dispatchDueTimer(timerIdx,steady_clock::now())) {}
+        if(timerIdx == 0 && steady_clock::now() >= nextWorldTick) {
             nextWorldTick=steady_clock::now()+1s;
             auto tick=new OVER_EXP; tick->_compType=OP_WORLD_TICK;
-            if (!PostQueuedCompletionStatus(g_hiocp,1,0,&tick->_over)) delete tick;
+            if(!PostQueuedCompletionStatus(g_hiocp,1,0,&tick->_over)) delete tick;
         }
-        this_thread::sleep_for(chrono::milliseconds(10));	// 할수있는건 다 처리하고, 10ms마다 쉰다..
-	} while (true);
+        std::this_thread::sleep_for(10ms);
+    }
 }
-
-// 작동 부분 =============================================================
-
 void disconnect(const std::shared_ptr<GAMESESSION>& session) {
     if(!session) return;
     std::lock_guard<std::recursive_mutex> completionGuard(session->completionMutex);
@@ -936,10 +904,16 @@ void workerThread(HANDLE iocp) {
             aiOwner=it;
             aiGuard=std::unique_lock<std::recursive_mutex>(aiOwner->monster.combatMutex);
             if(!respawn_policy::accepts(overEx->generation,aiOwner->monster.generation.load(),aiOwner->monster._isDie.load())) {
+#ifdef GMSEV_WORKER_TEST
+                workerTestObserve(aiOwner,"stale-ai");
+#endif
                 delete overEx; continue;
             }
         }
-		switch (overEx->_compType) {
+		#ifdef GMSEV_WORKER_TEST
+        const auto observedType=overEx->_compType;
+#endif
+        switch (overEx->_compType) {
         case OP_WORLD_TICK: { serviceRespawns(); delete overEx; break; }
         case OP_NPC_RUN: { delete overEx; break; } // Reserved event has no behavior yet.
 
@@ -1096,23 +1070,12 @@ void workerThread(HANDLE iocp) {
 			if (!npc || !npc->monster._isActive || npc->monster._isDie) { delete overEx; break; }
 			//if (npc->_is_npc_run) break;
 
-			npc->monster._ll.lock();
-			auto L = npc->monster._L;
-			if (L == nullptr) {
-				cout << "[ERROR] npc->monster._L is nullptr!" << endl;
-				npc->monster._ll.unlock();
-				delete overEx;
-				break;
-			}
-			lua_getglobal(L, "event_player_move");
-			lua_pushnumber(L, overEx->_playerId);
-			int error = lua_pcall(L, 1, 0, 0);
-			if (error) {
-				cout << " OP_AI_HELLO Error : " << lua_tostring(L, -1);
-				lua_pop(L, 1);
-			}
-			//lua_pop(L, 1);
-			npc->monster._ll.unlock();
+            if(!npc->monster.scriptDisabled) {
+                std::lock_guard<std::mutex> scriptGuard(npc->monster._ll);
+                std::string error;
+                if(!npc_script::notify(npc->monster.script.get(),overEx->_playerId,overEx->playerConnectionId,error))
+                    disableNpcScript(*npc,"event_player_move",error);
+            }
 			delete overEx;
 		}
 		break;
@@ -1129,6 +1092,7 @@ void workerThread(HANDLE iocp) {
 				doMonsterRandomMoving(monsterId);	// 그 키 가진 npc 랜덤으로 움직이게 만들기
 				int idx = monsterId % TIMER_THREAD_COUNT;
 				std::lock_guard<std::mutex> guard(timerLocks[idx]);
+                if(monster->monster._isActive && !monster->monster._isDie)
 				timerQueues[idx].emplace(TIMER_EVENT{ monsterId, steady_clock::now() + 1s, EV_RANDOM_MOVE, 0 , monster->monster.generation.load() });
 			}
 			delete overEx;
@@ -1179,22 +1143,20 @@ void workerThread(HANDLE iocp) {
 					std::lock_guard<std::mutex> guard(timerLocks[idx]);
 					timerQueues[idx].emplace(TIMER_EVENT{ monster->object._id, chrono::steady_clock::now() + 1s
 						, EV_CHASE, targetPlayerId , monster->monster.generation.load() });
-				}
+				} else resumeNpcRoaming(*monster);
 			}
 			else if (not isMonSee(monster->object._id, targetPlayerId)) {
 				//cout << " 시야에서 사라져서 쫓아가기 중단.. " << endl;
-				monster->monster.chaseTarget = -1;
-				monster->monster._isMonsterChase = false;
-				int idx = monster->object._id % TIMER_THREAD_COUNT;
-				std::lock_guard<std::mutex> guard(timerLocks[idx]);
-				timerQueues[idx].emplace(TIMER_EVENT{ monster->object._id, chrono::steady_clock::now() + 1s
-					, EV_RANDOM_MOVE, 0 , monster->monster.generation.load() });
+                resumeNpcRoaming(*monster);
 			}
             delete overEx;
 			break;
 		}
 		}
 
+#ifdef GMSEV_WORKER_TEST
+        if(aiOwner) workerTestObserve(aiOwner,observedType == OP_PLAYER_MOVE ? "notify" : "ai");
+#endif
 	}
 }
 
@@ -1224,12 +1186,6 @@ int main(int argc, char* argv[])
     const bool monstersReady = monsterInit((std::min)(count,static_cast<int>(field_content::monsters.size())));
     if (monstersReady) initializeMap();
     if (startupCheck || !monstersReady) {
-        for (const auto& entry : clients.snapshot()) {
-            if (entry.second && entry.second->monster._L) {
-                lua_close(entry.second->monster._L);
-                entry.second->monster._L = nullptr;
-            }
-        }
         clients.clear();
         if (!startupCheck) finalizeDB();
         return monstersReady ? 0 : 1;

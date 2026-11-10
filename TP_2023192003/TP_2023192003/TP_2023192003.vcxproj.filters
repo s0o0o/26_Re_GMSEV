@@ -44,6 +44,7 @@
     <ClInclude Include="world_events.hpp" />
     <ClInclude Include="session_completion.hpp" />
     <ClInclude Include="world_state.hpp" />
+    <ClInclude Include="npc_script.hpp" />
     <ClInclude Include="..\..\shared\respawn_policy.hpp" />
     <ClInclude Include="game_session.hpp" />
     <ClInclude Include="session_registry.hpp" />
