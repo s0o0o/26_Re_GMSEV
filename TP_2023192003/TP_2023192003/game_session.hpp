@@ -3,6 +3,7 @@
 #include "iocp_operation.hpp"
 #include "game_object.hpp"
 #include "monster_state.hpp"
+#include "world_state.hpp"
 #include <mutex>
 #include <atomic>
 #include <unordered_set>
@@ -31,6 +32,7 @@ public:
     MonsterState monster;
 
     GAMESESSION() = default;
+    GameObjectState snapshotObject() const { WorldStateLock lock; return object; }
 
 	bool registerRecv();
 	void registerSend(void*);

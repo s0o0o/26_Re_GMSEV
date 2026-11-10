@@ -13,6 +13,11 @@ void workerTestObserve(const std::shared_ptr<GAMESESSION>&,const char*);
 
 namespace fixture {
 using Clock=std::chrono::steady_clock;
+#ifdef GMSEV_WORLD_TEST
+constexpr int spawnX=39,spawnY=7; // Right/left steps cross the x=40 sector boundary.
+#else
+constexpr int spawnX=clubhouse::spawnX,spawnY=clubhouse::spawnY;
+#endif
 struct Snapshot {
     int id=-1,x=0,y=0,fragment=0,sectorRefs=0,otherViewRefs=0,account=0;
     std::size_t ownView=0,serial=0;
@@ -20,11 +25,14 @@ struct Snapshot {
     STATE state=ST_FREE;
     std::weak_ptr<GAMESESSION> owner;
     std::unordered_set<int> visible;
+    int hp=0,seeds=0,targetHp=-1,totalSeeds=0;
+    bool targetDead=false;
 };
 std::mutex mutex;
 std::condition_variable changed;
 std::map<std::pair<std::uint64_t,std::string>,Snapshot> observed;
 std::map<int,int> loads,saves;
+std::map<int,GameObjectState> savedState;
 std::size_t sequence=0;
 std::size_t watcherLeaves=0,watcherEnters=0;
 
@@ -39,7 +47,7 @@ Snapshot waitSnapshot(std::uint64_t connection,const char* event,Predicate predi
 }
 int saveCount(int account) { std::lock_guard<std::mutex> lock(mutex); return saves[account]; }
 int loadCount(int account) { std::lock_guard<std::mutex> lock(mutex); return loads[account]; }
-struct Peer { SOCKET socket; Snapshot accepted; };
+struct Peer { SOCKET socket; Snapshot accepted; std::vector<sc_packet_attack_success> combat; int deaths=0; };
 Peer connectPeer(const sockaddr_in& address,std::uint64_t after) {
     SOCKET socket=::socket(AF_INET,SOCK_STREAM,IPPROTO_TCP); assert(socket != INVALID_SOCKET);
     DWORD timeout=2000;
@@ -72,6 +80,10 @@ std::vector<char> receive(Peer& peer) {
     std::vector<char> packet(size); packet[0]=static_cast<char>(size);
     readExact(peer.socket,packet.data()+1,size-1);
     assert(is_valid_server_packet(reinterpret_cast<const std::uint8_t*>(packet.data()),packet.size()));
+    if(static_cast<std::uint8_t>(packet[1]) == S2C_P_ATTACK_PtoN) {
+        sc_packet_attack_success hit{}; std::memcpy(&hit,packet.data(),sizeof(hit)); peer.combat.push_back(hit);
+    }
+    if(static_cast<std::uint8_t>(packet[1]) == S2C_P_MONSTER_DIE) ++peer.deaths;
     if(peer.accepted.id == 0) {
         if(static_cast<std::uint8_t>(packet[1]) == S2C_P_LEAVE) ++watcherLeaves;
         if(static_cast<std::uint8_t>(packet[1]) == S2C_P_ENTER) ++watcherEnters;
@@ -94,7 +106,7 @@ void finishLogin(Peer& peer) {
     auto first=receive(peer);
     assert(static_cast<std::uint8_t>(first[1]) == S2C_P_AVATAR_INFO);
     auto info=decode<sc_packet_avatar_info>(first);
-    assert(info.id == peer.accepted.id && info.x == clubhouse::spawnX && info.y == clubhouse::spawnY);
+    assert(info.id == peer.accepted.id && info.x == spawnX && info.y == spawnY);
     assert(decode<sc_packet_avatar_login_ok>(expect(peer,S2C_P_AVATAR_LOGIN_OK)).id == info.id);
     for(int i=0;i<4;++i) expect(peer,S2C_P_MAPINFO);
     waitSnapshot(peer.accepted.connection,"login",[](const Snapshot& s) { return s.state == ST_INGAME && s.sectorRefs == 1; });
@@ -137,19 +149,23 @@ void movePair(Peer& peer,std::uint32_t token) {
     };
     auto right=ownMove();
     auto left=ownMove();
-    assert(right.id == peer.accepted.id && right.move_time == token && right.x == clubhouse::spawnX+1 && right.y == clubhouse::spawnY);
-    assert(left.id == peer.accepted.id && left.move_time == token+1 && left.x == clubhouse::spawnX && left.y == clubhouse::spawnY);
+    assert(right.id == peer.accepted.id && right.move_time == token && right.x == spawnX+1 && right.y == spawnY);
+    assert(left.id == peer.accepted.id && left.move_time == token+1 && left.x == spawnX && left.y == spawnY);
     for(int i=0;i<4;++i) expect(peer,S2C_P_MAPINFO);
     expect(peer,S2C_P_MONSTER_NEAR);
 }
 } // namespace fixture
 
 void workerTestObserve(const std::shared_ptr<GAMESESSION>& session,const char* event) {
-    // Called on workers; stationary-player mode does not mutate coordinates after login.
+    WorldStateLock stateLock;
     fixture::Snapshot snapshot;
     snapshot.id=session->object._id; snapshot.connection=session->connectionId; snapshot.state=session->_state;
     snapshot.x=session->object._x; snapshot.y=session->object._y; snapshot.fragment=session->_prevRemainData; snapshot.owner=session;
     snapshot.account=session->_userInputId;
+    snapshot.hp=session->object._hp; snapshot.seeds=session->object._seedNum;
+    if(auto target=clients.get(MAX_USER)) { snapshot.targetHp=target->object._hp; snapshot.targetDead=target->monster._isDie; }
+    for(const auto& entry : clients.snapshot()) if(entry.second && entry.first < MAX_USER && entry.second->_state == ST_INGAME)
+        snapshot.totalSeeds+=entry.second->object._seedNum;
     { std::lock_guard<std::mutex> lock(session->_vlL); snapshot.ownView=session->_viewList.size(); snapshot.visible=session->_viewList; }
     for(int x=0;x<MAX_SECTOR_X;++x) for(int y=0;y<MAX_SECTOR_Y;++y) {
         std::lock_guard<std::mutex> lock(sectorLock[x][y]); snapshot.sectorRefs+=static_cast<int>(sectors[x][y].count(snapshot.id));
@@ -167,14 +183,20 @@ void workerTestObserve(const std::shared_ptr<GAMESESSION>& session,const char* e
 bool initializeDB() { assert(false && "Production DB startup must not run"); return false; }
 void finalizeDB() { assert(false && "Production DB shutdown must not run"); }
 LoginLookupResult get_DB_login_info(int& id,int& x,int& y,int& hp,int& level,int& exp,int& seed,int& maxHp,int& damage) {
+    assert(!WorldStateLock::heldByCurrentThread());
     std::lock_guard<std::mutex> lock(fixture::mutex); ++fixture::loads[id];
     if(id == 404) return LoginLookupResult::Error;
-    x=clubhouse::spawnX; y=clubhouse::spawnY; hp=maxHp=10; level=1; exp=0; seed=10; damage=1;
+    x=fixture::spawnX; y=fixture::spawnY; hp=maxHp=10; level=1; exp=0; seed=10; damage=1;
     return LoginLookupResult::Found;
 }
 bool insert_new_user(int,const char*) { assert(false && "Fixture accounts already exist"); return false; }
-bool update_user_info(int id,int,int,int,int,int,int,int,int) {
-    std::lock_guard<std::mutex> lock(fixture::mutex); ++fixture::saves[id]; return true;
+bool update_user_info(int id,int x,int y,int seed,int hp,int level,int exp,int maxHp,int damage) {
+    assert(!WorldStateLock::heldByCurrentThread());
+    std::lock_guard<std::mutex> lock(fixture::mutex); ++fixture::saves[id];
+    auto& saved=fixture::savedState[id]; saved._x=static_cast<short>(x); saved._y=static_cast<short>(y);
+    saved._seedNum=static_cast<short>(seed); saved._hp=static_cast<short>(hp); saved._level=static_cast<short>(level);
+    saved._exp=static_cast<short>(exp); saved._maxHp=static_cast<short>(maxHp); saved._damage=static_cast<short>(damage);
+    return true;
 }
 
 namespace fixture {
@@ -296,6 +318,70 @@ void runMultiworker(const sockaddr_in& address,std::vector<std::thread>& workers
     clients.clear(); for(const auto& weak : previous) assert(weak.expired());
     for(const auto& entry : observed) assert(entry.second.owner.expired());
 }
+#ifdef GMSEV_WORLD_TEST
+void runWorldState(const sockaddr_in& address,std::vector<std::thread>& workers) {
+    constexpr int count=4;
+    std::vector<Peer> peers;
+    std::uint64_t last=0;
+    for(int i=0;i<count;++i) {
+        peers.push_back(connectPeer(address,last)); last=peers.back().accepted.connection;
+        login(peers.back(),40000+i,true);
+    }
+    // All four move simultaneously; each response must retain its own coordinates and token.
+    parallelPeers(count,[&](int i) {
+        for(int step=0;step<20;++step) movePair(peers[i],static_cast<std::uint32_t>(10000+i*100+step*2));
+    });
+    auto attack=[&](int i) {
+        cs_packet_attack request{}; request.size=sizeof(request); request.type=C2S_P_ATTACK;
+        request.damage=9999; request.seedNum=9999; // Client claims must not override authoritative state.
+        sendBytes(peers[i],reinterpret_cast<char*>(&request),sizeof(request));
+        for(int n=0;n<128;++n) {
+            auto response=receive(peers[i]); const auto type=static_cast<std::uint8_t>(response[1]);
+            if(type == S2C_P_MONSTER_NEAR || type == S2C_P_ATTACK_FEEDBACK) return;
+        }
+        assert(false);
+    };
+    // Two attackers target the same five-HP NPC while the other two keep moving.
+    parallelPeers(count,[&](int i) {
+        if(i<2) for(int n=0;n<8;++n) attack(i);
+        else for(int n=0;n<10;++n) movePair(peers[i],static_cast<std::uint32_t>(20000+i*100+n*2));
+    });
+    for(int i=0;i<count;++i) movePair(peers[i],static_cast<std::uint32_t>(30000+i*2));
+    const auto reference=peers[0].combat;
+    assert(reference.size() == 5);
+    std::map<int,int> spent;
+    for(int i=0;i<5;++i) {
+        assert(reference[i].targetId == MAX_USER && reference[i].targetHp == 4-i);
+        ++spent[reference[i].attackerId];
+        assert(reference[i].seedNum == 10-spent[reference[i].attackerId]);
+    }
+    // A request after death must not consume another seed or emit another death.
+    attack(0);
+    for(int i=0;i<count;++i) {
+        auto& peer=peers[i]; assert(peer.combat.size() == reference.size() && peer.deaths == 1);
+        for(std::size_t n=0;n<reference.size();++n) assert(std::memcmp(&peer.combat[n],&reference[n],sizeof(reference[n])) == 0);
+        auto probe=new OVER_EXP; probe->_compType=OP_LOGIN_FAIL; probe->owner=peer.accepted.owner.lock();
+        assert(PostQueuedCompletionStatus(g_hiocp,1,peer.accepted.id,&probe->_over));
+        const auto expectedSeeds=10-spent[peer.accepted.id];
+        waitSnapshot(peer.accepted.connection,"probe",[&](const Snapshot& s) {
+            return s.x == spawnX && s.y == spawnY && s.hp == 10 && s.seeds == expectedSeeds &&
+                s.targetHp == 0 && s.targetDead && s.totalSeeds == 35 && s.ownView == count-1 &&
+                !s.visible.count(MAX_USER) && s.sectorRefs == 1;
+        });
+    }
+    parallelPeers(count,[&](int i) { closePeer(peers[i]); });
+    for(int i=0;i<count;++i) {
+        std::lock_guard<std::mutex> lock(mutex);
+        const auto& saved=savedState.at(40000+i);
+        assert(saved._x == spawnX && saved._y == spawnY && saved._hp == 10 && saved._seedNum == 10-spent[peers[i].accepted.id]);
+    }
+    const auto deadline=Clock::now()+std::chrono::seconds(3);
+    auto drained=[&] { for(const auto& peer : peers) if(peer.accepted.owner.use_count() != 1) return false; return true; };
+    while(!drained() && Clock::now()<deadline) std::this_thread::yield(); assert(drained());
+    stopWorkers(workers); clients.clear();
+    for(const auto& peer : peers) assert(peer.accepted.owner.expired());
+}
+#endif
 #endif
 }
 
@@ -303,6 +389,21 @@ int main() {
     using namespace fixture;
     WSADATA data{}; assert(WSAStartup(MAKEWORD(2,2),&data) == 0);
     initializeMap(); // No NPC Lua or timer threads.
+#ifdef GMSEV_WORLD_TEST
+    auto target=std::make_shared<GAMESESSION>();
+    target->object._id=MAX_USER; target->object._x=38; target->object._y=6;
+    target->object._hp=target->object._maxHp=5; target->_state=ST_INGAME; target->monster._monType=1;
+    target->monster._L=luaL_newstate(); assert(target->monster._L);
+    lua_register(target->monster._L,"API_get_x",API_get_x); lua_register(target->monster._L,"API_get_y",API_get_y);
+    for(lua_CFunction function : {API_get_x,API_get_y,API_SendMessage}) {
+        lua_pushcfunction(target->monster._L,function); lua_pushliteral(target->monster._L,"bad-id");
+        assert(lua_pcall(target->monster._L,1,1,0) != LUA_OK); lua_pop(target->monster._L,1);
+        assert(!WorldStateLock::heldByCurrentThread()); // Lua argument errors cannot strand a C++ guard.
+    }
+    assert(luaL_dostring(target->monster._L,"function event_player_move(player) local x=API_get_x(player); local y=API_get_y(player) end") == LUA_OK);
+    clients.set(MAX_USER,target);
+    auto [sx,sy]=getSectorLocation(38,6); sectors[sx][sy].insert(MAX_USER);
+#endif
     gServerSocket=WSASocket(AF_INET,SOCK_STREAM,0,nullptr,0,WSA_FLAG_OVERLAPPED); assert(gServerSocket != INVALID_SOCKET);
     sockaddr_in address{}; address.sin_family=AF_INET; address.sin_addr.s_addr=htonl(INADDR_LOOPBACK);
     assert(bind(gServerSocket,reinterpret_cast<sockaddr*>(&address),sizeof(address)) == 0);
@@ -317,7 +418,12 @@ int main() {
     std::vector<std::thread> workers;
 #ifdef GMSEV_MULTIWORKER_TEST
     for(int i=0;i<4;++i) workers.emplace_back(workerThread,g_hiocp);
+#ifdef GMSEV_WORLD_TEST
+    runWorldState(address,workers);
+    lua_close(target->monster._L); target->monster._L=nullptr;
+#else
     runMultiworker(address,workers);
+#endif
 #else
     workers.emplace_back(workerThread,g_hiocp);
     auto watcher=connectPeer(address,0); assert(watcher.accepted.id == 0); login(watcher,10,false);
@@ -397,7 +503,11 @@ int main() {
 #endif
     CloseHandle(g_hiocp); WSACleanup();
 #ifdef GMSEV_MULTIWORKER_TEST
+#ifdef GMSEV_WORLD_TEST
+    std::cout << "World state: 4 workers, concurrent movement/combat, five hits/one death, DB outside world gate passed\n";
+#else
     std::cout << "Production worker: 4 workers, 16 stationary peers x 5 batches including login/logout overlap passed (DB stub)\n";
+#endif
 #else
     std::cout << "Production worker: fragmented login, coalesced moves, cleanup and 30 reconnect cycles passed (DB stub, one worker)\n";
 #endif

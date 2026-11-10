@@ -6,6 +6,7 @@
 #include <cstring>
 
 void GAMESESSION::sendSessionLoginPacket() {
+    WorldStateLock stateLock;
 	sc_packet_avatar_info p;
 	p.id = object._id;
 	p.size = sizeof(sc_packet_avatar_info);
@@ -25,6 +26,7 @@ void GAMESESSION::sendSessionLoginPacket() {
 }
 
 void GAMESESSION::sendSessioLoginOkPacket() {
+    WorldStateLock stateLock;
 	sc_packet_avatar_login_ok p;
 	p.id = object._id;
 	p.size = sizeof(sc_packet_avatar_login_ok);
@@ -33,6 +35,7 @@ void GAMESESSION::sendSessioLoginOkPacket() {
 }
 
 void GAMESESSION::sendMovePacket(int sessionId, std::uint32_t moveTime) {
+    WorldStateLock stateLock;
 	auto user = clients.get(sessionId);
 	if (!user) return;
 
@@ -47,6 +50,7 @@ void GAMESESSION::sendMovePacket(int sessionId, std::uint32_t moveTime) {
 }
 
 void GAMESESSION::sendAddPlayerPacket(int sessionId) {
+    WorldStateLock stateLock;
 	auto user = clients.get(sessionId);
 	if (!user) return;
 
@@ -73,6 +77,7 @@ void GAMESESSION::sendAddPlayerPacket(int sessionId) {
 }
 
 void GAMESESSION::sendRemoveSessionPacket(int sessionId) {
+    WorldStateLock stateLock;
 	_vlL.lock();
 	if (_viewList.count(sessionId))
 		_viewList.erase(sessionId);
@@ -102,6 +107,7 @@ void GAMESESSION::sendChatPacket(int sessionId, const char* message) {
 }
 
 void GAMESESSION::sendAttackPacket_PtoN(int targetId, int targetNewHp) {
+    WorldStateLock stateLock;
     sendCombatUpdate(object._id,object._seedNum,targetId,targetNewHp);
 }
 
@@ -137,6 +143,7 @@ void GAMESESSION::sendMonsterDiePacket(int targetId) {
 }
 
 void GAMESESSION::sendMonsterNearPacket(nearMonsterInfo* infos, int cnt) {
+    WorldStateLock stateLock;
 	cnt = std::clamp(cnt, 0, static_cast<int>(MAX_NEAR_MONSTERS));
 	sc_packet_monster_near p{};
 	p.type = S2C_P_MONSTER_NEAR;
@@ -180,7 +187,9 @@ void GAMESESSION::sendMapInfo(int player_id, int x, int y) {
 }
 
 void GAMESESSION::sendStatChange(int t) {
-	sc_packet_stat_change p;
+    WorldStateLock stateLock;
+	sc_packet_stat_change p{};
+	p.id = object._id;
 	p.type = S2C_P_STAT_CHANGE;
 	p.size = sizeof(p);
 	p.hp = object._hp;

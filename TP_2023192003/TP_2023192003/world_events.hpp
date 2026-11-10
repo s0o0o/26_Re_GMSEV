@@ -1,10 +1,6 @@
 #pragma once
 #include "session_registry.hpp"
 
-// Only player login publication and logout detachment share this gate.
-// Never acquire another session's completionMutex while holding it.
-inline std::recursive_mutex playerPresenceMutex;
-
 inline bool currentWorldPlayer(int id,std::uint64_t connectionId) {
     auto player=clients.get(id);
     return id >= 0 && id < MAX_USER && player &&
@@ -15,6 +11,7 @@ inline bool currentWorldPlayer(int id,std::uint64_t connectionId) {
 // Shared production/test fan-out: only live player connections receive events.
 template<class Action>
 void forWorldPlayers(const std::unordered_set<int>& audience,Action action) {
+    WorldStateLock stateLock;
     for(int id : audience) {
         if(id < 0 || id >= MAX_USER) continue;
         auto player=clients.get(id);
@@ -25,6 +22,7 @@ void forWorldPlayers(const std::unordered_set<int>& audience,Action action) {
 }
 inline void publishCombat(GAMESESSION& target,int attacker,int seeds,bool died,
                           const std::unordered_set<int>& audience) {
+    WorldStateLock stateLock;
     forWorldPlayers(audience,[&](GAMESESSION& viewer) {
         viewer.sendCombatUpdate(attacker,seeds,target.object._id,target.object._hp);
         if(died) {
@@ -38,6 +36,7 @@ inline void publishCombat(GAMESESSION& target,int attacker,int seeds,bool died,
 // Socket close and DB persistence stay in disconnect(); this only detaches world state.
 template<class RemoveSector>
 void detachWorldPresence(GAMESESSION& leaving,RemoveSector removeSector) {
+    WorldStateLock stateLock;
     const int id=leaving.object._id;
     removeSector(id);
     { std::lock_guard<std::mutex> lock(leaving._vlL); leaving._viewList.clear(); }
