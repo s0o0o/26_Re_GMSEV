@@ -72,7 +72,9 @@ cl /nologo /EHsc /std:c++17 tests\session_lifetime_test.cpp TP_2023192003\TP_202
 if not "%errorlevel%"=="0" goto failed
 build\tests\session_lifetime_test.exe
 if not "%errorlevel%"=="0" goto failed
-echo All 16 regression programs passed.
+call tests\run-server-worker.cmd
+if not "%errorlevel%"=="0" goto failed
+echo All 17 regression programs passed.
 popd
 exit /b 0
 :failed
