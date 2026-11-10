@@ -61,6 +61,7 @@ bool isMonster(int sessionId) {
 
 bool isCanSee(int from, int to)
 {
+    WorldStateLock stateLock;
 	auto from_it = clients.get(from);
 	std::shared_ptr<GAMESESSION> fromUser = from_it;
 
@@ -75,6 +76,7 @@ bool isCanSee(int from, int to)
 
 bool isMonSee(int from, int to)
 {
+    WorldStateLock stateLock;
 	auto from_it = clients.get(from);
 	std::shared_ptr<GAMESESSION> fromUser = from_it;
 
@@ -127,6 +129,7 @@ std::pair<int, int> getSectorLocation(int x, int y) {
 
 // DB¿ë =============================================================
 void GAMESESSION::updateSector(short oldX, short oldY) {
+    WorldStateLock stateLock;
 	auto [old_sx, old_sy] = getSectorLocation(oldX, oldY);
 	auto [new_sx, new_sy] = getSectorLocation(object._x, object._y);
 
@@ -139,6 +142,7 @@ void GAMESESSION::updateSector(short oldX, short oldY) {
 }
 
 std::unordered_set<int> GAMESESSION::getNearBySessions() {
+    WorldStateLock stateLock;
 	std::unordered_set<int> result;
 	auto [sx, sy] = getSectorLocation(object._x, object._y);
 	if (sx < 0 || sx >= MAX_SECTOR_X || sy < 0 || sy >= MAX_SECTOR_Y) {
@@ -185,12 +189,14 @@ std::unordered_set<int> GAMESESSION::getNearBySessions() {
 
 int API_get_x(lua_State* L) {
     const int id=static_cast<int>(luaL_checkinteger(L,1));
+    WorldStateLock stateLock; // Validate Lua arguments before RAII locks.
     const auto it=clients.get(id);
     lua_pushinteger(L,it ? it->object._x : 0);
     return 1;
 }
 int API_get_y(lua_State* L) {
     const int id=static_cast<int>(luaL_checkinteger(L,1));
+    WorldStateLock stateLock; // Validate Lua arguments before RAII locks.
     const auto it=clients.get(id);
     lua_pushinteger(L,it ? it->object._y : 0);
     return 1;
@@ -199,6 +205,7 @@ int API_SendMessage(lua_State* L) {
     const int sender=static_cast<int>(luaL_checkinteger(L,1));
     const int receiver=static_cast<int>(luaL_checkinteger(L,2));
     const char* message=luaL_checkstring(L,3);
+    WorldStateLock stateLock; // Validate Lua arguments before RAII locks.
     const auto it=clients.get(receiver);
     if (it && isPlayer(receiver) && it->_state == ST_INGAME)
         it->sendChatPacket(sender,message);
@@ -206,6 +213,7 @@ int API_SendMessage(lua_State* L) {
 }
 
 void wakeUpMonster(int monId, int playerId) {
+    WorldStateLock stateLock;
 	//cout << "montser ±ú¿öÁö³Ä " << endl;
 	auto it = clients.get(monId);
 	std::shared_ptr<GAMESESSION> monster = it;
@@ -235,6 +243,7 @@ void wakeUpMonster(int monId, int playerId) {
 }
 
 void trySleepMonster(std::shared_ptr<GAMESESSION> monster) {
+    WorldStateLock stateLock;
 	auto _near = monster->getNearBySessions();
 	if (_near.size() == 0) return;
 
@@ -253,6 +262,7 @@ void trySleepMonster(std::shared_ptr<GAMESESSION> monster) {
 }
 
 void doMonsterRandomMoving(int monId) {
+    WorldStateLock stateLock;
 	auto it = clients.get(monId);
 	std::shared_ptr<GAMESESSION> monster = it;
     if(!monster) return;
@@ -478,9 +488,11 @@ void disconnect(const std::shared_ptr<GAMESESSION>& session) {
     if (session->disconnectStarted.exchange(true)) return;
     session->transportFailed = true;
     const bool wasInGame = session->_state == ST_INGAME;
+    GameObjectState persisted;
+    int persistedAccount=0;
 
     {
-        std::lock_guard<std::recursive_mutex> presenceGuard(playerPresenceMutex);
+        WorldStateLock presenceGuard;
         detachWorldPresence(*session,[](int id) {
             for(int x=0;x<MAX_SECTOR_X;++x) for(int y=0;y<MAX_SECTOR_Y;++y) {
                 std::lock_guard<std::mutex> lock(sectorLock[x][y]);
@@ -488,16 +500,17 @@ void disconnect(const std::shared_ptr<GAMESESSION>& session) {
             }
         });
         session->closeTransport();
+        persisted=session->object; persistedAccount=session->_userInputId;
         session->_state = ST_FREE;
-    } // DB persistence is deliberately outside the presence gate.
+    } // DB persistence is deliberately outside the world gate.
     if (!wasInGame) {
 #ifdef GMSEV_WORKER_TEST
         workerTestObserve(session,"disconnect");
 #endif
         return;
     }
-	if (update_user_info(session->_userInputId, session->object._x, session->object._y, session->object._seedNum,
-		session->object._hp, session->object._level, session->object._exp, session->object._maxHp, session->object._damage)) {
+	if (update_user_info(persistedAccount, persisted._x, persisted._y, persisted._seedNum,
+		persisted._hp, persisted._level, persisted._exp, persisted._maxHp, persisted._damage)) {
 		//cout << "¾øµ«¼º°ø" << endl;
 	}
 	else cout << "¾÷µ«½ÇÆÐ. " << endl;
@@ -511,6 +524,11 @@ void processPacket(const std::shared_ptr<GAMESESSION>& session, char* packetFrom
 	//cout << "³¯¾Æ¿Â ¾ÆÀÌµð È®ÀÎ¿ë :" << sessionId << endl;
     if(!session || session->disconnectStarted || session->transportFailed) return;
     const int sessionId=session->object._id;
+    WorldStateLock stateGuard(std::defer_lock);
+    if(packetFromC[1] != C2S_P_LOGIN) {
+        stateGuard.lock();
+        if(session->disconnectStarted || session->transportFailed) return;
+    }
     if(packetFromC[1] == C2S_P_LOGIN) {
         if(session->_state != ST_ALLOC) return;
     } else if(session->_state != ST_INGAME) return;
@@ -550,41 +568,47 @@ void processPacket(const std::shared_ptr<GAMESESSION>& session, char* packetFrom
             break;
         }
 
-        world_layout::safePosition(dbUserX,dbUserY);
-        session->_userInputId = dbId;
-        session->object._furColor = p->fur_color;
-        session->object._characterKind = p->character_kind;
-        session->object._eyeStyle = p->eye_style;
-        session->object._scarfStyle = p->scarf_style;
-		session->object._x = dbUserX;
-		session->object._y = dbUserY;
-		session->object._hp = dbUserHp;
-		session->object._level = dbUserLevel;
-		session->object._exp = dbUserExp;
-		session->object._seedNum = dbUserSeedNum;
-		session->object._maxHp = dbUserMaxHp;
-		session->object._damage = dbUserDamage;
-		session->monster._monType = 0;
+        GameObjectState persisted;
+        {
+            WorldStateLock commitGuard;
+            if(session->disconnectStarted || session->transportFailed) break;
+            world_layout::safePosition(dbUserX,dbUserY);
+            session->_userInputId = dbId;
+            session->object._furColor = p->fur_color;
+            session->object._characterKind = p->character_kind;
+            session->object._eyeStyle = p->eye_style;
+            session->object._scarfStyle = p->scarf_style;
+            session->object._x = dbUserX;
+            session->object._y = dbUserY;
+            session->object._hp = dbUserHp;
+            session->object._level = dbUserLevel;
+            session->object._exp = dbUserExp;
+            session->object._seedNum = dbUserSeedNum;
+            session->object._maxHp = dbUserMaxHp;
+            session->object._damage = dbUserDamage;
+            session->monster._monType = 0;
 
-		strncpy_s(session->object._name, p->name, MAX_ID_LENGTH - 1);
-		//session->sendMapInfo(session->object._id, session->object._x, session->object._y);
+            strncpy_s(session->object._name, p->name, MAX_ID_LENGTH - 1);
+            //session->sendMapInfo(session->object._id, session->object._x, session->object._y);
 
-		OVER_EXP* ov = new OVER_EXP;
-		ov->_compType = OP_LOGIN_OK;
-        ov->owner=session;
-		        if (!PostQueuedCompletionStatus(g_hiocp,1,sessionId,&ov->_over)) {
-            std::cerr << "[LOGIN] Completion enqueue failed: " << GetLastError() << std::endl;
-            delete ov;
-            sc_packet_login_fail fail{};
-            fail.size = sizeof(fail);
-            fail.type = S2C_P_LOGIN_FAIL;
-            session->registerSend(&fail);
-            break;
+            OVER_EXP* ov = new OVER_EXP;
+            ov->_compType = OP_LOGIN_OK;
+            ov->owner=session;
+            if (!PostQueuedCompletionStatus(g_hiocp,1,sessionId,&ov->_over)) {
+                std::cerr << "[LOGIN] Completion enqueue failed: " << GetLastError() << std::endl;
+                delete ov;
+                sc_packet_login_fail fail{};
+                fail.size = sizeof(fail);
+                fail.type = S2C_P_LOGIN_FAIL;
+                session->registerSend(&fail);
+                break;
+            }
+            std::cout << "[LOGIN] Completion queued session=" << sessionId << std::endl;
+            persisted=session->object;
         }
-        std::cout << "[LOGIN] Completion queued session=" << sessionId << std::endl;
 
-		if (update_user_info(session->_userInputId, session->object._x, session->object._y, session->object._seedNum,
-			session->object._hp, session->object._level, session->object._exp, session->object._maxHp, session->object._damage)) {
+		if (update_user_info(dbId, persisted._x, persisted._y, persisted._seedNum,
+			persisted._hp, persisted._level, persisted._exp, persisted._maxHp, persisted._damage)) {
 			//cout << "¾øµ«¼º°ø" << endl;
 		}
 		else cout << "¾÷µ«½ÇÆÐ. " << endl;
@@ -714,8 +738,6 @@ void processPacket(const std::shared_ptr<GAMESESSION>& session, char* packetFrom
 	break;
 	case C2S_P_ATTACK:
 	{
-        static std::mutex attackMutex;
-        std::lock_guard<std::mutex> attackGuard(attackMutex);
         if (session->_state != ST_INGAME) break;
         if (!world_layout::outdoors(session->object._x)) { session->sendAttackFeedback(AttackFeedback::SafeZone); break; }
         if (session->object._seedNum <= 0) { session->sendAttackFeedback(AttackFeedback::NoSeeds); break; }
@@ -796,8 +818,11 @@ void processPacket(const std::shared_ptr<GAMESESSION>& session, char* packetFrom
 			tempCnt++;
 		}
 		session->sendMonsterNearPacket(nearMons, cnt);
-		if (update_user_info(session->_userInputId, session->object._x, session->object._y, session->object._seedNum,
-			session->object._hp, session->object._level, session->object._exp, session->object._maxHp, session->object._damage)) {
+        const auto persisted=session->object;
+        const int persistedAccount=session->_userInputId;
+        stateGuard.unlock(); // DB I/O must not block the world gate.
+		if (update_user_info(persistedAccount, persisted._x, persisted._y, persisted._seedNum,
+			persisted._hp, persisted._level, persisted._exp, persisted._maxHp, persisted._damage)) {
 			//cout << "¾øµ«¼º°ø" << endl;
 		}
 		else cout << "¾÷µ«½ÇÆÐ. " << endl;
@@ -827,6 +852,7 @@ void processPacket(const std::shared_ptr<GAMESESSION>& session, char* packetFrom
 }
 
 void serviceRespawns() {
+    WorldStateLock stateLock;
     static std::mutex serviceMutex;
     std::lock_guard<std::mutex> serviceGuard(serviceMutex);
     const auto now=respawn_policy::now();
@@ -897,6 +923,10 @@ void workerThread(HANDLE iocp) {
             else delete overEx;
             continue;
         }
+        WorldStateLock aiWorldLock(std::defer_lock);
+        if(overEx->_compType == OP_MONSTER_MOVE || overEx->_compType == OP_MONSTER_CHASE ||
+           overEx->_compType == OP_PLAYER_MOVE || overEx->_compType == OP_NPC_RUN || overEx->_compType == OP_WORLD_TICK)
+            aiWorldLock.lock(); // Must precede the NPC combat lock below.
         std::shared_ptr<GAMESESSION> aiOwner;
         std::unique_lock<std::recursive_mutex> aiGuard;
         if(overEx->_compType == OP_MONSTER_MOVE || overEx->_compType == OP_MONSTER_CHASE ||
@@ -979,7 +1009,7 @@ void workerThread(HANDLE iocp) {
 		{
 			//cout << " ·Î±×ÀÎ ¼º°ø !!!! " << endl;
             auto session=completionOwner;
-            std::lock_guard<std::recursive_mutex> presenceGuard(playerPresenceMutex);
+            WorldStateLock presenceGuard;
 
             if (session->disconnectStarted || session->transportFailed || session->_state != ST_ALLOC) {
                 // Released by sessionOperation.

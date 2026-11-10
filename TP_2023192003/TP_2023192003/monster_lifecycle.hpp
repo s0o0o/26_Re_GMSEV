@@ -3,7 +3,7 @@
 #include "monster_state.hpp"
 #include "../../shared/field_content.hpp"
 
-// Caller holds monster.combatMutex for both AI dispatch and lifecycle changes.
+// Runtime callers hold WorldStateLock, then monster.combatMutex (also used by AI dispatch).
 inline void markMonsterDead(MonsterState& monster,respawn_policy::Tick now) {
     if(monster._isDie) return;
     ++monster.generation;

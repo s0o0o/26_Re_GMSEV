@@ -80,7 +80,13 @@ build\tests\session_registry_test.exe
 if not "%errorlevel%"=="0" goto failed
 call tests\run-server-multiworker.cmd
 if not "%errorlevel%"=="0" goto failed
-echo All 19 regression programs passed.
+cl /nologo /EHsc /std:c++17 tests\world_state_test.cpp TP_2023192003\TP_2023192003\session_packets.cpp TP_2023192003\TP_2023192003\session_registry.cpp TP_2023192003\TP_2023192003\world_map.cpp /Fo:build\tests\ /Fe:build\tests\world_state_test.exe /link ws2_32.lib
+if not "%errorlevel%"=="0" goto failed
+build\tests\world_state_test.exe
+if not "%errorlevel%"=="0" goto failed
+call tests\run-server-world.cmd
+if not "%errorlevel%"=="0" goto failed
+echo All 21 regression programs passed.
 popd
 exit /b 0
 :failed
