@@ -33,6 +33,7 @@
 ## 명세 목록
 
 - [템플릿](specs/_template.md)
+- [Lua AI 흐름 개선](specs/lua-ai-flow.md): 실제 역할 조사와 안전한 script 정책/타이머 경계.
 - [월드 상태 보호](specs/world-state-concurrency.md): 이동·전투·패킷 읽기의 공통 잠금과 DB 경계.
 - [접속 목록 동기화](specs/session-registry-concurrency.md): registry와 입장·퇴장 경계를 구분하는 다중 worker 작업.
 - [실제 worker 통합 검증](specs/server-worker-harness.md): DB 대역과 실제 네트워크 경로를 구분한 검증 명세.
