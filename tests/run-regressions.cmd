@@ -74,7 +74,13 @@ build\tests\session_lifetime_test.exe
 if not "%errorlevel%"=="0" goto failed
 call tests\run-server-worker.cmd
 if not "%errorlevel%"=="0" goto failed
-echo All 17 regression programs passed.
+cl /nologo /EHsc /std:c++17 tests\session_registry_test.cpp /Fo:build\tests\ /Fe:build\tests\session_registry_test.exe /link ws2_32.lib
+if not "%errorlevel%"=="0" goto failed
+build\tests\session_registry_test.exe
+if not "%errorlevel%"=="0" goto failed
+call tests\run-server-multiworker.cmd
+if not "%errorlevel%"=="0" goto failed
+echo All 19 regression programs passed.
 popd
 exit /b 0
 :failed

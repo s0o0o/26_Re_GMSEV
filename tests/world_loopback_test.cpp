@@ -32,7 +32,7 @@ int main() {
         auto s=std::make_shared<GAMESESSION>(); s->object._id=i; s->_state=ST_INGAME;
         s->_socket=accept(listener,nullptr,nullptr); assert(s->_socket != INVALID_SOCKET);
         assert(CreateIoCompletionPort(reinterpret_cast<HANDLE>(s->_socket),port,i,0));
-        clients[i]=s;
+        clients.set(i,s);
         DWORD timeout=2000;
         assert(setsockopt(peers[i],SOL_SOCKET,SO_RCVTIMEO,reinterpret_cast<const char*>(&timeout),sizeof(timeout)) == 0);
     }
@@ -46,7 +46,7 @@ int main() {
         }
     };
     auto monster=std::make_shared<GAMESESSION>(); monster->object._id=MAX_USER;
-    clients[MAX_USER]=monster;
+    clients.set(MAX_USER,monster);
     const std::unordered_set<int> audience{0,1};
     monster->object._hp=0; markMonsterDead(monster->monster,1000);
     publishCombat(*monster,0,2,true,audience); drain(4);
@@ -59,10 +59,10 @@ int main() {
     forWorldPlayers(audience,[&](GAMESESSION& s) { s.sendAddPlayerPacket(MAX_USER); }); drain(2);
     auto a=receivePacket(peers[0]),b=receivePacket(peers[1]); assert(a == b);
     assert(static_cast<unsigned char>(a[1]) == S2C_P_ENTER);
-    auto leaving=clients[0]; clients[1]->_viewList.insert(0);
+    auto leaving=clients.get(0); clients.get(1)->_viewList.insert(0);
     leaving->disconnectStarted=true; leaving->transportFailed=true;
     detachWorldPresence(*leaving,[](int) {}); drain(1);
     assert(static_cast<unsigned char>(receivePacket(peers[1])[1]) == S2C_P_LEAVE);
-    for(int i=0;i<2;++i) { closesocket(clients[i]->_socket); closesocket(peers[i]); }
+    for(int i=0;i<2;++i) { closesocket(clients.get(i)->_socket); closesocket(peers[i]); }
     closesocket(listener); CloseHandle(port); WSACleanup();
 }

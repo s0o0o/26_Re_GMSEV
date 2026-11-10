@@ -59,26 +59,14 @@ bool isMonster(int sessionId) {
 	return !isPlayer(sessionId);
 }
 
-int getNewPlayerId() {
-	for (int i = 0; i < MAX_USER; ++i) {
-		auto it = clients.find(i);
-		if (it == clients.end())  // i번 슬롯이 비어있으면 사용 가능
-			return i;
-
-		std::shared_ptr<GAMESESSION> new_user = it->second;
-		if (new_user && new_user->_state == ST_FREE)
-			return i;
-	}
-	return -1;
-}
-
 bool isCanSee(int from, int to)
 {
-	auto from_it = clients.find(from);
-	std::shared_ptr<GAMESESSION> fromUser = from_it->second;
+	auto from_it = clients.get(from);
+	std::shared_ptr<GAMESESSION> fromUser = from_it;
 
-	auto to_it = clients.find(to);
-	std::shared_ptr<GAMESESSION> toUser = to_it->second;
+	auto to_it = clients.get(to);
+	std::shared_ptr<GAMESESSION> toUser = to_it;
+    if(!fromUser || !toUser) return false;
 
 	if (abs(fromUser->object._x - toUser->object._x) > VIEW_RANGE)
 		return false;
@@ -87,11 +75,12 @@ bool isCanSee(int from, int to)
 
 bool isMonSee(int from, int to)
 {
-	auto from_it = clients.find(from);
-	std::shared_ptr<GAMESESSION> fromUser = from_it->second;
+	auto from_it = clients.get(from);
+	std::shared_ptr<GAMESESSION> fromUser = from_it;
 
-	auto to_it = clients.find(to);
-	std::shared_ptr<GAMESESSION> toUser = to_it->second;
+	auto to_it = clients.get(to);
+	std::shared_ptr<GAMESESSION> toUser = to_it;
+    if(!fromUser || !toUser) return false;
 
 	if (abs(fromUser->object._x - toUser->object._x) > 5)
 		return false;
@@ -175,10 +164,10 @@ std::unordered_set<int> GAMESESSION::getNearBySessions() {
 			for (int id : sectors[nx][ny]) {
 				if (id == object._id) continue;
 
-				auto it = clients.find(id);
-				if (it == clients.end()) continue;
+				auto it = clients.get(id);
+				if (it == nullptr) continue;
 
-				auto other = it->second;
+				auto other = it;
 				if (!other || other->_state != ST_INGAME || other->disconnectStarted || other->transportFailed) continue;
 				if (other->monster._isDie) continue;
 
@@ -196,30 +185,31 @@ std::unordered_set<int> GAMESESSION::getNearBySessions() {
 
 int API_get_x(lua_State* L) {
     const int id=static_cast<int>(luaL_checkinteger(L,1));
-    const auto it=clients.find(id);
-    lua_pushinteger(L,it != clients.end() && it->second ? it->second->object._x : 0);
+    const auto it=clients.get(id);
+    lua_pushinteger(L,it ? it->object._x : 0);
     return 1;
 }
 int API_get_y(lua_State* L) {
     const int id=static_cast<int>(luaL_checkinteger(L,1));
-    const auto it=clients.find(id);
-    lua_pushinteger(L,it != clients.end() && it->second ? it->second->object._y : 0);
+    const auto it=clients.get(id);
+    lua_pushinteger(L,it ? it->object._y : 0);
     return 1;
 }
 int API_SendMessage(lua_State* L) {
     const int sender=static_cast<int>(luaL_checkinteger(L,1));
     const int receiver=static_cast<int>(luaL_checkinteger(L,2));
     const char* message=luaL_checkstring(L,3);
-    const auto it=clients.find(receiver);
-    if (it != clients.end() && it->second && isPlayer(receiver) && it->second->_state == ST_INGAME)
-        it->second->sendChatPacket(sender,message);
+    const auto it=clients.get(receiver);
+    if (it && isPlayer(receiver) && it->_state == ST_INGAME)
+        it->sendChatPacket(sender,message);
     return 0;
 }
 
 void wakeUpMonster(int monId, int playerId) {
 	//cout << "montser 깨워지냐 " << endl;
-	auto it = clients.find(monId);
-	std::shared_ptr<GAMESESSION> monster = it->second;
+	auto it = clients.get(monId);
+	std::shared_ptr<GAMESESSION> monster = it;
+    if(!monster) return;
     std::lock_guard<std::recursive_mutex> lifeGuard(monster->monster.combatMutex);
     if (monster->monster._isDie) return;
 
@@ -227,9 +217,9 @@ void wakeUpMonster(int monId, int playerId) {
 	exover->_compType = OP_PLAYER_MOVE;
     exover->generation=monster->monster.generation.load();
 	exover->_playerId = playerId;
-    auto player=clients.find(playerId);
-    if(player == clients.end() || !player->second || !currentWorldPlayer(playerId,player->second->connectionId)) { delete exover; return; }
-    exover->playerConnectionId=player->second->connectionId;
+    auto player=clients.get(playerId);
+    if(!player || !currentWorldPlayer(playerId,player->connectionId)) { delete exover; return; }
+    exover->playerConnectionId=player->connectionId;
 
 	PostQueuedCompletionStatus(g_hiocp, 1, monId, &exover->_over);
 	if (monster->monster._isActive.exchange(true) == false) {
@@ -249,8 +239,9 @@ void trySleepMonster(std::shared_ptr<GAMESESSION> monster) {
 	if (_near.size() == 0) return;
 
 	for (auto& c : _near) {
-		auto near_it = clients.find(c);
-		std::shared_ptr<GAMESESSION> user = near_it->second;
+		auto near_it = clients.get(c);
+		std::shared_ptr<GAMESESSION> user = near_it;
+        if(!user) continue;
 		if (!isPlayer(user->object._id)) continue;
 		if (user->_state != ST_INGAME) continue;
 
@@ -262,8 +253,9 @@ void trySleepMonster(std::shared_ptr<GAMESESSION> monster) {
 }
 
 void doMonsterRandomMoving(int monId) {
-	auto it = clients.find(monId);
-	std::shared_ptr<GAMESESSION> monster = it->second;
+	auto it = clients.get(monId);
+	std::shared_ptr<GAMESESSION> monster = it;
+    if(!monster) return;
 
 	if (isPlayer(monId)) return;
 	if (monster->monster._isActive == false || monster->monster._isDie) return;
@@ -306,8 +298,8 @@ void doMonsterRandomMoving(int monId) {
 	}
 
 	for (auto pl : new_vl) {
-		auto it = clients.find(pl);
-		std::shared_ptr<GAMESESSION> vl_other = it->second;
+		auto it = clients.get(pl);
+		std::shared_ptr<GAMESESSION> vl_other = it;
 		if (0 == old_vl.count(pl)) {		// 이동해서 새로 보이는애라면, 
 			// 플레이어의 시야에 등장
 			vl_other->sendAddPlayerPacket(monster->object._id);	// 걔한테 나(monster) 추가
@@ -318,8 +310,8 @@ void doMonsterRandomMoving(int monId) {
 	}
 
 	for (auto pl : old_vl) {			// 이동 전 뷰리 보면서...
-		auto it = clients.find(pl);
-		std::shared_ptr<GAMESESSION> vl_other = it->second;
+		auto it = clients.get(pl);
+		std::shared_ptr<GAMESESSION> vl_other = it;
 		if (0 == new_vl.count(pl)) {	// 새 뷰리에 없다면?
 			vl_other->_vlL.lock();
 			if (0 != vl_other->_viewList.count(monster->object._id)) {	// 만약.. 클라의 뷰리에. 나(monster) 존재한다면
@@ -366,7 +358,7 @@ bool monsterInit(int count)
 		if (newMonster->monster._monType == 2)
 			sprintf_s(newMonster->object._name, "HUN");
 
-		clients[i] = newMonster;
+		clients.set(i,newMonster);
 
         auto L = newMonster->monster._L = luaL_newstate();
         if (!L) { std::cerr << "[STARTUP] Lua allocation failed monster=" << i << std::endl; return false; }
@@ -427,9 +419,9 @@ void doTimer(int timerIdx) {
 
 			// timer에서 꺼냈을 때
 			if (isMonster(k.obj_id)) {
-				auto npc_it = clients.find(k.obj_id);
-				if (npc_it != clients.end()) {
-					std::shared_ptr<GAMESESSION> npc = npc_it->second;
+				auto npc_it = clients.get(k.obj_id);
+				if (npc_it != nullptr) {
+					std::shared_ptr<GAMESESSION> npc = npc_it;
 					//std::lock_guard<std::mutex> lock(timer_locks[idx]);
 					if (!respawn_policy::accepts(k.generation,npc->monster.generation.load(),npc->monster._isDie.load()) || npc->monster._isActive == false) {
 						timerQueues[timerIdx].pop(); // 그냥 버림
@@ -487,14 +479,17 @@ void disconnect(const std::shared_ptr<GAMESESSION>& session) {
     session->transportFailed = true;
     const bool wasInGame = session->_state == ST_INGAME;
 
-    detachWorldPresence(*session,[](int id) {
-        for(int x=0;x<MAX_SECTOR_X;++x) for(int y=0;y<MAX_SECTOR_Y;++y) {
-            std::lock_guard<std::mutex> lock(sectorLock[x][y]);
-            sectors[x][y].erase(id);
-        }
-    });
-    session->closeTransport();
-	session->_state = ST_FREE;
+    {
+        std::lock_guard<std::recursive_mutex> presenceGuard(playerPresenceMutex);
+        detachWorldPresence(*session,[](int id) {
+            for(int x=0;x<MAX_SECTOR_X;++x) for(int y=0;y<MAX_SECTOR_Y;++y) {
+                std::lock_guard<std::mutex> lock(sectorLock[x][y]);
+                sectors[x][y].erase(id);
+            }
+        });
+        session->closeTransport();
+        session->_state = ST_FREE;
+    } // DB persistence is deliberately outside the presence gate.
     if (!wasInGame) {
 #ifdef GMSEV_WORKER_TEST
         workerTestObserve(session,"disconnect");
@@ -617,9 +612,9 @@ void processPacket(const std::shared_ptr<GAMESESSION>& session, char* packetFrom
                 session->sendStatChange(4);
                 for (int observerId : session->getNearBySessions()) {
                     if (!isPlayer(observerId)) continue;
-                    auto observer = clients.find(observerId);
-                    if (observer != clients.end() && observer->second && observer->second->_state == ST_INGAME)
-                        observer->second->sendMapInfo(observerId,observer->second->object._x,observer->second->object._y);
+                    auto observer = clients.get(observerId);
+                    if (observer && observer->_state == ST_INGAME)
+                        observer->sendMapInfo(observerId,observer->object._x,observer->object._y);
                 }
             }
             int destinationX=x,destinationY=y;
@@ -648,8 +643,9 @@ void processPacket(const std::shared_ptr<GAMESESSION>& session, char* packetFrom
 		session->sendMapInfo(session->object._id, session->object._x, session->object._y);
 
 		for (auto& pl : _near_vlist) {	// nearlist돌면서... (이거 상대방기준임****)
-			auto it = clients.find(pl);
-			std::shared_ptr<GAMESESSION> near_other = it->second;
+			auto it = clients.get(pl);
+			std::shared_ptr<GAMESESSION> near_other = it;
+            if(!near_other) continue;
 			if (isPlayer(pl)) {			// 플레이어라면...
 				near_other->_vlL.lock();
 				if (near_other->_viewList.count(sessionId)) {	// 만약에.. 전에도 있던애라면? 이미 상대방이 나를 보고있던 거라면?
@@ -670,8 +666,9 @@ void processPacket(const std::shared_ptr<GAMESESSION>& session, char* packetFrom
 		}
 
 		for (auto& pl : _oldVl) {			// oldvlist 돌면서...
-			auto it = clients.find(pl);
-			std::shared_ptr<GAMESESSION> old_other = it->second;
+			auto it = clients.get(pl);
+			std::shared_ptr<GAMESESSION> old_other = it;
+            if(!old_other) { session->sendRemoveSessionPacket(pl); continue; }
 			if (0 == _near_vlist.count(pl)) {				// 만약에.. 지금도 보이는게 아니라면?
 				session->sendRemoveSessionPacket(pl);	// 나한테 걔를 지워주자..
 				if (isPlayer(pl))									// 상대가 플레이어라면
@@ -688,10 +685,11 @@ void processPacket(const std::shared_ptr<GAMESESSION>& session, char* packetFrom
 			if (isPlayer(id)) continue;
 			if (targets.size() >= MAX_NEAR_MONSTERS) break;
 
-			auto it = clients.find(id);
-			if (it == clients.end()) continue;
+			auto it = clients.get(id);
+			if (it == nullptr) continue;
 
-			std::shared_ptr<GAMESESSION> monster = it->second;
+			std::shared_ptr<GAMESESSION> monster = it;
+    if(!monster) return;
 
 			int dx = abs(monster->object._x - myX);
 			int dy = abs(monster->object._y - myY);
@@ -732,10 +730,11 @@ void processPacket(const std::shared_ptr<GAMESESSION>& session, char* packetFrom
 			if (isPlayer(id)) continue;
 			if (targets.size() >= MAX_NEAR_MONSTERS) break;
 
-			auto it = clients.find(id);
-			if (it == clients.end()) continue;
+			auto it = clients.get(id);
+			if (it == nullptr) continue;
 
-			std::shared_ptr<GAMESESSION> monster = it->second;
+			std::shared_ptr<GAMESESSION> monster = it;
+    if(!monster) return;
 			int dx = abs(monster->object._x - myX);
 			int dy = abs(monster->object._y - myY);
 
@@ -812,7 +811,7 @@ void processPacket(const std::shared_ptr<GAMESESSION>& session, char* packetFrom
 		char* messs = p->message;
 		cout << p->id << "로부터 온 도착 메시지 :" << p->message << endl;
 
-		for (auto& [id, client] : clients) {
+		for (auto& [id, client] : clients.snapshot()) {
 			if (client && client->_state == ST_INGAME) {
 				client->sendChatPacket(sessionId, messs);
 			}
@@ -836,15 +835,15 @@ void serviceRespawns() {
         anchor.object._x=static_cast<short>(seed.x); anchor.object._y=static_cast<short>(seed.y);
         for(int viewerId : anchor.getNearBySessions()) {
             if(!isPlayer(viewerId)) continue;
-            auto viewer=clients.find(viewerId);
-            if(viewer != clients.end() && viewer->second && viewer->second->_state == ST_INGAME)
-                viewer->second->sendMapInfo(viewerId,viewer->second->object._x,viewer->second->object._y);
+            auto viewer=clients.get(viewerId);
+            if(viewer && viewer->_state == ST_INGAME)
+                viewer->sendMapInfo(viewerId,viewer->object._x,viewer->object._y);
         }
     }
     for(std::size_t i=0;i<field_content::monsters.size();++i) {
-        auto it=clients.find(MAX_USER+static_cast<int>(i));
-        if(it == clients.end() || !it->second) continue;
-        auto monster=it->second;
+        auto it=clients.get(MAX_USER+static_cast<int>(i));
+        if(!it) continue;
+        auto monster=it;
         std::lock_guard<std::recursive_mutex> lifeGuard(monster->monster.combatMutex);
         const short oldX=monster->object._x,oldY=monster->object._y;
         if(!reviveMonster(monster->object,monster->monster,now)) continue;
@@ -902,9 +901,9 @@ void workerThread(HANDLE iocp) {
         std::unique_lock<std::recursive_mutex> aiGuard;
         if(overEx->_compType == OP_MONSTER_MOVE || overEx->_compType == OP_MONSTER_CHASE ||
            overEx->_compType == OP_PLAYER_MOVE || overEx->_compType == OP_NPC_RUN) {
-            auto it=clients.find(static_cast<int>(key));
-            if(it == clients.end() || !it->second) { delete overEx; continue; }
-            aiOwner=it->second;
+            auto it=clients.get(static_cast<int>(key));
+            if(!it) { delete overEx; continue; }
+            aiOwner=it;
             aiGuard=std::unique_lock<std::recursive_mutex>(aiOwner->monster.combatMutex);
             if(!respawn_policy::accepts(overEx->generation,aiOwner->monster.generation.load(),aiOwner->monster._isDie.load())) {
                 delete overEx; continue;
@@ -916,31 +915,21 @@ void workerThread(HANDLE iocp) {
 
 		case OP_ACCEPT:
 		{
-			int clientId = getNewPlayerId();
-			if (clientId != -1) {
-				auto newPlayer = std::make_shared<GAMESESSION>();
-				newPlayer->_state = ST_ALLOC;		// 일단 수락만 했고, 로그인 아직 아닌 상태
-				newPlayer->object._x = 0;
-				newPlayer->object._y = 0;
-				newPlayer->object._id = clientId;
-				newPlayer->object._hp = 0;
-				newPlayer->object._exp = 0;
-				newPlayer->object._level = 0;
-				newPlayer->object._name[0] = 0;
-				newPlayer->_prevRemainData = 0;
-				newPlayer->_socket = gCliSocket;
-
-				clients[clientId] = newPlayer;
+            auto newPlayer=std::make_shared<GAMESESSION>();
+            newPlayer->_socket=gCliSocket;
+            const int clientId=clients.allocatePlayer(newPlayer);
+            if(clientId != -1) {
 				CreateIoCompletionPort(reinterpret_cast<HANDLE>(gCliSocket), iocp, clientId, 0);
 				if (!newPlayer->registerRecv()) disconnect(newPlayer);
 #ifdef GMSEV_WORKER_TEST
                 workerTestObserve(newPlayer,"accept");
 #endif
-				gCliSocket = WSASocket(AF_INET, SOCK_STREAM, 0, NULL, 0, WSA_FLAG_OVERLAPPED);
 			}
 			else {
 				cout << " 유저 MAX " << endl;
 			}
+            if(clientId == -1) newPlayer->closeTransport();
+            gCliSocket = WSASocket(AF_INET, SOCK_STREAM, 0, NULL, 0, WSA_FLAG_OVERLAPPED);
 			ZeroMemory(&gOverExp._over, sizeof(gOverExp._over));
 			int addr_size = sizeof(SOCKADDR_IN);
 			AcceptEx(gServerSocket, gCliSocket, gOverExp._sendBuf,
@@ -990,6 +979,7 @@ void workerThread(HANDLE iocp) {
 		{
 			//cout << " 로그인 성공 !!!! " << endl;
             auto session=completionOwner;
+            std::lock_guard<std::recursive_mutex> presenceGuard(playerPresenceMutex);
 
             if (session->disconnectStarted || session->transportFailed || session->_state != ST_ALLOC) {
                 // Released by sessionOperation.
@@ -1016,8 +1006,9 @@ void workerThread(HANDLE iocp) {
 			// 이제 브로드캐스팅
 			std::unordered_set<int> _near = session->getNearBySessions();
 			for (auto& pl : _near) {	// 그리고 나서.... -> 로그인한유저 근처에 있는 애들한테 정보보내기
-				auto it2 = clients.find(pl);
-				std::shared_ptr<GAMESESSION> other = it2->second;
+				auto it2 = clients.get(pl);
+				std::shared_ptr<GAMESESSION> other = it2;
+                if(!other) continue;
 				if (ST_INGAME != other->_state) continue;	// 접속중인애들한테만!!
 
 				if (other->object._id == session->object._id) // 나는 제외
@@ -1039,6 +1030,9 @@ void workerThread(HANDLE iocp) {
 		break;
 		case OP_LOGIN_FAIL:
 		{
+#ifdef GMSEV_WORKER_TEST
+            workerTestObserve(completionOwner,"probe");
+#endif
 
 		}
 		break;
@@ -1065,9 +1059,9 @@ void workerThread(HANDLE iocp) {
 			//cout << "OP_PLAYER_MOVE ?? " << endl;
 			//if (not is_npc(key)) break;
 
-			auto it = clients.find(key);
-			if (it == clients.end()) { delete overEx; break; }
-			std::shared_ptr<GAMESESSION> npc = it->second;
+			auto it = clients.get(key);
+			if (it == nullptr) { delete overEx; break; }
+			std::shared_ptr<GAMESESSION> npc = it;
 
 			if (!npc || !npc->monster._isActive || npc->monster._isDie) { delete overEx; break; }
 			//if (npc->_is_npc_run) break;
@@ -1096,8 +1090,8 @@ void workerThread(HANDLE iocp) {
 		{
 			using namespace chrono;
 
-			auto it_mon = clients.find(key);
-			std::shared_ptr<GAMESESSION> monster = it_mon->second;
+			auto it_mon = clients.get(key);
+			std::shared_ptr<GAMESESSION> monster = it_mon;
 
 			int monsterId = static_cast<int>(key);
 
@@ -1119,17 +1113,17 @@ void workerThread(HANDLE iocp) {
 				cout << "[ERROR] overlapped 포인터가 null입니다!" << endl;
 				break;
 			}
-			auto it_mon = clients.find(key);
-			if (it_mon == clients.end()) { delete overEx; break; }
+			auto it_mon = clients.get(key);
+			if (it_mon == nullptr) { delete overEx; break; }
 
-			std::shared_ptr<GAMESESSION> monster = it_mon->second;
+			std::shared_ptr<GAMESESSION> monster = it_mon;
 			if (!monster->monster._isActive || monster->monster.chaseTarget != targetPlayerId) { delete overEx; break; }
 			monster->monster._isMonsterChase = true;
             monster->monster.chaseTarget = targetPlayerId;
 
-            auto target = clients.find(targetPlayerId);
-            if (target == clients.end() || !target->second || target->second->_state != ST_INGAME || target->second->disconnectStarted || target->second->transportFailed ||
-                !world_layout::outdoors(target->second->object._x) || monster->monster._isDie ||
+            auto target = clients.get(targetPlayerId);
+            if (!target || target->_state != ST_INGAME || target->disconnectStarted || target->transportFailed ||
+                !world_layout::outdoors(target->object._x) || monster->monster._isDie ||
                 !field_content::monsterCanStand(monster->monster._nextMonX,monster->monster._nextMonY)) {
                 monster->monster.chaseTarget = -1;
                 monster->monster._isMonsterChase = false;
@@ -1141,11 +1135,11 @@ void workerThread(HANDLE iocp) {
             monster->object._x = monster->monster._nextMonX;
             monster->object._y = monster->monster._nextMonY;
             monster->updateSector(previousX,previousY);
-            std::shared_ptr<GAMESESSION> player=target->second;
+            std::shared_ptr<GAMESESSION> player=target;
 			player->sendMovePacket(monster->object._id);
 
 			if (isMonSee(monster->object._id, targetPlayerId)) {
-				shared_ptr<GAMESESSION> player = clients[targetPlayerId];
+				shared_ptr<GAMESESSION> player = clients.get(targetPlayerId);
 				auto path = findPathAStar(monster->object._x, monster->object._y, player->object._x, player->object._y);
 				if (!path.empty() && path.size() > 1) {
 					monster->monster._nextMonX = path[1].first;
@@ -1200,7 +1194,7 @@ int main(int argc, char* argv[])
     const bool monstersReady = monsterInit((std::min)(count,static_cast<int>(field_content::monsters.size())));
     if (monstersReady) initializeMap();
     if (startupCheck || !monstersReady) {
-        for (const auto& entry : clients) {
+        for (const auto& entry : clients.snapshot()) {
             if (entry.second && entry.second->monster._L) {
                 lua_close(entry.second->monster._L);
                 entry.second->monster._L = nullptr;
