@@ -98,7 +98,9 @@ build\tests\display_layout_test.exe
 if not "%errorlevel%"=="0" goto failed
 call tests\run-regions.cmd
 if not "%errorlevel%"=="0" goto failed
-echo All 27 regression programs passed. Run tests\run-display.cmd separately for GPU/window checks.
+call tests\run-town.cmd
+if not "%errorlevel%"=="0" goto failed
+echo All 29 regression programs passed. Run tests\run-display.cmd and tests\run-town-preview.cmd separately for GPU/window checks.
 popd
 exit /b 0
 :failed

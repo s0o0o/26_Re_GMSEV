@@ -1,7 +1,7 @@
 # NPC 원본 보관과 클럽하우스 주민 첫 배치
 
 - 이슈 [#36](https://github.com/s0o0o/26_Re_GMSEV/issues/36), 기준 de4ffe1, 2026-11-11.
-- 상태: 사전 명세. 사용자가 준 21개 PNG 전체 보관/확인, 주민 3명 첫 적용.
+- 상태: 구현·검증 완료. 사용자가 준 21개 PNG 전체 보관/확인, 주민 3명 첫 적용.
 
 ## 범위와 동작
 
@@ -24,3 +24,17 @@ assets/npcs/source에 원본을 byte 동일 복사하고 SHA256/원본명/용도
 | AC-05 | 서버/클라/스트레스 Debug/Release와 전체 회귀 통과 | 실제 명령·결과 기록 |
 
 패킷 크기는 바꾸지 않지만 새 주민 타입 렌더링에는 새 클라이언트가 필요하다. 실제 DB 접속/동접 부하/상점 DB 변경은 하지 않는다. 미리보기는 생산 렌더 코드와 리소스를 사용한 테스트 출력이며 실제 접속 캡처와 구분한다.
+
+## 실행 결과 (2026-11-11)
+
+| AC | 구현/실제 실행 결과 |
+| --- | --- |
+| AC-01 | import-npc-sources.ps1로 명시한 21개 복사, 원본 대조 및 저장 SHA256SUMS 검증 통과. 전체 SFML load/크기 출력/contact sheet와 적용 3개 원본 개별 육안 확인. assets/npcs/README.md에 전체 용도 목록/출처/크레딧/원본명 매핑 위치 기록. |
+| AC-02 | initializeTownResidents, shared/town_npcs.hpp. 실제 서버 초기화와 DB 대역 4-worker TCP의 주민 3명 ENTER 이름/좌표/타입 검증, 포털 이동 시 3 LEAVE/서버 view 제거 통과. |
+| AC-03 | 주민 타입과 hostile 타입 별도 정책. 실제 wake/배회/타이머 예약 차단 검사. 실내 공격 SafeZone, 테스트에서 주민을 필드 공격 거리 내에 두어도 NoTarget/HP·씨앗 불변 확인. 실제 client.cpp ENTER/draw/LEAVE fixture의 주민 HP HUD 없음, 기존 몬스터 1/2 타입 보존 및 HP HUD 양성 대조 통과. |
+| AC-04 | town_npc_renderer.hpp source rect/메모리 배경 마스크/이름표 렌더 사용. 이미지 2종 생성과 육안 확인, 프레임 비어 있지 않음/배경 투명 검사 통과. 실제 클라 OBJECT.draw에서도 주민 경로를 실행. 시야/카메라 모든 위치별 시각 비교를 전수 실행한 것은 아님. |
+| AC-05 | 전체 회귀 29개 통과, GPU 추가 2개(전체 시트/주민 preview, 실제 client packet path) 통과, 주민 worker 추가 10회 반복 통과. 서버·클라·스트레스 x64 Debug/Release 성공, 실제 startup-check에 주민 3명 생성 로그 확인. |
+
+초기 테스트의 Windows near 매크로 변수명 충돌, 클라 fixture 준수 모드 누락, VS 환경의 Windows PowerShell에서 Get-FileHash 모듈 사용 불가를 수정하고 재실행했다. 해시는 .NET SHA256으로 계산한다. 기존 C4244/MSB8028/LNK4098 경고는 남아 있다. UI 검출기는 C++ 경로 ENOENT 실패라 통과로 간주하지 않았다. 실제 DB/고동접/게임 접속 플레이 육안/대화·상점은 미실행 또는 범위 밖이다.
+
+설명과 미리보기 재생성: [34단계 기록](../refactoring-step-34.md). 지역 2B는 다음 작업으로 유지.

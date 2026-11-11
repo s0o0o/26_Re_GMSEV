@@ -19,6 +19,8 @@ using namespace std;
 #include "loading_screen.hpp"
 #include "clubhouse_renderer.hpp"
 #include "combat_hud.hpp"
+#include "town_npc_renderer.hpp"
+TownNpcRenderer& townNpcRenderer() { static TownNpcRenderer value; return value; }
 CombatHud& combatHud() { static CombatHud value; return value; }
 sf::Clock combatClock;
 ClubhouseRenderer& clubhouseRenderer() { static ClubhouseRenderer value; return value; }
@@ -127,15 +129,15 @@ private:
 	sf::Text m_chat;
 	chrono::system_clock::time_point m_mess_end_time;
 public:
-	int         id;
+	int         id=-1;
 	int         m_x, m_y;
 	char        name[NAME_SIZE];
 	short		_hp, _maxHp, _level, _exp, _seedNum, _damage; // hp, ÃÖ´ëhp, ·¹º§, °æÇèÄ¡. È¹µæ¾¾¾Ñ°¹¼ö
 
 	bool		_isDie;
-	short		_monType;
+	short		_monType=0;
 
-	OBJECT(sf::Texture& t, int x, int y, int x2, int y2) {
+	OBJECT(const sf::Texture& t, int x, int y, int x2, int y2) {
 		m_showing = false;
 		m_sprite.setTexture(t);
 		m_sprite.setTextureRect(sf::IntRect(x, y, x2, y2));
@@ -169,6 +171,10 @@ public:
 
 	void draw() {
 		if (false == m_showing) return;
+        if(town_npcs::isResident(_monType)) {
+            townNpcRenderer().draw(*g_window,_monType,(m_x-g_left_x)*50.f,(m_y-g_top_y)*50.f,gameFont(),name);
+            return;
+        }
 		float rx = (m_x - g_left_x) * TILE_WIDTH + 1;
 		float ry = (m_y - g_top_y) * TILE_WIDTH + 1;
 		        if (id >= 0 && id < MAX_USER) {
@@ -193,6 +199,7 @@ public:
 	void set_name(const char str[]) {
 		m_name.setFont(gameFont());
 		m_name.setString(fromUtf8(str));
+        strncpy_s(name,sizeof(name),str,_TRUNCATE);
 		if (id < MAX_USER) m_name.setFillColor(sf::Color(0, 0, 0));
 		else m_name.setFillColor(sf::Color(rand() % 256, rand() % 256, rand() % 256));
 		m_name.setStyle(sf::Text::Regular);
@@ -391,18 +398,19 @@ void ProcessPacket(char* ptr)
 			players[id].show();
 
 		}
-		else {
-			players[id]._monType = my_packet->monType;
-            combatHud().enter(id,my_packet->hp,my_packet->max_hp);
-			if (players[id]._monType == 1)
-				players[id] = OBJECT{ *monHamster, monTextureWidth, 0, monTextureWidth, monTextureWidth }; // ¸ó½ºÅÍ¿ë
-			else if (players[id]._monType == 2)
-				players[id] = OBJECT{ *hunHamster, 0, 0, monTextureWidth, monTextureWidth }; // ÈÆ½ºÅÍ¿ë
-			players[id].id = id;
-			players[id].move(my_packet->x, my_packet->y);
-			players[id].set_name(my_packet->name);
-			players[id].show();
-		}
+        else {
+            const int type=my_packet->monType;
+            if(town_npcs::isResident(type)) {
+                const auto rect=TownNpcRenderer::frame(type);
+                players[id]=OBJECT{townNpcRenderer().texture(type),rect.left,rect.top,rect.width,rect.height};
+            } else if(type==1) players[id]=OBJECT{*monHamster,monTextureWidth,0,monTextureWidth,monTextureWidth};
+            else if(type==2) players[id]=OBJECT{*hunHamster,0,0,monTextureWidth,monTextureWidth};
+            else break; // Unknown NPC types must not leave an uninitialized object.
+            players[id]._monType=static_cast<short>(type);
+            if(town_npcs::hostile(type)) combatHud().enter(id,my_packet->hp,my_packet->max_hp);
+            players[id].id=id; players[id].move(my_packet->x,my_packet->y);
+            players[id].set_name(my_packet->name); players[id].show();
+        }
 		break;
 	}
 	case S2C_P_MOVE:
@@ -677,7 +685,7 @@ void client_main()
 	avatar.draw();
 	    for (auto& pl : players) {
         pl.second.draw();
-        if(pl.first >= MAX_USER) combatHud().drawMonster(*g_window,gameFont(),pl.first,
+        if(pl.first >= MAX_USER && town_npcs::hostile(pl.second._monType)) combatHud().drawMonster(*g_window,gameFont(),pl.first,
             (pl.second.m_x-g_left_x)*50.f+1,(pl.second.m_y-g_top_y)*50.f+1,combatClock.getElapsedTime().asSeconds());
     }
     combatHud().drawMessage(*g_window,gameFont(),combatClock.getElapsedTime().asSeconds());
@@ -932,6 +940,7 @@ int main()
 
 	sf::RenderWindow window(sf::VideoMode(WINDOW_WIDTH, WINDOW_HEIGHT), "HAMSTER RPG 2023192003 ±è¿¬¼ö");
 	g_window = &window;
+    if(!townNpcRenderer().load("assets/npcs/source")) { std::cerr<<"Town NPC assets missing"<<std::endl; return -1; }
     WindowDisplay display(window, "HAMSTER RPG" );
 	initStartScreenInit();
     if (!hamsterCustomizer().load("assets/characters") || !hamsterCustomizer().setBackdrop(*startMainTx)) { std::cerr << "Character texture loading failed" << std::endl; return -1; }

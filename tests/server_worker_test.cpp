@@ -211,6 +211,62 @@ void stopWorkers(std::vector<std::thread>& workers) {
     for(auto& worker : workers) worker.join();
 }
 #ifdef GMSEV_MULTIWORKER_TEST
+void runTown(const sockaddr_in& address,std::vector<std::thread>& workers) {
+    auto peer=connectPeer(address,0); login(peer,70000,true);
+    auto subject=peer.accepted.owner.lock(); assert(subject);
+    std::set<int> entered;
+    for(int i=0;i<3;++i) {
+        const auto npc=decode<sc_packet_enter>(expect(peer,S2C_P_ENTER));
+        const auto definition=town_npcs::byType(npc.monType);
+        assert(definition && npc.id==definition->id && npc.x==definition->x && npc.y==definition->y && std::strcmp(npc.name,definition->name)==0);
+        entered.insert(npc.id);
+    }
+    assert(entered.size()==3);
+    auto resident=clients.get(town_npcs::baseId); assert(resident);
+    { WorldStateLock lock;
+      for(const auto& definition : town_npcs::residents) {
+          auto npc=clients.get(definition.id); assert(npc && !npc->monster.script && !npc->monster._isActive);
+          wakeUpMonster(definition.id,peer.accepted.id);
+          assert(!npc->monster._isActive && !npc->monster.scriptDisabled);
+      }
+      resident->monster._isActive=true; // Even erroneous activation must not cause movement/timer work.
+      doMonsterRandomMoving(resident->object._id);
+      assert(resident->object._x==12 && resident->object._y==9);
+      const int idx=get_timer_queue_index(resident->object._id);
+      { std::lock_guard<std::mutex> timers(timerLocks[idx]);
+        timerQueues[idx].push(TIMER_EVENT{resident->object._id,Clock::now(),EV_RANDOM_MOVE,0,resident->monster.generation.load()}); }
+      assert(dispatchDueTimer(idx,Clock::now()) && timerQueues[idx].empty()); resident->monster._isActive=false; }
+    auto attack=[&](AttackFeedback expected) {
+        cs_packet_attack request{}; request.size=sizeof(request); request.type=C2S_P_ATTACK; request.damage=9999;
+        sendBytes(peer,reinterpret_cast<char*>(&request),sizeof(request));
+        auto feedback=decode<sc_packet_attack_feedback>(expect(peer,S2C_P_ATTACK_FEEDBACK));
+        assert(feedback.reason==static_cast<std::uint8_t>(expected));
+        WorldStateLock lock; assert(resident->object._hp==1 && subject->object._seedNum==10);
+    };
+    attack(AttackFeedback::SafeZone);
+    { WorldStateLock lock; subject->object._x=10; subject->object._y=13; subject->updateSector(spawnX,spawnY); }
+    cs_packet_move step{}; step.size=sizeof(step); step.type=C2S_P_MOVE; step.direction=1; step.move_time=7070;
+    sendBytes(peer,reinterpret_cast<char*>(&step),sizeof(step));
+    std::set<int> left; bool arrived=false,receivedNear=false;
+    for(int n=0;n<128 && !receivedNear;++n) {
+        auto packet=receive(peer); const auto type=static_cast<std::uint8_t>(packet[1]);
+        if(type==S2C_P_MOVE) { auto move=decode<sc_packet_move>(packet);
+            if(move.id==peer.accepted.id && move.move_time==7070) { assert(move.x==42 && move.y==10); arrived=true; } }
+        if(type==S2C_P_LEAVE) left.insert(decode<sc_packet_leave>(packet).id);
+        if(type==S2C_P_MONSTER_NEAR) { assert(packet[2]==0); receivedNear=true; }
+    }
+    assert(arrived && receivedNear && left==entered);
+    { WorldStateLock lock;
+      assert(!subject->_viewList.count(resident->object._id));
+      const auto oldX=resident->object._x,oldY=resident->object._y;
+      resident->object._x=42; resident->object._y=11; resident->updateSector(oldX,oldY);
+      assert(subject->getNearBySessions().count(resident->object._id)); }
+    attack(AttackFeedback::NoTarget); // Noncombat role is enforced even outside the safe zone.
+    closePeer(peer); subject.reset(); resident.reset();
+    const auto deadline=Clock::now()+std::chrono::seconds(3);
+    while(peer.accepted.owner.use_count()!=1 && Clock::now()<deadline) std::this_thread::yield();
+    assert(peer.accepted.owner.use_count()==1); stopWorkers(workers); clients.clear(); assert(peer.accepted.owner.expired());
+}
 template<class Action> void parallelPeers(int count,Action action) {
     std::mutex gate; std::condition_variable ready;
     int arrived=0; bool start=false; std::vector<std::thread> threads;
@@ -526,6 +582,9 @@ int main() {
     using namespace fixture;
     WSADATA data{}; assert(WSAStartup(MAKEWORD(2,2),&data) == 0);
     initializeMap(); // No NPC Lua or timer threads.
+#ifdef GMSEV_TOWN_TEST
+    initializeTownResidents();
+#endif
 #ifdef GMSEV_WORLD_TEST
     auto target=std::make_shared<GAMESESSION>();
     target->object._id=MAX_USER; target->object._x=38; target->object._y=6;
@@ -569,7 +628,9 @@ int main() {
     std::vector<std::thread> workers;
 #ifdef GMSEV_MULTIWORKER_TEST
     for(int i=0;i<4;++i) workers.emplace_back(workerThread,g_hiocp);
-#ifdef GMSEV_WORLD_TEST
+#ifdef GMSEV_TOWN_TEST
+    runTown(address,workers);
+#elif defined(GMSEV_WORLD_TEST)
 #ifdef GMSEV_REGION_TEST
     runRegions(address,workers,target);
 #elif defined(GMSEV_LUA_AI_TEST)
@@ -660,7 +721,9 @@ int main() {
 #endif
     CloseHandle(g_hiocp); WSACleanup();
 #ifdef GMSEV_MULTIWORKER_TEST
-#ifdef GMSEV_WORLD_TEST
+#ifdef GMSEV_TOWN_TEST
+    std::cout << "Town residents: production initialization, 3 ENTER/LEAVE, no AI/timer/attack, field role defense passed (4 workers, DB stub)\n";
+#elif defined(GMSEV_WORLD_TEST)
 #ifdef GMSEV_REGION_TEST
     std::cout << "Regions: real portal, observer leave, chase cancellation, stale AI, cross-region Lua chat and safe-zone attack passed (4 workers, DB stub)\n";
 #elif defined(GMSEV_LUA_AI_TEST)
