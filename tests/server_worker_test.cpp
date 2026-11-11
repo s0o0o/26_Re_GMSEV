@@ -324,6 +324,88 @@ void runMultiworker(const sockaddr_in& address,std::vector<std::thread>& workers
     for(const auto& entry : observed) assert(entry.second.owner.expired());
 }
 #ifdef GMSEV_WORLD_TEST
+void runRegions(const sockaddr_in& address,std::vector<std::thread>& workers,std::shared_ptr<GAMESESSION> target) {
+    auto peer=connectPeer(address,0); login(peer,60000,true);
+    auto watcher=connectPeer(address,peer.accepted.connection); login(watcher,60001,true);
+    auto subject=peer.accepted.owner.lock(); assert(subject);
+    { WorldStateLock lock; auto L=target->monster.script.get();
+      assert(subject->getNearBySessions().count(target->object._id));
+      lua_getglobal(L,"API_SendMessage"); lua_pushinteger(L,MAX_USER); lua_pushinteger(L,peer.accepted.id); lua_pushliteral(L,"LOCAL");
+      assert(lua_pcall(L,3,0,0)==LUA_OK && lua_gettop(L)==0); }
+    bool localMessage=false;
+    for(int n=0;n<128 && !localMessage;++n) {
+        auto packet=receive(peer);
+        if(static_cast<std::uint8_t>(packet[1])==S2C_P_CHAT) localMessage=std::strcmp(decode<sc_packet_chat>(packet).message,"LOCAL")==0;
+    }
+    assert(localMessage);
+    std::uint64_t oldGeneration;
+    { WorldStateLock lock;
+      assert(isCanSee(subject->object._id,target->object._id));
+      assert(isMonSee(target->object._id,subject->object._id));
+      subject->object._x=31; subject->object._y=7; // Same sector/range as field NPC, but invalid region.
+      assert(!isCanSee(subject->object._id,target->object._id) && !isMonSee(target->object._id,subject->object._id));
+      assert(!subject->getNearBySessions().count(target->object._id));
+      subject->object._x=42; subject->object._y=11; subject->updateSector(39,7);
+      target->monster.chaseTarget=subject->object._id; target->monster._isActive=true; target->monster._isMonsterChase=true;
+      target->_viewList.insert(subject->object._id); target->monster._nextMonX=39; target->monster._nextMonY=6;
+      oldGeneration=target->monster.generation.load(); }
+    cs_packet_move step{}; step.size=sizeof(step); step.type=C2S_P_MOVE; step.direction=1; step.move_time=6060;
+    sendBytes(peer,reinterpret_cast<char*>(&step),sizeof(step));
+    bool arrived=false;
+    for(int n=0;n<128;++n) { auto packet=receive(peer);
+        if(static_cast<std::uint8_t>(packet[1])!=S2C_P_MOVE) continue;
+        auto move=decode<sc_packet_move>(packet);
+        if(move.id==peer.accepted.id && move.move_time==6060) { assert(move.x==10 && move.y==12); arrived=true; break; }
+        assert(n<127);
+    }
+    assert(arrived);
+    expectLeave(watcher,peer.accepted.id);
+    { WorldStateLock lock;
+      assert(subject->object.location().region==world_regions::Id::Clubhouse);
+      assert(!subject->_viewList.count(target->object._id) && !watcher.accepted.owner.lock()->_viewList.count(subject->object._id));
+      assert(target->monster.generation>oldGeneration && !target->monster._isMonsterChase && target->monster.chaseTarget==-1);
+      assert(!target->_viewList.count(subject->object._id));
+      assert(!subject->getNearBySessions().count(watcher.accepted.id)); }
+    auto stale=new OVER_EXP; stale->_compType=OP_MONSTER_CHASE; stale->generation=oldGeneration; stale->_playerId=peer.accepted.id;
+    assert(PostQueuedCompletionStatus(g_hiocp,1,MAX_USER,&stale->_over));
+    waitSnapshot(target->connectionId,"stale-ai",[](const Snapshot& s) { return s.x==38 && s.y==6; });
+    std::size_t beforeNotify;
+    { std::lock_guard<std::mutex> lock(mutex); beforeNotify=sequence; }
+    { WorldStateLock lock; auto L=target->monster.script.get();
+      assert(luaL_dostring(L,"calls=0; function event_player_move(p,c) calls=calls+1 end")==LUA_OK);
+      target->monster._isActive=true;
+      auto notification=new OVER_EXP; notification->_compType=OP_PLAYER_MOVE;
+      notification->generation=target->monster.generation; notification->_playerId=peer.accepted.id;
+      notification->playerConnectionId=peer.accepted.connection;
+      assert(PostQueuedCompletionStatus(g_hiocp,1,MAX_USER,&notification->_over)); }
+    waitSnapshot(target->connectionId,"notify",[&](const Snapshot& s) { return s.serial>beforeNotify; });
+    { WorldStateLock lock; auto L=target->monster.script.get();
+      lua_getglobal(L,"calls"); assert(lua_tointeger(L,-1)==0); lua_pop(L,1); }
+    // Inject a cross-region Lua message then a marker on the same transport. Only marker may arrive.
+    { WorldStateLock lock; auto L=target->monster.script.get();
+      lua_getglobal(L,"API_SendMessage"); lua_pushinteger(L,MAX_USER); lua_pushinteger(L,peer.accepted.id); lua_pushliteral(L,"CROSS");
+      assert(lua_pcall(L,3,0,0)==LUA_OK && lua_gettop(L)==0);
+      subject->sendChatPacket(subject->object._id,"MARK"); }
+    bool marker=false;
+    for(int n=0;n<128 && !marker;++n) {
+        auto packet=receive(peer);
+        if(static_cast<std::uint8_t>(packet[1])==S2C_P_CHAT) {
+            const auto chat=decode<sc_packet_chat>(packet);
+            assert(std::strcmp(chat.message,"CROSS")!=0); marker=std::strcmp(chat.message,"MARK")==0;
+        }
+    }
+    assert(marker);
+    cs_packet_attack attack{}; attack.size=sizeof(attack); attack.type=C2S_P_ATTACK;
+    sendBytes(peer,reinterpret_cast<char*>(&attack),sizeof(attack));
+    const auto feedback=decode<sc_packet_attack_feedback>(expect(peer,S2C_P_ATTACK_FEEDBACK));
+    assert(feedback.reason==static_cast<std::uint8_t>(AttackFeedback::SafeZone));
+    { WorldStateLock lock; assert(target->object._hp==5 && subject->object._seedNum==10); }
+    closePeer(peer); closePeer(watcher); subject.reset();
+    const auto deadline=Clock::now()+std::chrono::seconds(3);
+    while((peer.accepted.owner.use_count()!=1 || watcher.accepted.owner.use_count()!=1) && Clock::now()<deadline) std::this_thread::yield();
+    assert(peer.accepted.owner.use_count()==1 && watcher.accepted.owner.use_count()==1);
+    stopWorkers(workers); clients.clear(); assert(peer.accepted.owner.expired() && watcher.accepted.owner.expired());
+}
 void runLuaAI(const sockaddr_in& address,std::vector<std::thread>& workers,std::shared_ptr<GAMESESSION> target) {
     auto peer=connectPeer(address,0); login(peer,50000,true);
     const auto connection=target->connectionId;
@@ -488,7 +570,9 @@ int main() {
 #ifdef GMSEV_MULTIWORKER_TEST
     for(int i=0;i<4;++i) workers.emplace_back(workerThread,g_hiocp);
 #ifdef GMSEV_WORLD_TEST
-#ifdef GMSEV_LUA_AI_TEST
+#ifdef GMSEV_REGION_TEST
+    runRegions(address,workers,target);
+#elif defined(GMSEV_LUA_AI_TEST)
     runLuaAI(address,workers,target);
 #else
     runWorldState(address,workers);
@@ -577,7 +661,9 @@ int main() {
     CloseHandle(g_hiocp); WSACleanup();
 #ifdef GMSEV_MULTIWORKER_TEST
 #ifdef GMSEV_WORLD_TEST
-#ifdef GMSEV_LUA_AI_TEST
+#ifdef GMSEV_REGION_TEST
+    std::cout << "Regions: real portal, observer leave, chase cancellation, stale AI, cross-region Lua chat and safe-zone attack passed (4 workers, DB stub)\n";
+#elif defined(GMSEV_LUA_AI_TEST)
     std::cout << "Lua AI: actual policy movement, same-tile chase recovery, budget fallback, sleep and stale timer passed (4 workers, DB stub)\n";
 #else
     std::cout << "World state: 4 workers, concurrent movement/combat, five hits/one death, DB outside world gate passed\n";

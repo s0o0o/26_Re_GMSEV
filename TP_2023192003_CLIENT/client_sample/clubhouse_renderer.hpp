@@ -27,7 +27,7 @@ public:
         outdoor_.setSmooth(false); return true;
     }
     void draw(sf::RenderTarget& target,int left,int top) const {
-        const bool field = world_layout::outdoors(left);
+        const bool field = world_regions::decode(left,top).region==world_regions::Id::SunnyPeak;
         sf::RectangleShape backdrop(target.getView().getSize());
         backdrop.setFillColor({48,32,37}); target.draw(backdrop);
         sf::Sprite room(field ? outdoor_ : texture_);
@@ -43,7 +43,7 @@ public:
         sf::RectangleShape label({310,38}); label.setPosition(295,12);
         label.setFillColor({255,248,228,235}); label.setOutlineColor({130,86,54}); label.setOutlineThickness(2);
         target.draw(label);
-        sf::Text text(world_layout::outdoors(playerX) ? L"Sunny Peak / \uC57C\uC678" : L"Club House / \uD074\uB7FD\uD558\uC6B0\uC2A4",font,20);
+        sf::Text text(world_regions::decode(playerX,0).region==world_regions::Id::SunnyPeak ? L"Sunny Peak / \uC57C\uC678" : L"Club House / \uD074\uB7FD\uD558\uC6B0\uC2A4",font,20);
         text.setFillColor({72,46,37}); centerText(text,label.getGlobalBounds()); target.draw(text);
         sf::Text hint(L"\uAE08\uC0C9 \uBC1C\uD310\uC744 \uBC1F\uC73C\uBA74 \uC9C0\uC5ED \uC774\uB3D9",font,16);
         hint.setFillColor({72,46,37});

@@ -24,6 +24,7 @@ inline void publishCombat(GAMESESSION& target,int attacker,int seeds,bool died,
                           const std::unordered_set<int>& audience) {
     WorldStateLock stateLock;
     forWorldPlayers(audience,[&](GAMESESSION& viewer) {
+        if(!world_regions::same(viewer.object.location(),target.object.location())) return;
         viewer.sendCombatUpdate(attacker,seeds,target.object._id,target.object._hp);
         if(died) {
             viewer.sendMonsterDiePacket(target.object._id);
@@ -31,6 +32,23 @@ inline void publishCombat(GAMESESSION& target,int attacker,int seeds,bool died,
             viewer._viewList.erase(target.object._id);
         }
     });
+}
+
+// A player's region change must invalidate queued chase work even if they return quickly.
+inline void cancelRegionChases(int playerId) {
+    WorldStateLock stateLock;
+    for(const auto& entry : clients.snapshot()) {
+        if(entry.first<MAX_USER || !entry.second) continue;
+        auto& npc=*entry.second;
+        std::lock_guard<std::recursive_mutex> combat(npc.monster.combatMutex);
+        if(npc.monster.chaseTarget==playerId) {
+            ++npc.monster.generation;
+            npc.monster.chaseTarget=-1;
+            npc.monster._isMonsterChase=false; npc.monster._isActive=false;
+        }
+        std::lock_guard<std::mutex> view(npc._vlL);
+        npc._viewList.erase(playerId);
+    }
 }
 
 // Socket close and DB persistence stay in disconnect(); this only detaches world state.

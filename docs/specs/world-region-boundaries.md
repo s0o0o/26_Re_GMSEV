@@ -1,6 +1,6 @@
 # 지역 ID와 기존 좌표 호환 경계 (2A)
 
-- 상태: 사전 명세, 구현 전. 기준 81ef299, 2026-11-11.
+- 상태: 2A 구현·검증 완료. 사전 명세 기준 81ef299, 2026-11-11.
 - 이슈: [#35](https://github.com/s0o0o/26_Re_GMSEV/issues/35). [로드맵](world-display-roadmap.md).
 
 ## 현재와 목표
@@ -28,3 +28,15 @@
 | AC-05 | 서버/클라/스트레스 빌드, 전체 회귀, 지역 미리보기 생성/육안 확인 | 실행 명령/결과 구분 기록 |
 
 공통 world 잠금과 기존 completion→world→combat/Lua 순서를 유지한다. Lua 인수 오류 검사도 RAII 잠금보다 먼저 유지한다. 실제 DB 계정 생성/부하 실행 없이 대역 테스트로 검증한다. 실제 DB 접속/고동접/프로토콜 및 DB 지역 분리는 이번 검증 대상이 아니다.
+
+## 실행 증거 (2026-11-11)
+
+| AC | 구현과 실행 결과 |
+| --- | --- |
+| AC-01 | shared/world_regions.hpp, world_layout.hpp. world_regions_test: 두 지역 전체 칸 왕복/경계/Invalid/동일 local 좌표의 다른 지역/포털 통과. |
+| AC-02 | myserver.cpp, world_regions::inRange. 실제 4-worker fixture의 같은 지역 시야/주변 검색/메시지 양성 대조, Invalid 좌표의 거리 내 시야/섹터 후보 거부, 포털 후 다른 지역 Lua 메시지/알림 차단과 실내 공격 거부 통과. 현재 유효 지역의 전역 간격이 VIEW_RANGE보다 커서 가까운 유효 다른 지역의 시야 상황은 공통 모델에서 검사하고 실제 시야 함수는 Invalid 경계로 검사했다. 같은 지역 전투는 기존 world worker 회귀로 확인. |
+| AC-03 | cancelRegionChases와 기존 MOVE 처리. 실제 TCP 포털 응답, 이전 observer LEAVE/목록 제거, NPC generation 증가, stale OP_MONSTER_CHASE 거부 통과. 타이머 producer thread의 장시간 실시간 실행 검증은 아니다. |
+| AC-04 | session_packets.cpp/world_events.hpp/pathfinder.cpp. 지역별 enter/전투 fan-out 및 다른 지역 A* 거부/같은 지역 A* 성공을 실제 함수 fixture로 확인. |
+| AC-05 | 전체 27개 회귀 통과. 서버/클라/스트레스 x64 Debug/Release 성공, DB 없는 startup-check 성공. 최종 보강한 지역 worker 별도 재실행 및 10회 반복 통과. 기존 생산 렌더러 기반 PNG 생성/육안 확인. |
+
+초기 단위 테스트 include 누락과 이전 loopback fixture의 암묵적 실내 좌표/필드 NPC 기대 실패는 수정 후 재실행했다. 기존 C4244/MSB8028/LNK4098 경고는 남아 있다. 실제 DB 연결/부하/스키마 변경/DB 접속 게임 캡처는 미실행. 패킷/DB 데이터 형식과 물리 섹터 배열은 유지했으므로 2B 전환 완료로 보지 않는다. [사용자 설명과 이미지 재생성](../refactoring-step-33.md).
