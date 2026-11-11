@@ -33,6 +33,7 @@
 ## 명세 목록
 
 - [템플릿](specs/_template.md)
+- [NPC 원본과 주민 배치](specs/town-residents.md): 첨부 21개 보관, 클럽하우스 비전투 주민 3명.
 - [지역 ID·좌표 호환 경계](specs/world-region-boundaries.md): 지역 모델과 시야/전투/AI 경계, 패킷/DB 전환 전 단계.
 - [월드 확장·화면 대응 로드맵](specs/world-display-roadmap.md): 가변 해상도부터 지역/귀환/필드/커마까지 단계 경계.
 - [Lua AI 흐름 개선](specs/lua-ai-flow.md): 실제 역할 조사와 안전한 script 정책/타이머 경계.

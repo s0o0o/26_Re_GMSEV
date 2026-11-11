@@ -26,6 +26,7 @@
 #include "world_events.hpp"
 #include "session_completion.hpp"
 #include "npc_script.hpp"
+#include "../../shared/town_npcs.hpp"
 
 using namespace std;
 
@@ -252,7 +253,7 @@ void wakeUpMonster(int monId, int playerId) {
 	std::shared_ptr<GAMESESSION> monster = it;
     if(!monster) return;
     std::lock_guard<std::recursive_mutex> lifeGuard(monster->monster.combatMutex);
-    if (monster->monster._isDie) return;
+    if (monster->monster._isDie || town_npcs::isResident(monster->monster._monType)) return;
 
 	OVER_EXP* exover = new OVER_EXP;
 	exover->_compType = OP_PLAYER_MOVE;
@@ -303,7 +304,7 @@ void doMonsterRandomMoving(int monId) {
     if(!monster) return;
 
 	if (isPlayer(monId)) return;
-	if (monster->monster._isActive == false || monster->monster._isDie) return;
+	if (monster->monster._isActive == false || monster->monster._isDie || town_npcs::isResident(monster->monster._monType)) return;
 	if (monster->monster._isMonsterChase) return;
 
 	unordered_set<int> old_vl;
@@ -381,6 +382,22 @@ void doMonsterRandomMoving(int monId) {
 	trySleepMonster(monster);
 }
 
+void initializeTownResidents() {
+    WorldStateLock lock;
+    static_assert(town_npcs::baseId >= MAX_USER+NUM_MONSTER,"Resident IDs overlap monsters");
+    for(const auto& resident : town_npcs::residents) {
+        auto npc=std::make_shared<GAMESESSION>();
+        npc->object._id=resident.id; npc->object._x=static_cast<short>(resident.x); npc->object._y=static_cast<short>(resident.y);
+        npc->object._hp=npc->object._maxHp=1; npc->monster._monType=resident.type; npc->_state=ST_INGAME;
+        sprintf_s(npc->object._name,"%s",resident.name);
+        clients.set(resident.id,npc);
+        const auto sector=getSectorLocation(resident.x,resident.y);
+        std::lock_guard<std::mutex> guard(sectorLock[sector.first][sector.second]);
+        sectors[sector.first][sector.second].insert(resident.id);
+    }
+    std::cout << "[WORLD] Clubhouse residents=" << town_npcs::residents.size() << std::endl;
+}
+
 bool monsterInit(int count)
 {
 	cout << "monster initialize begin.\n";
@@ -433,7 +450,7 @@ bool dispatchDueTimer(int timerIdx,std::chrono::steady_clock::time_point now) {
     const auto event=timerQueues[timerIdx].top(); timerQueues[timerIdx].pop();
     auto npc=clients.get(event.obj_id);
     if(!isMonster(event.obj_id) || !npc || !npc->monster._isActive ||
-       !respawn_policy::accepts(event.generation,npc->monster.generation.load(),npc->monster._isDie.load())) return true;
+       !respawn_policy::accepts(event.generation,npc->monster.generation.load(),npc->monster._isDie.load()) || town_npcs::isResident(npc->monster._monType)) return true;
     if(event.event_id == EV_RUN) return true; // Reserved: there is no producer or run behavior.
     auto operation=new OVER_EXP;
     operation->generation=event.generation; operation->_playerId=event.target_id;
@@ -691,7 +708,7 @@ void processPacket(const std::shared_ptr<GAMESESSION>& session, char* packetFrom
 			int dx = abs(monster->object._x - myX);
 			int dy = abs(monster->object._y - myY);
 
-			if (!monster->monster._isDie && world_regions::combatAllowed(myX,myY) && world_regions::inRange(session->object.location(),monster->object.location(),2) && dx <= 2 && dy <= 2) targets.push_back(monster);
+			if (town_npcs::hostile(monster->monster._monType) && !monster->monster._isDie && world_regions::combatAllowed(myX,myY) && world_regions::inRange(session->object.location(),monster->object.location(),2) && dx <= 2 && dy <= 2) targets.push_back(monster);
 		}
 
 		//cout << " 공격가능 몬스터 수 : " << targets.size() << endl;
@@ -733,7 +750,7 @@ void processPacket(const std::shared_ptr<GAMESESSION>& session, char* packetFrom
 			int dx = abs(monster->object._x - myX);
 			int dy = abs(monster->object._y - myY);
 
-			if (!monster->monster._isDie && world_regions::combatAllowed(myX,myY) && world_regions::inRange(session->object.location(),monster->object.location(),2) && dx <= 2 && dy <= 2) targets.push_back(monster);	// 범위 설정
+			if (town_npcs::hostile(monster->monster._monType) && !monster->monster._isDie && world_regions::combatAllowed(myX,myY) && world_regions::inRange(session->object.location(),monster->object.location(),2) && dx <= 2 && dy <= 2) targets.push_back(monster);	// 범위 설정
 		}
 
 		//cout << "주변 몬스터 수 : " << targets.size() << endl;
@@ -1072,7 +1089,7 @@ void workerThread(HANDLE iocp) {
 			if (it == nullptr) { delete overEx; break; }
 			std::shared_ptr<GAMESESSION> npc = it;
 
-			if (!npc || !npc->monster._isActive || npc->monster._isDie) { delete overEx; break; }
+			if (!npc || !npc->monster._isActive || npc->monster._isDie || town_npcs::isResident(npc->monster._monType)) { delete overEx; break; }
             auto notifyingPlayer=clients.get(overEx->_playerId);
             if(!notifyingPlayer || !world_regions::same(npc->object.location(),notifyingPlayer->object.location())) { delete overEx; break; }
 			//if (npc->_is_npc_run) break;
@@ -1118,7 +1135,7 @@ void workerThread(HANDLE iocp) {
 			if (it_mon == nullptr) { delete overEx; break; }
 
 			std::shared_ptr<GAMESESSION> monster = it_mon;
-			if (!monster->monster._isActive || monster->monster.chaseTarget != targetPlayerId) { delete overEx; break; }
+			if (!monster->monster._isActive || monster->monster.chaseTarget != targetPlayerId || town_npcs::isResident(monster->monster._monType)) { delete overEx; break; }
 			monster->monster._isMonsterChase = true;
             monster->monster.chaseTarget = targetPlayerId;
 
@@ -1191,7 +1208,7 @@ int main(int argc, char* argv[])
     if (startupCheck) std::cout << "[STARTUP] Check mode: no DB or network.\n";
     std::cout << "[STARTUP] Field monsters capped at 3 (requested=" << count << ")." << std::endl;
     const bool monstersReady = monsterInit((std::min)(count,static_cast<int>(field_content::monsters.size())));
-    if (monstersReady) initializeMap();
+    if (monstersReady) { initializeMap(); initializeTownResidents(); }
     if (startupCheck || !monstersReady) {
         clients.clear();
         if (!startupCheck) finalizeDB();

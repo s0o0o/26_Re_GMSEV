@@ -24,12 +24,15 @@
   <ItemGroup>
     <ClInclude Include="display_layout.hpp" />
     <ClInclude Include="window_display.hpp" />
+    <ClInclude Include="town_npc_renderer.hpp" />
+    <ClInclude Include="..\..\shared\town_npcs.hpp" />
   </ItemGroup>
   <ItemGroup>
     <Image Include="chess2.png">
       <Filter>리소스 파일</Filter>
     </Image>
     <Image Include="assets\characters\hamtaro\*.png" />
+    <Image Include="assets\npcs\source\*.png" />
     <Image Include="assets\characters\bijou\*.png" />
     <Image Include="assets\appearance\body-eyeless.png" />
     <Image Include="assets\appearance\eyes-classic.png" />
