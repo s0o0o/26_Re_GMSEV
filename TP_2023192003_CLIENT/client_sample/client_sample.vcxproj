@@ -157,6 +157,7 @@
     <ClInclude Include="..\..\shared\combat_rules.hpp" />
     <ClInclude Include="clubhouse_renderer.hpp" />
     <ClInclude Include="town_npc_renderer.hpp" />
+    <ClInclude Include="town_motion.hpp" />
     <ClInclude Include="..\..\shared\town_npcs.hpp" />
     <ClInclude Include="..\..\shared\clubhouse_map.hpp" />
     <ClInclude Include="..\..\shared\world_layout.hpp" />

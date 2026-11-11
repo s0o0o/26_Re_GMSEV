@@ -153,6 +153,7 @@
     <ClInclude Include="..\..\shared\world_layout.hpp" />
     <ClInclude Include="..\..\shared\world_regions.hpp" />
     <ClInclude Include="..\..\shared\town_npcs.hpp" />
+    <ClInclude Include="..\..\shared\town_behaviour.hpp" />
     <ClInclude Include="..\..\shared\field_content.hpp" />
     <ClInclude Include="iocp_operation.hpp" />
     <ClInclude Include="game_object.hpp" />

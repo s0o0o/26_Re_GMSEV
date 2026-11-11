@@ -25,6 +25,7 @@
     <ClInclude Include="display_layout.hpp" />
     <ClInclude Include="window_display.hpp" />
     <ClInclude Include="town_npc_renderer.hpp" />
+    <ClInclude Include="town_motion.hpp" />
     <ClInclude Include="..\..\shared\town_npcs.hpp" />
   </ItemGroup>
   <ItemGroup>
