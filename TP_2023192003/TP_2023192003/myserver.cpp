@@ -388,7 +388,7 @@ void initializeTownResidents() {
     for(const auto& resident : town_npcs::residents) {
         auto npc=std::make_shared<GAMESESSION>();
         npc->object._id=resident.id; npc->object._x=static_cast<short>(resident.x); npc->object._y=static_cast<short>(resident.y);
-        npc->object._hp=npc->object._maxHp=1; npc->monster._monType=resident.type; npc->_state=ST_INGAME;
+        npc->monster.residentBehaviour.random=static_cast<std::uint32_t>(resident.id); npc->object._hp=npc->object._maxHp=1; npc->monster._monType=resident.type; npc->_state=ST_INGAME;
         sprintf_s(npc->object._name,"%s",resident.name);
         clients.set(resident.id,npc);
         const auto sector=getSectorLocation(resident.x,resident.y);
@@ -841,11 +841,41 @@ void processPacket(const std::shared_ptr<GAMESESSION>& session, char* packetFrom
 	}
 }
 
+void serviceTownResidents(respawn_policy::Tick now) {
+    WorldStateLock lock;
+    for(const auto& home : town_npcs::residents) {
+        auto npc=clients.get(home.id);
+        if(!npc || npc->_state!=ST_INGAME || npc->monster._isDie || npc->object.location().region!=world_regions::Id::Clubhouse) continue;
+        const auto oldAudience=npc->getNearBySessions();
+        bool watched=false;
+        for(int id : oldAudience) if(isPlayer(id)) { watched=true; break; }
+        if(!watched) { npc->monster.residentBehaviour.next=now+2000; continue; }
+        const auto step=town_behaviour::tick(home,npc->object._x,npc->object._y,npc->monster.residentBehaviour,now,[&](int x,int y) {
+            for(const auto& entry : clients.snapshot()) {
+                const auto& other=entry.second;
+                if(other && other.get()!=npc.get() && other->_state==ST_INGAME && !other->disconnectStarted &&
+                   world_regions::same(npc->object.location(),other->object.location()) && std::abs(other->object._x-x)<=1 && std::abs(other->object._y-y)<=1) return true;
+            }
+            return false;
+        });
+        if(!step.moved) continue;
+        const auto oldX=npc->object._x,oldY=npc->object._y;
+        npc->object._x=static_cast<short>(step.x); npc->object._y=static_cast<short>(step.y); npc->updateSector(oldX,oldY);
+        const auto audience=npc->getNearBySessions();
+        forWorldPlayers(oldAudience,[&](GAMESESSION& viewer) { if(!audience.count(viewer.object._id)) viewer.sendRemoveSessionPacket(home.id); });
+        forWorldPlayers(audience,[&](GAMESESSION& viewer) {
+            bool visible; { std::lock_guard<std::mutex> view(viewer._vlL); visible=viewer._viewList.count(home.id)!=0; }
+            if(visible) viewer.sendMovePacket(home.id); else viewer.sendAddPlayerPacket(home.id);
+        });
+    }
+}
+
 void serviceRespawns() {
     WorldStateLock stateLock;
     static std::mutex serviceMutex;
     std::lock_guard<std::mutex> serviceGuard(serviceMutex);
     const auto now=respawn_policy::now();
+    serviceTownResidents(now);
     for(auto seed : restoreSeeds(now)) {
         GAMESESSION anchor;
         anchor.object._x=static_cast<short>(seed.x); anchor.object._y=static_cast<short>(seed.y);

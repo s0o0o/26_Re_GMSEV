@@ -100,7 +100,7 @@ call tests\run-regions.cmd
 if not "%errorlevel%"=="0" goto failed
 call tests\run-town.cmd
 if not "%errorlevel%"=="0" goto failed
-echo All 29 regression programs passed. Run tests\run-display.cmd and tests\run-town-preview.cmd separately for GPU/window checks.
+echo All 30 regression programs passed. Run tests\run-display.cmd and tests\run-town-preview.cmd separately for GPU/window checks.
 popd
 exit /b 0
 :failed

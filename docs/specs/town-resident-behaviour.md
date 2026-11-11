@@ -1,6 +1,6 @@
 # 주민 산책과 대기 동작
 
-- 이슈 [#37](https://github.com/s0o0o/26_Re_GMSEV/issues/37), 기준 9e098cf, 2026-11-11. 사전 명세.
+- 이슈 [#37](https://github.com/s0o0o/26_Re_GMSEV/issues/37), 사전 명세 기준 9e098cf, 2026-11-11. 상태: 구현·검증 완료.
 - 사용자 요청: 앞으로 캐릭터 추가 시 적절한 idle/자율 행동도 함께 구현.
 - 기존: 3명 모두 고정 좌표/단일 정지 프레임. 주민은 전투/Lua 몬스터 AI에서 제외.
 
@@ -23,3 +23,13 @@ Boss/Pashmina는 서버 world tick의 별도 주민 행동 정책으로 집 주�
 | AC-05 | 사용자 미리보기와 추가 캐릭터 행동 규칙 기록 | 생산 렌더 기반 여러 시간대 이미지/육안 확인 |
 
 성능은 주민 수에 비례한 소규모 tick이며 전체 NPC에 새 스레드를 만들지 않는다. 실제 DB/부하/모든 모니터/일반 게임 플레이 육안은 실행 여부를 구분한다. 긴 시간 검사는 모의 시간이며 실시간 대기와 구분한다.
+
+## 실행 결과 (2026-11-11)
+
+- AC-01: town_behaviour_test.cpp에서 주민별 1시간 모의 tick, 유효 칸/홈 반경/한 칸 이동/휴식/같은 시각 중복 방지/Snoozer 고정/모든 목적지 점유 거부 통과.
+- AC-02: 실제 4-worker TCP fixture에서 생산 serviceTownResidents에 시간 주입. MOVE 수신/좌표, Pashmina의 산책 시야 이탈 LEAVE/view 제거, 재접근 ENTER, 무관찰자 정지, 비전투 유지 통과. OP_WORLD_TICK→serviceRespawns→serviceTownResidents 연결은 코드 확인이며 무한 타이머 생산 스레드의 장시간 실시간 구동은 미실행.
+- AC-03: 순수 보간의 중간 위치/방향/연속 갱신 중단/먼 좌표 snap 통과. 실제 client.cpp MOVE→townMotion→draw 실행, 3명의 정면/수면 시간별 다른 rect와 모든 방향의 경계/불투명 픽셀 검사, PNG 육안 확인 통과. 옆/뒤는 단일 방향 포즈이며 완전한 발동작 사이클은 아니다.
+- AC-04: 전체 30개 회귀와 추가 GPU/클라 2개, 주민 TCP 추가 10회 통과. 서버/클라/스트레스 x64 Debug/Release와 DB 없는 startup-check 성공. 기존 C4244/LNK4098 등 경고 유지.
+- AC-05: AGENTS.md에 앞으로의 캐릭터 행동 규칙 추가. town-animation-frames.png와 town-walk-{0,4000,8000,12000}.png 생성/확인. 생산 정책/렌더의 시간 주입 출력이지 게임 녹화가 아니다.
+
+렌더 검토 후 겹침을 줄이려고 다른 캐릭터의 점유 칸 외에 대각선 포함 인접 한 칸도 산책 목적지에서 제외했다. 플레이어가 주민에게 다가오는 기존 이동 규칙은 그대로다. 초기 C++14의 std::clamp 부재를 min/max로 보완하고 빌드 재실행, Pashmina 정면 idle의 초기 측면 포즈/미리보기 가장자리 잘림도 수정 후 확인했다. 원본 21개는 그대로이며 해시 검사 유지. UI 검출기의 C++ 경로 ENOENT 실패는 통과 처리하지 않고 별도 C++/SFML 검사로 확인했다. 실제 DB/고동접/일반 게임 플레이/OS 모션 설정 연동은 미실행이다. [작업 설명](../refactoring-step-35.md).

@@ -130,7 +130,8 @@ private:
 	chrono::system_clock::time_point m_mess_end_time;
 public:
 	int         id=-1;
-	int         m_x, m_y;
+	int         m_x=0, m_y=0;
+    town_motion::State townMotion;
 	char        name[NAME_SIZE];
 	short		_hp, _maxHp, _level, _exp, _seedNum, _damage; // hp, ÃÖ´ëhp, ·¹º§, °æÇèÄ¡. È¹µæ¾¾¾Ñ°¹¼ö
 
@@ -165,6 +166,7 @@ public:
 	}
 
 	void move(int x, int y) {
+        if(town_npcs::isResident(_monType)) townMotion.move(x,y,combatClock.getElapsedTime().asSeconds());
 		m_x = x;
 		m_y = y;
 	}
@@ -172,7 +174,9 @@ public:
 	void draw() {
 		if (false == m_showing) return;
         if(town_npcs::isResident(_monType)) {
-            townNpcRenderer().draw(*g_window,_monType,(m_x-g_left_x)*50.f,(m_y-g_top_y)*50.f,gameFont(),name);
+            const auto seconds=combatClock.getElapsedTime().asSeconds();
+            const auto position=townMotion.sample(seconds);
+            townNpcRenderer().draw(*g_window,_monType,(position.x-g_left_x)*50.f,(position.y-g_top_y)*50.f,gameFont(),name,seconds,townMotion.facing);
             return;
         }
 		float rx = (m_x - g_left_x) * TILE_WIDTH + 1;

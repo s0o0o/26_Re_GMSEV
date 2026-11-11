@@ -222,6 +222,71 @@ void runTown(const sockaddr_in& address,std::vector<std::thread>& workers) {
         entered.insert(npc.id);
     }
     assert(entered.size()==3);
+    // Inject clock time into the same production service called by OP_WORLD_TICK.
+    const auto beforeMoves=peer.accepted.owner.lock()->object._seedNum;
+    int autonomousMoves=0;
+    for(std::uint64_t tick=1000;tick<=80000;tick+=1000) {
+        WorldStateLock lock;
+        const auto previous=clients.get(town_npcs::baseId)->object;
+        serviceTownResidents(tick);
+        const auto current=clients.get(town_npcs::baseId)->object;
+        if(previous._x!=current._x || previous._y!=current._y) ++autonomousMoves;
+        for(const auto& definition : town_npcs::residents) {
+            const auto npc=clients.get(definition.id);
+            assert(town_behaviour::allowed(definition,npc->object._x,npc->object._y));
+            assert(!npc->monster._isActive && !npc->monster.script);
+        }
+    }
+    assert(autonomousMoves>0 && beforeMoves==10);
+    // Drain all move packets up to an ordered marker and confirm the client-facing stream moved.
+    { WorldStateLock lock; subject->sendChatPacket(subject->object._id,"WALK-END"); }
+    int receivedMoves=0; bool walkMarker=false;
+    for(int i=0;i<512 && !walkMarker;++i) {
+        auto packet=receive(peer);
+        if(static_cast<std::uint8_t>(packet[1])==S2C_P_MOVE) {
+            const auto move=decode<sc_packet_move>(packet); assert(town_npcs::isResident(clients.get(move.id)->monster._monType)); ++receivedMoves;
+        }
+        if(static_cast<std::uint8_t>(packet[1])==S2C_P_CHAT) walkMarker=std::strcmp(decode<sc_packet_chat>(packet).message,"WALK-END")==0;
+    }
+    assert(walkMarker && receivedMoves>=autonomousMoves);
+    // Put a viewer exactly at Pashmina's visibility boundary; force a valid right step.
+    { WorldStateLock lock;
+      const auto oldX=subject->object._x,oldY=subject->object._y;
+      subject->object._x=6; subject->object._y=16; subject->updateSector(oldX,oldY);
+      for(const auto& definition : town_npcs::residents) {
+          auto npc=clients.get(definition.id); const auto x=npc->object._x,y=npc->object._y;
+          npc->object._x=definition.x; npc->object._y=definition.y; npc->updateSector(x,y);
+          npc->monster.residentBehaviour.next=1000000;
+      }
+      // Isolate visibility from occupancy: keep Snoozer away from the forced boundary step.
+      auto sleeper=clients.get(town_npcs::baseId+2); const auto sx=sleeper->object._x,sy=sleeper->object._y;
+      sleeper->object._x=19; sleeper->object._y=12; sleeper->updateSector(sx,sy);
+    }
+    cs_packet_move boundary{}; boundary.size=sizeof(boundary); boundary.type=C2S_P_MOVE; boundary.direction=2;
+    sendBytes(peer,reinterpret_cast<char*>(&boundary),sizeof(boundary));
+    expect(peer,S2C_P_MONSTER_NEAR); // MOVE/map/initial visibility updates precede this barrier.
+    { WorldStateLock lock;
+      auto walker=clients.get(town_npcs::baseId+1);
+      assert(subject->_viewList.count(walker->object._id));
+      std::uint32_t seed=1;
+      while((((seed*1664525u+1013904223u)>>8)%5)!=0) ++seed;
+      walker->monster.residentBehaviour={seed,90000};
+      serviceTownResidents(90000);
+      assert(walker->object._x==13 && walker->object._y==15 && !subject->_viewList.count(walker->object._id));
+      serviceTownResidents(94000); assert(walker->object._x==13); // Nobody sees it: pause, not catch-up.
+    }
+    assert(decode<sc_packet_leave>(expect(peer,S2C_P_LEAVE)).id==town_npcs::baseId+1);
+    // Reset positions for the existing role/portal fixture, using proper sector updates.
+    { WorldStateLock lock;
+      for(const auto& definition : town_npcs::residents) {
+          auto npc=clients.get(definition.id); const auto x=npc->object._x,y=npc->object._y;
+          npc->object._x=definition.x; npc->object._y=definition.y; npc->updateSector(x,y);
+      }
+      const auto oldX=subject->object._x,oldY=subject->object._y;
+      subject->object._x=spawnX; subject->object._y=spawnY; subject->updateSector(oldX,oldY);
+    }
+    movePair(peer,7050); // Player re-approach must restore ENTER for the previously hidden resident.
+    { WorldStateLock lock; assert(subject->_viewList.count(town_npcs::baseId+1)); }
     auto resident=clients.get(town_npcs::baseId); assert(resident);
     { WorldStateLock lock;
       for(const auto& definition : town_npcs::residents) {
@@ -256,6 +321,10 @@ void runTown(const sockaddr_in& address,std::vector<std::thread>& workers) {
         if(type==S2C_P_MONSTER_NEAR) { assert(packet[2]==0); receivedNear=true; }
     }
     assert(arrived && receivedNear && left==entered);
+    { WorldStateLock lock;
+      const auto boss=clients.get(town_npcs::baseId)->object;
+      serviceTownResidents(1000000);
+      assert(clients.get(town_npcs::baseId)->object._x==boss._x && clients.get(town_npcs::baseId)->object._y==boss._y); }
     { WorldStateLock lock;
       assert(!subject->_viewList.count(resident->object._id));
       const auto oldX=resident->object._x,oldY=resident->object._y;
@@ -722,7 +791,7 @@ int main() {
     CloseHandle(g_hiocp); WSACleanup();
 #ifdef GMSEV_MULTIWORKER_TEST
 #ifdef GMSEV_TOWN_TEST
-    std::cout << "Town residents: production initialization, 3 ENTER/LEAVE, no AI/timer/attack, field role defense passed (4 workers, DB stub)\n";
+    std::cout << "Town residents: autonomous walk, MOVE/visibility/re-entry, no monster AI/attack, field role defense passed (4 workers, DB stub)\n";
 #elif defined(GMSEV_WORLD_TEST)
 #ifdef GMSEV_REGION_TEST
     std::cout << "Regions: real portal, observer leave, chase cancellation, stale AI, cross-region Lua chat and safe-zone attack passed (4 workers, DB stub)\n";

@@ -16,6 +16,12 @@ int main() {
         const auto& object=players.at(definition.id);
         assert(object._monType==definition.type && object.id==definition.id && std::strcmp(object.name,definition.name)==0);
         assert(combatHud().hp(definition.id)==-1);
+        sc_packet_move move{}; move.size=sizeof(move); move.type=S2C_P_MOVE; move.id=definition.id;
+        move.x=definition.x+1; move.y=definition.y;
+        ProcessPacket(reinterpret_cast<char*>(&move));
+        assert(players.at(definition.id).townMotion.facing==town_motion::Right);
+        const auto sample=players.at(definition.id).townMotion.sample(combatClock.getElapsedTime().asSeconds());
+        assert(sample.x>=definition.x && sample.x<=definition.x+1);
         window.clear(); players.at(definition.id).draw(); window.display();
     }
     sc_packet_enter unknown{}; unknown.size=sizeof(unknown); unknown.type=S2C_P_ENTER;
