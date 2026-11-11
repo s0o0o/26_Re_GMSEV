@@ -69,6 +69,7 @@ bool isCanSee(int from, int to)
 	auto to_it = clients.get(to);
 	std::shared_ptr<GAMESESSION> toUser = to_it;
     if(!fromUser || !toUser) return false;
+    if(!world_regions::same(fromUser->object.location(),toUser->object.location())) return false;
 
 	if (abs(fromUser->object._x - toUser->object._x) > VIEW_RANGE)
 		return false;
@@ -84,6 +85,7 @@ bool isMonSee(int from, int to)
 	auto to_it = clients.get(to);
 	std::shared_ptr<GAMESESSION> toUser = to_it;
     if(!fromUser || !toUser) return false;
+    if(!world_regions::same(fromUser->object.location(),toUser->object.location())) return false;
 
 	if (abs(fromUser->object._x - toUser->object._x) > 5)
 		return false;
@@ -175,6 +177,7 @@ std::unordered_set<int> GAMESESSION::getNearBySessions() {
 				auto other = it;
 				if (!other || other->_state != ST_INGAME || other->disconnectStarted || other->transportFailed) continue;
 				if (other->monster._isDie) continue;
+                if(!world_regions::same(object.location(),other->object.location())) continue;
 
 				if (abs(other->object._x - object._x) > VIEW_RANGE) continue;
 				if (abs(other->object._y - object._y) > VIEW_RANGE) continue;
@@ -214,8 +217,9 @@ int API_SendMessage(lua_State* L) {
     const char* message=luaL_checkstring(L,3);
     luaL_argcheck(L,lua_isinteger(L,lua_upvalueindex(1)) && sender == lua_tointeger(L,lua_upvalueindex(1)),1,"sender is not this NPC");
     WorldStateLock stateLock; // Validate Lua arguments before RAII locks.
+    const auto owner=clients.get(static_cast<int>(sender));
     const auto it=clients.get(receiver);
-    if (it && isPlayer(receiver) && it->_state == ST_INGAME && !it->disconnectStarted && !it->transportFailed)
+    if (owner && it && isPlayer(receiver) && it->_state == ST_INGAME && !it->disconnectStarted && !it->transportFailed && world_regions::same(owner->object.location(),it->object.location()))
         it->sendChatPacket(static_cast<int>(sender),message);
     return 0;
 }
@@ -255,7 +259,7 @@ void wakeUpMonster(int monId, int playerId) {
     exover->generation=monster->monster.generation.load();
 	exover->_playerId = playerId;
     auto player=clients.get(playerId);
-    if(!player || !currentWorldPlayer(playerId,player->connectionId)) { delete exover; return; }
+    if(!player || !currentWorldPlayer(playerId,player->connectionId) || !world_regions::same(monster->object.location(),player->object.location())) { delete exover; return; }
     exover->playerConnectionId=player->connectionId;
 
     if(!PostQueuedCompletionStatus(g_hiocp,1,monId,&exover->_over)) { delete exover; return; }
@@ -611,6 +615,7 @@ void processPacket(const std::shared_ptr<GAMESESSION>& session, char* packetFrom
             }
             int destinationX=x,destinationY=y;
             if (world_layout::portal(destinationX,destinationY)) {
+                cancelRegionChases(sessionId);
                 x=static_cast<short>(destinationX); y=static_cast<short>(destinationY);
                 std::cout << "[MAP] Portal session=" << sessionId << " to=" << x << ',' << y << std::endl;
             }
@@ -686,7 +691,7 @@ void processPacket(const std::shared_ptr<GAMESESSION>& session, char* packetFrom
 			int dx = abs(monster->object._x - myX);
 			int dy = abs(monster->object._y - myY);
 
-			if (!monster->monster._isDie && world_layout::outdoors(myX) && dx <= 2 && dy <= 2) targets.push_back(monster);
+			if (!monster->monster._isDie && world_regions::combatAllowed(myX,myY) && world_regions::inRange(session->object.location(),monster->object.location(),2) && dx <= 2 && dy <= 2) targets.push_back(monster);
 		}
 
 		//cout << " 공격가능 몬스터 수 : " << targets.size() << endl;
@@ -707,7 +712,7 @@ void processPacket(const std::shared_ptr<GAMESESSION>& session, char* packetFrom
 	case C2S_P_ATTACK:
 	{
         if (session->_state != ST_INGAME) break;
-        if (!world_layout::outdoors(session->object._x)) { session->sendAttackFeedback(AttackFeedback::SafeZone); break; }
+        if (!world_regions::combatAllowed(session->object._x,session->object._y)) { session->sendAttackFeedback(AttackFeedback::SafeZone); break; }
         if (session->object._seedNum <= 0) { session->sendAttackFeedback(AttackFeedback::NoSeeds); break; }
 		cout << "seed : " << session->object._seedNum << endl;
 		unordered_set<int> viewList = session->getNearBySessions();
@@ -728,7 +733,7 @@ void processPacket(const std::shared_ptr<GAMESESSION>& session, char* packetFrom
 			int dx = abs(monster->object._x - myX);
 			int dy = abs(monster->object._y - myY);
 
-			if (!monster->monster._isDie && world_layout::outdoors(myX) && dx <= 2 && dy <= 2) targets.push_back(monster);	// 범위 설정
+			if (!monster->monster._isDie && world_regions::combatAllowed(myX,myY) && world_regions::inRange(session->object.location(),monster->object.location(),2) && dx <= 2 && dy <= 2) targets.push_back(monster);	// 범위 설정
 		}
 
 		//cout << "주변 몬스터 수 : " << targets.size() << endl;
@@ -1068,6 +1073,8 @@ void workerThread(HANDLE iocp) {
 			std::shared_ptr<GAMESESSION> npc = it;
 
 			if (!npc || !npc->monster._isActive || npc->monster._isDie) { delete overEx; break; }
+            auto notifyingPlayer=clients.get(overEx->_playerId);
+            if(!notifyingPlayer || !world_regions::same(npc->object.location(),notifyingPlayer->object.location())) { delete overEx; break; }
 			//if (npc->_is_npc_run) break;
 
             if(!npc->monster.scriptDisabled) {
@@ -1117,7 +1124,7 @@ void workerThread(HANDLE iocp) {
 
             auto target = clients.get(targetPlayerId);
             if (!target || target->_state != ST_INGAME || target->disconnectStarted || target->transportFailed ||
-                !world_layout::outdoors(target->object._x) || monster->monster._isDie ||
+                !world_regions::same(monster->object.location(),target->object.location()) || !world_regions::combatAllowed(target->object._x,target->object._y) || monster->monster._isDie ||
                 !field_content::monsterCanStand(monster->monster._nextMonX,monster->monster._nextMonY)) {
                 monster->monster.chaseTarget = -1;
                 monster->monster._isMonsterChase = false;

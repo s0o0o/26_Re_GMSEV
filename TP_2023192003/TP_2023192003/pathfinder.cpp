@@ -37,7 +37,7 @@ int heuristic(int x1, int y1, int x2, int y2) {	// ÈÞ¸®½ºÆ½
 } // namespace
 
 std::vector<std::pair<int, int>> findPathAStar(int startX, int startY, int goalX, int goalY) {
-	if (!isValid(startX, startY) || !isValid(goalX, goalY)) return {};
+	if (!isValid(startX, startY) || !isValid(goalX, goalY) || !world_regions::same(startX,startY,goalX,goalY)) return {};
 	std::vector<std::unique_ptr<Node>> nodes;
 	std::priority_queue<Node*, std::vector<Node*>, NodeComp> openList;
 	std::unordered_set<long long> closedSet;

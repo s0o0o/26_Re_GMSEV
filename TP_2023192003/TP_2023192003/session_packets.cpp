@@ -53,6 +53,7 @@ void GAMESESSION::sendAddPlayerPacket(int sessionId) {
     WorldStateLock stateLock;
 	auto user = clients.get(sessionId);
 	if (!user) return;
+    if(!world_regions::same(object.location(),user->object.location())) return;
 
     std::lock_guard<std::recursive_mutex> stats(user->monster.combatMutex);
     if (user->monster._isDie) return;
