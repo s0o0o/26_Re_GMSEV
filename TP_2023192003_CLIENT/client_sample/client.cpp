@@ -1,4 +1,5 @@
 #define _CRT_SECURE_NO_WARNINGS
+#include "window_display.hpp"
 #include "ui_alignment.hpp"
 #include <SFML/Graphics.hpp>
 #include <SFML/Network.hpp>
@@ -931,6 +932,7 @@ int main()
 
 	sf::RenderWindow window(sf::VideoMode(WINDOW_WIDTH, WINDOW_HEIGHT), "HAMSTER RPG 2023192003 김연수");
 	g_window = &window;
+    WindowDisplay display(window, "HAMSTER RPG" );
 	initStartScreenInit();
     if (!hamsterCustomizer().load("assets/characters") || !hamsterCustomizer().setBackdrop(*startMainTx)) { std::cerr << "Character texture loading failed" << std::endl; return -1; }
     if (!clubhouseRenderer().load("assets/maps/clubhouse-sheet.png") || !clubhouseRenderer().loadOutdoor("assets/maps/sunny-peak-sheet.png")) { std::cerr << "Club House asset missing" << std::endl; return -1; }
@@ -942,8 +944,7 @@ int main()
 		sf::Event event;
 		while (window.pollEvent(event))
 		{
-			if (event.type == sf::Event::Closed)
-				window.close();
+			if (display.handle(event,window)) continue;
 
 			if (loginFlow.stage() == GAMESTATE::startScreen) {
 
@@ -1021,7 +1022,7 @@ int main()
 							p.id = avatar.id;
 							//strcpy_s(p.message, chatInputStr.c_str());
 							
-							strncpy(p.message, chatInputStr.c_str(), MAX_CHAT_LENGTH - 1);
+							strncpy_s(p.message, sizeof(p.message), chatInputStr.c_str(), _TRUNCATE);
 							p.message[MAX_CHAT_LENGTH - 1] = '\0';
 							std::cout << "보내는 사람: " << p.id << std::endl;
 							std::cout << "보내는 메시지: " << chatInputStr << std::endl;
@@ -1089,6 +1090,7 @@ int main()
 			}
 		}
 
+        if (!window.isOpen()) break;
         window.clear();
         if (loginFlow.stage() == GAMESTATE::startScreen) {
             drawStartScreen(window, inputNickname);

@@ -22,6 +22,10 @@
     <ClCompile Include="background_blur.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="display_layout.hpp" />
+    <ClInclude Include="window_display.hpp" />
+  </ItemGroup>
+  <ItemGroup>
     <Image Include="chess2.png">
       <Filter>리소스 파일</Filter>
     </Image>

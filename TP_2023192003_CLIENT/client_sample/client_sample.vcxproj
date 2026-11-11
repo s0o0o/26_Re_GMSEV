@@ -147,6 +147,8 @@
     <ClInclude Include="..\..\shared\login_input.hpp" />
     <ClInclude Include="..\..\shared\appearance.hpp" />
     <ClInclude Include="hamster_customizer.hpp" />
+    <ClInclude Include="display_layout.hpp" />
+    <ClInclude Include="window_display.hpp" />
     <ClInclude Include="background_blur.hpp" />
     <ClInclude Include="login_flow.hpp" />
     <ClInclude Include="ui_alignment.hpp" />
