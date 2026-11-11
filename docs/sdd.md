@@ -33,6 +33,7 @@
 ## 명세 목록
 
 - [템플릿](specs/_template.md)
+- [월드 확장·화면 대응 로드맵](specs/world-display-roadmap.md): 가변 해상도부터 지역/귀환/필드/커마까지 단계 경계.
 - [Lua AI 흐름 개선](specs/lua-ai-flow.md): 실제 역할 조사와 안전한 script 정책/타이머 경계.
 - [월드 상태 보호](specs/world-state-concurrency.md): 이동·전투·패킷 읽기의 공통 잠금과 DB 경계.
 - [접속 목록 동기화](specs/session-registry-concurrency.md): registry와 입장·퇴장 경계를 구분하는 다중 worker 작업.

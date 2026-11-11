@@ -92,7 +92,11 @@ build\tests\npc_script_test.exe
 if not "%errorlevel%"=="0" goto failed
 call tests\run-server-lua.cmd
 if not "%errorlevel%"=="0" goto failed
-echo All 23 regression programs passed.
+cl /nologo /EHsc /std:c++17 tests\display_layout_test.cpp /Fo:build\tests\ /Fe:build\tests\display_layout_test.exe
+if not "%errorlevel%"=="0" goto failed
+build\tests\display_layout_test.exe
+if not "%errorlevel%"=="0" goto failed
+echo All 24 regression programs passed. Run tests\run-display.cmd separately for GPU/window checks.
 popd
 exit /b 0
 :failed
