@@ -1,7 +1,7 @@
 # 지역별 독립 섹터 인덱스 (2B-1)
 
 - 이슈 [#38](https://github.com/s0o0o/26_Re_GMSEV/issues/38), 사전 명세 기준 87884f1, 2026-11-13.
-- 상태: 구현 전. [로드맵](world-display-roadmap.md)의 2B 첫 구현.
+- 상태: 2B-1 구현·검증 완료. [로드맵](world-display-roadmap.md)의 2B 첫 구현.
 
 ## 목적과 범위
 
@@ -22,3 +22,15 @@ ID→소속 키를 별도 보관해 이동/포털 변경을 한 잠금 안에서
 | AC-05 | 실제 인덱스의 지역별 결과를 표시한 기존 맵 렌더 미리보기, 설명/후속 경계 | PNG 생성/육안 확인 |
 
 실제 DB 부하/스키마 변경/프로토콜 버전 전환/장시간 실제 타이머 구동은 이번 검증 범위가 아니다. 인덱스의 단일 mutex 자체는 대규모 성능 개선을 보장하지 않으며 실제 부하는 별도로 측정한다.
+
+## 실행 결과 (2026-11-13)
+
+| AC | 실행/코드 증거 |
+| --- | --- |
+| AC-01 | region_sector_index_test.cpp: 동일 local (10,10)의 두 지역 bucket/후보 분리, 경계 x19↔20, 범위0/INT_MAX, 잘못된 region/좌표/ID/음수 범위 거부 통과. |
+| AC-02 | 중복 put/교차 지역 이동/invalid 갱신 시 이전 소속 보존/중복 remove/빈 bucket 제거 통과. 4 writer 각 3,000회와 동시 snapshot reader, 공용 ID 경쟁 갱신에서 bucket별 중복 없음 확인. 이 단위와 실제 sector worker를 각각 10회 추가 반복했다. Race sanitizer 검사는 아니다. |
+| AC-03 | 기존 4-worker 이동·전투/지역 포털/Lua/주민 산책/접속 종료 회귀 통과. 새 실제 TCP fixture에서 실내 local sector 경계 이동, 포털, 동일 local좌표 두 지역 후보 분리, 종료 후 bucket 0 확인. 실제 serviceRespawns에 만료한 NPC를 넣어 이전 실내 bucket→필드 home 재등록과 ENTER 확인을 별도 보강 실행했다. 이전 실내 위치는 테스트용 강제 상태이지 정상 몬스터가 실내에 출현한다는 뜻이 아니다. |
+| AC-04 | 전체32개 회귀 통과. 최종 부활 보강 후 지역2개 검사 재실행 통과. 서버/클라/스트레스 x64 Debug/Release 성공, DB 없는 실제 Lua/맵/주민 startup-check 성공. 기존 C4244/MSB8028/LNK4098 경고는 남아 있다. |
+| AC-05 | tests/run-region-preview.cmd 실행, 생산 Index와 기존 맵 렌더러의 region-sectors-preview.png 생성·육안 확인. 지역 내부 좌표와 sector가 같아도 다른 지역 후보는 제외됨을 실제 인덱스로 계산해 표시했다. 게임 HUD 변경/접속 캡처가 아니다. |
+
+기존 전역 sector 배열/잠금/크기 상수/직접 접근 참조 제거를 rg로 확인했다. 기존 필드39↔40은 새 local index에서 동일 sector이므로 과거 테스트 주석을 수정하고, 실내19↔20의 실제 경계 fixture를 추가했다. CP949 소스 인코딩 유지, diff check 통과. 실제 DB 접속·DDL/저장 프로시저 검사·프로토콜 전환·실제 고동접 부하는 미실행. [사용자 설명](../refactoring-step-36.md).

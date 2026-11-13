@@ -26,6 +26,7 @@
 #include "world_events.hpp"
 #include "session_completion.hpp"
 #include "npc_script.hpp"
+#include "region_sector_index.hpp"
 #include "../../shared/town_npcs.hpp"
 
 using namespace std;
@@ -123,71 +124,25 @@ int get_timer_queue_index(int id) {
 	return id % TIMER_THREAD_COUNT;
 }
 
-// sector
-std::unordered_set<int> sectors[MAX_SECTOR_X][MAX_SECTOR_Y];
-std::mutex sectorLock[MAX_SECTOR_X][MAX_SECTOR_Y];
+// Region-local, independently keyed sparse sectors. Legacy coordinates are adapted at location().
+region_sectors::Index worldSectors(SECTOR_SIZE);
 
-std::pair<int, int> getSectorLocation(int x, int y) {
-	return { x / SECTOR_SIZE, y / SECTOR_SIZE };
-}
-
-// DB용 =============================================================
-void GAMESESSION::updateSector(short oldX, short oldY) {
-    WorldStateLock stateLock;
-	auto [old_sx, old_sy] = getSectorLocation(oldX, oldY);
-	auto [new_sx, new_sy] = getSectorLocation(object._x, object._y);
-
-	if (old_sx == new_sx && old_sy == new_sy) return;
-	{
-		std::scoped_lock lock(sectorLock[old_sx][old_sy], sectorLock[new_sx][new_sy]);
-		sectors[old_sx][old_sy].erase(object._id);
-		sectors[new_sx][new_sy].insert(object._id);
-	}
+void GAMESESSION::updateSector(short,short) {
+    WorldStateLock lock;
+    worldSectors.put(object._id,object.location());
 }
 
 std::unordered_set<int> GAMESESSION::getNearBySessions() {
-    WorldStateLock stateLock;
-	std::unordered_set<int> result;
-	auto [sx, sy] = getSectorLocation(object._x, object._y);
-	if (sx < 0 || sx >= MAX_SECTOR_X || sy < 0 || sy >= MAX_SECTOR_Y) {
-		std::cout << "[ERROR] 잘못된 섹터 인덱스! x: " << object._x << " y: " << object._y
-			<< " sx: " << sx << ", sy: " << sy << '\n';
-		__debugbreak();  // 디버거 중단
-		return {};
-	}
-	int range = (VIEW_RANGE + SECTOR_SIZE - 1) / SECTOR_SIZE;  // 시야 범위만큼 커버하려면 몇섹터?가 필요한지
-
-	for (int dx = -range; dx <= range; ++dx) {
-		for (int dy = -range; dy <= range; ++dy) {
-			int nx = sx + dx;
-			int ny = sy + dy;
-			if (nx < 0 || ny < 0 || nx >= MAX_SECTOR_X || ny >= MAX_SECTOR_Y) {
-				/*std::cout << "[SECTOR BOUNDS ERROR] nx=" << nx << " ny=" << ny
-					<< " from sx=" << sx << " sy=" << sy
-					<< " dx=" << dx << " dy=" << dy << '\n';*/
-				continue;
-			}
-
-			std::lock_guard<std::mutex> lock(sectorLock[nx][ny]);
-			for (int id : sectors[nx][ny]) {
-				if (id == object._id) continue;
-
-				auto it = clients.get(id);
-				if (it == nullptr) continue;
-
-				auto other = it;
-				if (!other || other->_state != ST_INGAME || other->disconnectStarted || other->transportFailed) continue;
-				if (other->monster._isDie) continue;
-                if(!world_regions::same(object.location(),other->object.location())) continue;
-
-				if (abs(other->object._x - object._x) > VIEW_RANGE) continue;
-				if (abs(other->object._y - object._y) > VIEW_RANGE) continue;
-
-				result.insert(id);
-			}
-		}
-	}
-	return result;
+    WorldStateLock lock;
+    std::unordered_set<int> result;
+    const auto location=object.location();
+    for(int id : worldSectors.nearby(location,VIEW_RANGE)) {
+        if(id==object._id) continue;
+        auto other=clients.get(id);
+        if(!other || other->_state!=ST_INGAME || other->disconnectStarted || other->transportFailed || other->monster._isDie) continue;
+        if(world_regions::inRange(location,other->object.location(),VIEW_RANGE)) result.insert(id);
+    }
+    return result;
 }
 
 // NPC + lua =============================================================
@@ -391,9 +346,7 @@ void initializeTownResidents() {
         npc->monster.residentBehaviour.random=static_cast<std::uint32_t>(resident.id); npc->object._hp=npc->object._maxHp=1; npc->monster._monType=resident.type; npc->_state=ST_INGAME;
         sprintf_s(npc->object._name,"%s",resident.name);
         clients.set(resident.id,npc);
-        const auto sector=getSectorLocation(resident.x,resident.y);
-        std::lock_guard<std::mutex> guard(sectorLock[sector.first][sector.second]);
-        sectors[sector.first][sector.second].insert(resident.id);
+        worldSectors.put(resident.id,npc->object.location());
     }
     std::cout << "[WORLD] Clubhouse residents=" << town_npcs::residents.size() << std::endl;
 }
@@ -429,11 +382,7 @@ bool monsterInit(int count)
         }
         newMonster->monster.script=std::move(loaded.state);
 		// 딱히 필요없지 않나..?
-		auto [sx, sy] = getSectorLocation(newMonster->object._x, newMonster->object._y);
-		{
-			std::lock_guard<std::mutex> lock(sectorLock[sx][sy]);
-			sectors[sx][sy].insert(i);
-		}
+        worldSectors.put(i,newMonster->object.location());
         if ((i-MAX_USER+1)%250 == 0 || i-MAX_USER+1 == count)
             std::cout << "[STARTUP] Monsters " << i-MAX_USER+1 << "/" << count << " elapsed_ms=" << GetTickCount64()-started << std::endl;
 	}
@@ -482,12 +431,7 @@ void disconnect(const std::shared_ptr<GAMESESSION>& session) {
 
     {
         WorldStateLock presenceGuard;
-        detachWorldPresence(*session,[](int id) {
-            for(int x=0;x<MAX_SECTOR_X;++x) for(int y=0;y<MAX_SECTOR_Y;++y) {
-                std::lock_guard<std::mutex> lock(sectorLock[x][y]);
-                sectors[x][y].erase(id);
-            }
-        });
+        detachWorldPresence(*session,[](int id) { worldSectors.remove(id); });
         session->closeTransport();
         persisted=session->object; persistedAccount=session->_userInputId;
         session->_state = ST_FREE;
@@ -1053,11 +997,7 @@ void workerThread(HANDLE iocp) {
             // Released by sessionOperation.
 			session->sendMapInfo(session->object._id, session->object._x, session->object._y); // 맵 정보
 
-			auto [sx, sy] = getSectorLocation(session->object._x, session->object._y);	// 로그인 후.. 나를 섹터에 등록
-			{
-				std::lock_guard<std::mutex> lock(sectorLock[sx][sy]);
-				sectors[sx][sy].insert(session->object._id);
-			}
+            worldSectors.put(session->object._id,session->object.location());
 
 			// 이제 브로드캐스팅
 			std::unordered_set<int> _near = session->getNearBySessions();

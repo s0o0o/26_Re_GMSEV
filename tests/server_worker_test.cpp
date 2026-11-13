@@ -13,8 +13,10 @@ void workerTestObserve(const std::shared_ptr<GAMESESSION>&,const char*);
 
 namespace fixture {
 using Clock=std::chrono::steady_clock;
-#if defined(GMSEV_WORLD_TEST) || defined(GMSEV_LUA_AI_TEST)
-constexpr int spawnX=39,spawnY=7; // Right/left steps cross the x=40 sector boundary.
+#if defined(GMSEV_SECTOR_TEST)
+constexpr int spawnX=19,spawnY=16; // Right/left crosses Clubhouse's LOCAL sector boundary at x=20.
+#elif defined(GMSEV_WORLD_TEST) || defined(GMSEV_LUA_AI_TEST)
+constexpr int spawnX=39,spawnY=7; // Field regression coordinates; now both lie in local sector (0,0).
 #else
 constexpr int spawnX=clubhouse::spawnX,spawnY=clubhouse::spawnY;
 #endif
@@ -172,9 +174,7 @@ void workerTestObserve(const std::shared_ptr<GAMESESSION>& session,const char* e
     for(const auto& entry : clients.snapshot()) if(entry.second && entry.first < MAX_USER && entry.second->_state == ST_INGAME)
         snapshot.totalSeeds+=entry.second->object._seedNum;
     { std::lock_guard<std::mutex> lock(session->_vlL); snapshot.ownView=session->_viewList.size(); snapshot.visible=session->_viewList; }
-    for(int x=0;x<MAX_SECTOR_X;++x) for(int y=0;y<MAX_SECTOR_Y;++y) {
-        std::lock_guard<std::mutex> lock(sectorLock[x][y]); snapshot.sectorRefs+=static_cast<int>(sectors[x][y].count(snapshot.id));
-    }
+    snapshot.sectorRefs=worldSectors.memberships(snapshot.id);
     for(const auto& entry : clients.snapshot()) if(entry.second && entry.second != session) {
         std::lock_guard<std::mutex> lock(entry.second->_vlL);
         snapshot.otherViewRefs+=static_cast<int>(entry.second->_viewList.count(snapshot.id));
@@ -211,6 +211,57 @@ void stopWorkers(std::vector<std::thread>& workers) {
     for(auto& worker : workers) worker.join();
 }
 #ifdef GMSEV_MULTIWORKER_TEST
+void runSectorIndex(const sockaddr_in& address,std::vector<std::thread>& workers) {
+    auto watcher=connectPeer(address,0); login(watcher,80000,true);
+    auto peer=connectPeer(address,watcher.accepted.connection); login(peer,80001,true); expectEnter(watcher,peer.accepted.id);
+    auto subject=peer.accepted.owner.lock(); auto observer=watcher.accepted.owner.lock(); assert(subject && observer);
+    cs_packet_move move{}; move.size=sizeof(move); move.type=C2S_P_MOVE; move.direction=3; move.move_time=8080;
+    sendBytes(peer,reinterpret_cast<char*>(&move),sizeof(move));
+    auto response=decode<sc_packet_move>(expect(peer,S2C_P_MOVE)); assert(response.id==peer.accepted.id && response.x==20 && response.y==16);
+    { WorldStateLock lock;
+      region_sectors::Key key; assert(worldSectors.keyFor(subject->object.location(),key));
+      assert(key.region==world_regions::Id::Clubhouse && key.x==1 && key.y==0);
+      assert(worldSectors.memberships(subject->object._id)==1 && subject->getNearBySessions().count(observer->object._id));
+      const auto actual=worldSectors.nearby(subject->object.location(),0);
+      assert(actual.count(subject->object._id) && !actual.count(observer->object._id));
+    }
+    expect(peer,S2C_P_MONSTER_NEAR); // Drain map/visibility before the next command.
+    { WorldStateLock lock; subject->object._x=10; subject->object._y=13; subject->updateSector(20,16); }
+    move.direction=1; move.move_time=8081; sendBytes(peer,reinterpret_cast<char*>(&move),sizeof(move));
+    response=decode<sc_packet_move>(expect(peer,S2C_P_MOVE)); assert(response.x==42 && response.y==10);
+    expectLeave(watcher,peer.accepted.id); expect(peer,S2C_P_MONSTER_NEAR);
+    { WorldStateLock lock;
+      observer->object._x=10; observer->object._y=10; observer->updateSector(19,16);
+      const auto club=worldSectors.nearby({world_regions::Id::Clubhouse,10,10},0);
+      const auto field=worldSectors.nearby({world_regions::Id::SunnyPeak,10,10},0);
+      assert(club==std::unordered_set<int>{observer->object._id} && field==std::unordered_set<int>{subject->object._id});
+      assert(subject->object.location().x==observer->object.location().x && subject->object.location().y==observer->object.location().y);
+      assert(!isCanSee(subject->object._id,observer->object._id));
+    }
+    // Exercise the real respawn service's re-registration, using an old bucket in another region.
+    auto revived=std::make_shared<GAMESESSION>(); revived->object._id=MAX_USER;
+    revived->object._x=21; revived->object._y=16; revived->object._hp=0; revived->_state=ST_INGAME;
+    revived->monster._monType=1; revived->monster._isDie=true; revived->monster.respawnAt=1;
+    auto script=npc_script::loadText("function set_uid(id) end; function choose_direction() return 0 end; function event_player_move(p,c) end",MAX_USER,{API_get_x,API_get_y,API_SendMessage});
+    assert(script); revived->monster.script=std::move(script.state);
+    { WorldStateLock lock;
+      clients.set(MAX_USER,revived); assert(worldSectors.put(MAX_USER,revived->object.location()));
+      serviceRespawns();
+      assert(!revived->monster._isDie && revived->object._hp==5 && worldSectors.memberships(MAX_USER)==1);
+      assert(worldSectors.nearby(revived->object.location(),0).count(MAX_USER));
+      assert(!worldSectors.nearby({world_regions::Id::Clubhouse,21,16},0).count(MAX_USER));
+    }
+    const auto enter=decode<sc_packet_enter>(expect(peer,S2C_P_ENTER)); assert(enter.id==MAX_USER && enter.hp==5);
+    waitSnapshot(revived->connectionId,"notify",[](const Snapshot&) { return true; });
+    { WorldStateLock lock; worldSectors.remove(MAX_USER); clients.set(MAX_USER,nullptr); }
+    closePeer(peer); assert(worldSectors.memberships(peer.accepted.id)==0 && worldSectors.memberships(watcher.accepted.id)==1);
+    closePeer(watcher); subject.reset(); observer.reset();
+    const auto deadline=Clock::now()+std::chrono::seconds(3);
+    while((peer.accepted.owner.use_count()!=1 || watcher.accepted.owner.use_count()!=1) && Clock::now()<deadline) std::this_thread::yield();
+    assert(peer.accepted.owner.use_count()==1 && watcher.accepted.owner.use_count()==1 && worldSectors.snapshot().empty() && worldSectors.bucketCount()==0);
+    stopWorkers(workers); clients.clear();
+    assert(peer.accepted.owner.expired() && watcher.accepted.owner.expired());
+}
 void runTown(const sockaddr_in& address,std::vector<std::thread>& workers) {
     auto peer=connectPeer(address,0); login(peer,70000,true);
     auto subject=peer.accepted.owner.lock(); assert(subject);
@@ -681,7 +732,7 @@ int main() {
       lua_getglobal(L,"API_SendMessage"); lua_pushinteger(L,MAX_USER+1); lua_pushinteger(L,0); lua_pushliteral(L,"forged");
       assert(lua_pcall(L,3,0,0)!=LUA_OK); lua_pop(L,1);
       assert(lua_gettop(L)==0 && !WorldStateLock::heldByCurrentThread()); }
-    auto [sx,sy]=getSectorLocation(38,6); sectors[sx][sy].insert(MAX_USER);
+    assert(worldSectors.put(MAX_USER,target->object.location()));
 #endif
     gServerSocket=WSASocket(AF_INET,SOCK_STREAM,0,nullptr,0,WSA_FLAG_OVERLAPPED); assert(gServerSocket != INVALID_SOCKET);
     sockaddr_in address{}; address.sin_family=AF_INET; address.sin_addr.s_addr=htonl(INADDR_LOOPBACK);
@@ -697,7 +748,9 @@ int main() {
     std::vector<std::thread> workers;
 #ifdef GMSEV_MULTIWORKER_TEST
     for(int i=0;i<4;++i) workers.emplace_back(workerThread,g_hiocp);
-#ifdef GMSEV_TOWN_TEST
+#ifdef GMSEV_SECTOR_TEST
+    runSectorIndex(address,workers);
+#elif defined(GMSEV_TOWN_TEST)
     runTown(address,workers);
 #elif defined(GMSEV_WORLD_TEST)
 #ifdef GMSEV_REGION_TEST
@@ -790,7 +843,9 @@ int main() {
 #endif
     CloseHandle(g_hiocp); WSACleanup();
 #ifdef GMSEV_MULTIWORKER_TEST
-#ifdef GMSEV_TOWN_TEST
+#ifdef GMSEV_SECTOR_TEST
+    std::cout << "Regional sectors: local boundary MOVE, cross-region portal, identical local coordinates isolated, disconnect prunes buckets passed (4 workers, DB stub)\n";
+#elif defined(GMSEV_TOWN_TEST)
     std::cout << "Town residents: autonomous walk, MOVE/visibility/re-entry, no monster AI/attack, field role defense passed (4 workers, DB stub)\n";
 #elif defined(GMSEV_WORLD_TEST)
 #ifdef GMSEV_REGION_TEST
