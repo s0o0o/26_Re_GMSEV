@@ -33,6 +33,7 @@
 ## 명세 목록
 
 - [템플릿](specs/_template.md)
+- [혼합 부하·종료 오류 계측](specs/mixed-load-diagnostics.md): opt-in 시각/연결 trace와 수신 drain 비교.
 - [300명 제한형 부하 검증](specs/bounded-load-test.md): DB 대역과 승인된 실제 DB 실행의 구분.
 - [DB 위치·로그인 계약](specs/database-position-contract.md): 읽기 전용 메타데이터 확인과 안전한 지역 위치 저장 경계.
 - [지역별 섹터 인덱스](specs/region-sector-index.md): 2B-1 독립 지역 bucket과 단일 소속 관리.

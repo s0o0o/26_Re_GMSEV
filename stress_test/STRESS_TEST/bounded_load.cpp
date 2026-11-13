@@ -12,17 +12,24 @@
 #include <cstring>
 #include <unordered_set>
 #include "../../shared/protocol.hpp"
+#include "../../shared/load_trace.hpp"
 #pragma comment(lib,"ws2_32.lib")
 namespace bounded_load {
 using Clock=std::chrono::steady_clock;
-struct Config { int count=0,start=0,hold=0,deadline=0,port=0; };
+struct Config { int count=0,start=0,hold=0,deadline=0,port=0; bool mixed=false,drain=true; };
 bool number(const char* s,int& out) {
     if(!s || !*s) return false;
     int n=0; for(;*s;++s) { if(*s<'0'||*s>'9'||n>(INT_MAX-(*s-'0'))/10) return false; n=n*10+(*s-'0'); }
     out=n; return true;
 }
 bool config(int argc,char** argv,Config& c) {
-    return argc==6 && number(argv[1],c.count) && number(argv[2],c.start) && number(argv[3],c.hold)
+    if(argc!=6 && argc!=8) return false;
+    if(argc==8) {
+        const std::string mode=argv[6],closing=argv[7];
+        if((mode!="mixed" && mode!="separate") || (closing!="drain" && closing!="immediate")) return false;
+        c.mixed=mode=="mixed"; c.drain=closing=="drain";
+    }
+    return number(argv[1],c.count) && number(argv[2],c.start) && number(argv[3],c.hold)
         && number(argv[4],c.deadline) && number(argv[5],c.port) && c.count>=1 && c.count<=300
         && c.start<=INT_MAX-c.count+1 && c.hold>=2 && c.hold<=30 && c.deadline>=2 && c.deadline<=60 && c.port>=1 && c.port<=65535;
 }
@@ -77,12 +84,39 @@ bool parse(Peer& p,Stats& s) {
     }
     p.input.erase(p.input.begin(),p.input.begin()+offset); return true;
 }
+struct DrainStats { int eof=0,errors=0,timeouts=0; std::uint64_t bytes=0; };
+DrainStats finish(std::vector<Peer>& peers,Stats& stats,bool drain) {
+    DrainStats result;
+    std::cout<<"PHASE ms="<<load_trace::now()<<" event=shutdown_begin mode="<<(drain?"drain":"immediate")<<std::endl;
+    for(auto& p:peers) if(p.socket!=INVALID_SOCKET) shutdown(p.socket,SD_SEND);
+    if(drain) {
+        const auto until=Clock::now()+std::chrono::seconds(5);
+        while(Clock::now()<until) {
+            bool pending=false;
+            for(auto& p:peers) {
+                if(p.socket==INVALID_SOCKET) continue;
+                pending=true; char bytes[16384];
+                const int n=recv(p.socket,bytes,sizeof(bytes),0);
+                if(n>0) result.bytes+=n; // Do not feed cleanup packets into gameplay pass/fail metrics.
+                else if(n==0) { ++result.eof; close(p,stats); }
+                else if(WSAGetLastError()!=WSAEWOULDBLOCK) { ++result.errors; close(p,stats); }
+            }
+            if(!pending) break;
+            Sleep(1);
+        }
+        for(const auto& p:peers) if(p.socket!=INVALID_SOCKET) ++result.timeouts;
+    }
+    for(auto& p:peers) close(p,stats);
+    std::cout<<"PHASE ms="<<load_trace::now()<<" event=shutdown_end eof="<<result.eof<<" errors="<<result.errors<<" timeouts="<<result.timeouts<<std::endl;
+    return result;
+}
 int run(const Config& c) {
     WSADATA data{}; if(WSAStartup(MAKEWORD(2,2),&data)) return 2;
     Stats s; std::vector<Peer> peers; peers.reserve(c.count);
     const auto began=Clock::now(); auto nextConnect=began,holdStart=Clock::time_point{};
     bool held=false; int activeAtEnd=0;
     std::cout<<"[LOAD] localhost:"<<c.port<<" count="<<c.count<<" account_start="<<c.start<<" hold_seconds="<<c.hold<<" login_deadline="<<c.deadline<<std::endl;
+    std::cout<<"PHASE ms="<<load_trace::now()<<" event=ramp_begin mode="<<(c.mixed?"mixed":"separate")<<std::endl;
     while(Clock::now()-began<std::chrono::seconds(c.deadline+c.hold+2)) {
         const auto now=Clock::now();
         if(s.attempts<c.count && now>=nextConnect) {
@@ -104,7 +138,7 @@ int run(const Config& c) {
             auto& p=peers[i]; if(p.socket==INVALID_SOCKET) continue;
             if(!p.logged && now-p.opened>=std::chrono::seconds(c.deadline)) { ++s.timeouts; close(p,s); continue; }
             // Keep login ramp separate from movement pressure; measure both phases explicitly.
-            if(p.logged && holdStart!=Clock::time_point{} && now>=p.nextMove) {
+            if(p.logged && (c.mixed || holdStart!=Clock::time_point{}) && now>=p.nextMove) {
                 cs_packet_move move{}; move.size=sizeof(move); move.type=C2S_P_MOVE;
                 move.direction=static_cast<std::uint8_t>((p.sentMoves%2) ? 2 : 3); move.move_time=++p.sentMoves;
                 queue(p,move); p.nextMove=now+std::chrono::seconds(1);
@@ -136,25 +170,26 @@ int run(const Config& c) {
         } else Sleep(1);
         if(s.active==c.count && holdStart==Clock::time_point{}) {
             holdStart=Clock::now(); std::cout<<"[LOAD] All clients logged in; hold begins"<<std::endl;
+            std::cout<<"PHASE ms="<<load_trace::now()<<" event=hold_begin"<<std::endl;
         }
         if(holdStart!=Clock::time_point{} && s.active!=c.count) break;
         if(holdStart!=Clock::time_point{} && Clock::now()-holdStart>=std::chrono::seconds(c.hold)) { held=true; break; }
         if(s.errors || s.rejected || s.protocol || s.timeouts) break;
     }
     activeAtEnd=s.active;
-    const bool passed=held && s.accepted==c.count && s.active==c.count && s.moved==c.count && !s.errors && !s.rejected && !s.protocol && !s.timeouts;
-    // Signal EOF, then close. Server save/drain completion is NOT asserted here.
-    for(auto& p:peers) { if(p.socket!=INVALID_SOCKET) shutdown(p.socket,SD_SEND); }
-    for(auto& p:peers) close(p,s);
+    bool passed=held && s.accepted==c.count && s.active==c.count && s.moved==c.count && !s.errors && !s.rejected && !s.protocol && !s.timeouts;
+    std::cout<<"PHASE ms="<<load_trace::now()<<" event=measurement_end passed="<<passed<<std::endl;
+    const auto cleanup=finish(peers,s,c.drain);
+    passed=passed && (!c.drain || (cleanup.errors==0 && cleanup.timeouts==0));
     WSACleanup();
-    std::cout<<"RESULT {\"passed\":"<<(passed?"true":"false")<<",\"attempts\":"<<s.attempts<<",\"accepted\":"<<s.accepted<<",\"peak\":"<<s.peak<<",\"active_at_end\":"<<activeAtEnd<<",\"moved_clients\":"<<s.moved<<",\"rejected\":"<<s.rejected<<",\"transport_errors\":"<<s.errors<<",\"protocol_errors\":"<<s.protocol<<",\"timeouts\":"<<s.timeouts<<",\"hold_completed\":"<<(held?"true":"false")<<",\"closed\":"<<s.closed<<",\"elapsed_ms\":"<<std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now()-began).count()<<"}"<<std::endl;
+    std::cout<<"RESULT {\"passed\":"<<(passed?"true":"false")<<",\"attempts\":"<<s.attempts<<",\"accepted\":"<<s.accepted<<",\"peak\":"<<s.peak<<",\"active_at_end\":"<<activeAtEnd<<",\"moved_clients\":"<<s.moved<<",\"rejected\":"<<s.rejected<<",\"transport_errors\":"<<s.errors<<",\"protocol_errors\":"<<s.protocol<<",\"timeouts\":"<<s.timeouts<<",\"hold_completed\":"<<(held?"true":"false")<<",\"closed\":"<<s.closed<<",\"drain_eof\":"<<cleanup.eof<<",\"drain_errors\":"<<cleanup.errors<<",\"drain_timeouts\":"<<cleanup.timeouts<<",\"drain_bytes\":"<<cleanup.bytes<<",\"elapsed_ms\":"<<std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now()-began).count()<<"}"<<std::endl;
     return passed ? 0 : 1;
 }
 }
 #ifndef GMSEV_BOUNDED_LOAD_TEST
 int main(int argc,char** argv) {
     bounded_load::Config c;
-    if(!bounded_load::config(argc,argv,c)) { std::cerr<<"Usage: bounded_load <1..300 clients> <first numeric account ID> <2..30 hold sec> <2..60 login deadline sec> <localhost port>\nWARNING: real servers may create/update these accounts.\n"; return 2; }
+    if(!bounded_load::config(argc,argv,c)) { std::cerr<<"Usage: bounded_load <1..300 clients> <first numeric account ID> <2..30 hold sec> <2..60 login deadline sec> <localhost port> [mixed|separate drain|immediate]\nWARNING: real servers may create/update these accounts.\n"; return 2; }
     return bounded_load::run(c);
 }
 #endif

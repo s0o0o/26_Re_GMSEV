@@ -26,7 +26,7 @@
 
 위 통합 당시에는 서버·클라이언트·스트레스 도구의 x64 Release 빌드와 6개 회귀 프로그램을
 확인했다. 현재는 변경 범위에 맞게 빌드를 선택하고, 회귀 프로그램 목록은
-`tests/run-regressions.cmd`를 기준으로 한다(2026-11-13 확인: 35개, 실제 DB 부하 제외).
+`tests/run-regressions.cmd`를 기준으로 한다(2026-11-13 확인: 36개, 실제 DB 부하 제외).
 회귀 검사는 x64 Native Tools Command Prompt에서
 `tests\run-regressions.cmd`로 실행하며 결과물은 무시되는 build/tests에 둔다.
 
