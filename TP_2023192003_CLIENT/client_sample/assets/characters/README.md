@@ -25,3 +25,9 @@ Classic eyes / No scarf / 기본 털색 조합은 추출한 원본과 픽셀 단
 추출 좌표는 `tools/extract_character_sheets.cpp`, 레이어 생성은
 `tools/make_hamster_layers.cpp`에서 관리한다.
 기존 `assets/appearance/`와 `character.png`는 보존했다.
+
+## 월드와 커마의 표시 크기 분리 (#45)
+
+위1.25배 아틀라스는 커마/로딩용으로 유지한다. 실제 월드에서는 `world_character.hpp`가 합성된 아틀라스에서 원본 픽셀당 대표 샘플을 선택해 별도 native 아틀라스를 만들고, 이를 주민과 같은 정수2배로 그린다. PNG 재작성·보간 블러는 없다. 프레임은48×48/발기준y46이며 본인/타 플레이어에 공통 적용한다. 오른쪽 반전 프레임의 역샘플 위치는 별도로 계산한다.
+
+추출 폭/1.25배 생성 규칙을 바꾸면 `world_character.hpp`와 원본 픽셀 비교 테스트도 함께 갱신한다. `tests/run-world-character.cmd`는 기본8프레임의 alpha/보이는RGB를 원본 시트와 비교하고90외형의 실루엣·nearest 설정·발 위치를 검사한다. 맵50/16배와 전체화면 viewport는 기존 동작을 유지한다.

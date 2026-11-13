@@ -4,6 +4,7 @@
 #include <SFML/Graphics.hpp>
 #include <SFML/Network.hpp>
 #include <iostream>
+#include "world_character.hpp"
 #include <unordered_map>
 #include <Windows.h>
 #include <chrono>
@@ -182,15 +183,14 @@ public:
 		float rx = (m_x - g_left_x) * TILE_WIDTH + 1;
 		float ry = (m_y - g_top_y) * TILE_WIDTH + 1;
 		        if (id >= 0 && id < MAX_USER) {
-            m_sprite.setScale(2.f,2.f);
-            m_sprite.setOrigin(24.f,44.f);
-            m_sprite.setPosition(rx+25.f,ry+45.f);
+            world_character::place(m_sprite,rx-1.f,ry-1.f);
         } else m_sprite.setPosition(rx,ry);
 		g_window->draw(m_sprite);
 		auto size = m_name.getGlobalBounds();
 		if (m_mess_end_time < chrono::system_clock::now()) {
 			if (id != g_myid) {
-				m_name.setPosition(rx + 32 - size.width / 2, ry - 25);
+                if(id>=0 && id<MAX_USER) centerText(m_name,{rx-56.f,ry-51.f,160.f,20.f});
+                else m_name.setPosition(rx + 32 - size.width / 2, ry - 25);
 				g_window->draw(m_name);
 			}
 		}
@@ -204,7 +204,10 @@ public:
 		m_name.setFont(gameFont());
 		m_name.setString(fromUtf8(str));
         strncpy_s(name,sizeof(name),str,_TRUNCATE);
-		if (id < MAX_USER) m_name.setFillColor(sf::Color(0, 0, 0));
+        m_name.setCharacterSize(id<MAX_USER ? 16 : 30);
+        m_name.setOutlineThickness(id<MAX_USER ? 1.f : 0.f);
+        m_name.setOutlineColor({255,248,228});
+		if (id < MAX_USER) m_name.setFillColor(sf::Color(72,46,37));
 		else m_name.setFillColor(sf::Color(rand() % 256, rand() % 256, rand() % 256));
 		m_name.setStyle(sf::Text::Regular);
 
@@ -334,7 +337,7 @@ void client_initialize()
 	white_tile = OBJECT{ *board, 0, 0, TILE_WIDTH, TILE_WIDTH };
 	black_tile = OBJECT{ *board, 50, 0, TILE_WIDTH, TILE_WIDTH };
 	avatar = OBJECT{ *myHam, userTextureWidth, 0, userTextureWidth, userTextureHeight };
-    avatar.get_sprite().setTexture(hamsterCustomizer().texture(hamsterCustomizer().selected(), hamsterCustomizer().selectedEyes(), hamsterCustomizer().selectedScarf(), hamsterCustomizer().selectedCharacter()));
+    avatar.get_sprite().setTexture(hamsterCustomizer().worldTexture(hamsterCustomizer().selected(), hamsterCustomizer().selectedEyes(), hamsterCustomizer().selectedScarf(), hamsterCustomizer().selectedCharacter()));
 
 	// ÇÁ·ÎÇÊ
 	profileSprite.setPosition(0 + 15, WINDOW_HEIGHT - profileHeight - 15);
@@ -361,7 +364,7 @@ void ProcessPacket(char* ptr)
 		sc_packet_avatar_info* packet = reinterpret_cast<sc_packet_avatar_info*>(ptr);
 		g_myid = packet->id;
 		avatar.id = g_myid;
-        avatar.get_sprite().setTexture(hamsterCustomizer().texture(packet->fur_color, packet->eye_style, packet->scarf_style, packet->character_kind));
+        avatar.get_sprite().setTexture(hamsterCustomizer().worldTexture(packet->fur_color, packet->eye_style, packet->scarf_style, packet->character_kind));
 
 		avatar._hp = packet->hp;
 		hpText.setString(to_string(avatar._hp));
@@ -395,7 +398,7 @@ void ProcessPacket(char* ptr)
 		else if (id < MAX_USER) {
 			players[id] = OBJECT{ *myHam, userTextureWidth, 0, userTextureHeight, userTextureHeight };
 			players[id]._monType = my_packet->monType;
-            players[id].get_sprite().setTexture(hamsterCustomizer().texture(my_packet->fur_color, my_packet->eye_style, my_packet->scarf_style, my_packet->character_kind));
+            players[id].get_sprite().setTexture(hamsterCustomizer().worldTexture(my_packet->fur_color, my_packet->eye_style, my_packet->scarf_style, my_packet->character_kind));
 			players[id].id = id;
 			players[id].move(my_packet->x, my_packet->y);
 			players[id].set_name(my_packet->name);
@@ -889,7 +892,7 @@ void beginLoginConnection(unsigned short port = GAME_PORT) {
     s_socket.setBlocking(false);
     if (status != sf::Socket::Done) { failLogin("Cannot connect to server. Check server and retry."); return; }
     if (!gameResourcesReady) { client_initialize(); gameResourcesReady = true; }
-    avatar.get_sprite().setTexture(hamsterCustomizer().texture(hamsterCustomizer().selected(), hamsterCustomizer().selectedEyes(), hamsterCustomizer().selectedScarf(), hamsterCustomizer().selectedCharacter()));
+    avatar.get_sprite().setTexture(hamsterCustomizer().worldTexture(hamsterCustomizer().selected(), hamsterCustomizer().selectedEyes(), hamsterCustomizer().selectedScarf(), hamsterCustomizer().selectedCharacter()));
     const auto nickname = toUtf8(inputNickname);
     pendingLogin = {};
     pendingLogin.size = sizeof(pendingLogin);

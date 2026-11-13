@@ -1,4 +1,5 @@
 #include "../TP_2023192003_CLIENT/client_sample/town_npc_renderer.hpp"
+#include "../TP_2023192003_CLIENT/client_sample/world_character.hpp"
 #include "../TP_2023192003_CLIENT/client_sample/clubhouse_renderer.hpp"
 #include "../shared/town_behaviour.hpp"
 #include <cassert>
@@ -33,9 +34,10 @@ int main() {
     sf::RenderTexture preview; assert(preview.create(1440,1280)); preview.setView(sf::View({0,0,900,800})); preview.clear();
     const int left=world_layout::cameraX(clubhouse::spawnX),top=world_layout::cameraY(clubhouse::spawnY);
     room.draw(preview,left,top);
-    sf::Texture player; assert(player.loadFromFile("TP_2023192003_CLIENT/client_sample/assets/characters/hamtaro/character.png"));
-    sf::Sprite avatar(player,{48,0,48,48}); avatar.setScale(2,2); avatar.setOrigin(24,44);
-    avatar.setPosition((clubhouse::spawnX-left)*50.f+25,(clubhouse::spawnY-top)*50.f+45); preview.draw(avatar);
+    sf::Image original; assert(original.loadFromFile("TP_2023192003_CLIENT/client_sample/assets/characters/hamtaro/character.png"));
+    sf::Texture player; assert(player.loadFromImage(world_character::nativeAtlas(original,original,0)));
+    sf::Sprite avatar(player,{48,0,48,48});
+    world_character::place(avatar,(clubhouse::spawnX-left)*50.f,(clubhouse::spawnY-top)*50.f); preview.draw(avatar);
     for(const auto& resident : town_npcs::residents)
         residents.draw(preview,resident.type,(resident.x-left)*50.f,(resident.y-top)*50.f,font,resident.name);
     room.drawLabel(preview,font,clubhouse::spawnX); preview.display();
