@@ -1,4 +1,5 @@
-param([ValidateRange(0,300)][int]$ExpectedRows=0,[switch]$AllowApprovedReuse)
+param([ValidateRange(0,300)][int]$ExpectedRows=0,[switch]$AllowApprovedReuse,
+    [ValidateSet(900000000,900001000)][int]$TestAccountStart=900000000)
 # Read-only aggregate for the explicitly approved test range; no row values are read.
 $ErrorActionPreference='Stop'
 $root=[System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
@@ -13,7 +14,11 @@ try {
     $connection.Open()
     $command=$connection.CreateCommand()
     $command.CommandTimeout=5
-    $command.CommandText='SELECT COUNT_BIG(*),COUNT_BIG(DISTINCT USER_ID) FROM SERVER_TABLE1 WHERE USER_ID BETWEEN 900000000 AND 900000299'
+    $command.CommandText='SELECT COUNT_BIG(*),COUNT_BIG(DISTINCT USER_ID) FROM SERVER_TABLE1 WHERE USER_ID BETWEEN ? AND ?'
+    $null=$command.Parameters.Add('first',[System.Data.Odbc.OdbcType]::Int)
+    $command.Parameters[0].Value=$TestAccountStart
+    $null=$command.Parameters.Add('last',[System.Data.Odbc.OdbcType]::Int)
+    $command.Parameters[1].Value=$TestAccountStart+299
     try {
         $reader=$command.ExecuteReader()
         try { if(!$reader.Read()) { throw 'No aggregate row' }; $count=$reader.GetInt64(0); $distinct=$reader.GetInt64(1) } finally { $reader.Dispose() }

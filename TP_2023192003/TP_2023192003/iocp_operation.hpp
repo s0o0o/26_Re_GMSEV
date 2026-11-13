@@ -18,6 +18,7 @@ public:
 	char				_sendBuf[BUF_SIZE];
 
     std::shared_ptr<GAMESESSION> owner; // Original connection survives until completion.
+    std::uint64_t traceQueuedAt=0;
     std::uint64_t generation=0;
     std::uint64_t playerConnectionId=0;
 	COMP_TYPE			_compType;

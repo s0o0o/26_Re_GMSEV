@@ -1,0 +1,14 @@
+{
+  "date": "2026-11-13",
+  "parent_issue": 41,
+  "completed_diagnostics_issue": 43,
+  "accounts_preserved": [[900000000,900000299],[900001000,900001299]],
+  "limits": {"clients":300,"login_deadline_seconds":45,"hold_seconds":15,"receive_drain_seconds":5},
+  "runs": [
+    {"directory":"load-20261113-181848-f70dbe3d","scenario":"existing separate immediate","passed":true,"accepted":300,"active_at_end":300,"moved_clients":300,"elapsed_ms":21907,"send_errors":300,"send_errors_before_shutdown":0,"drain_eof":0,"drain_timeouts":0,"disconnect_save_success_returns":300,"login_received_to_ready_max_ms":34},
+    {"directory":"load-20261113-182152-5fcfb430","scenario":"existing separate drain","passed":true,"accepted":300,"active_at_end":300,"moved_clients":300,"elapsed_ms":23673,"send_errors":0,"send_errors_before_shutdown":0,"drain_eof":300,"drain_timeouts":0,"disconnect_save_success_returns":300,"login_received_to_ready_max_ms":31},
+    {"directory":"load-20261113-181944-d1fe4600","scenario":"existing mixed drain","passed":true,"accepted":300,"active_at_end":300,"moved_clients":300,"elapsed_ms":28502,"send_errors":0,"send_errors_before_shutdown":0,"drain_eof":300,"drain_timeouts":0,"disconnect_save_success_returns":300,"login_received_to_ready_max_ms":554,"db_stage_max_ms":16,"login_completion_queue_max_ms":469},
+    {"directory":"load-20261113-182532-1d2915da","scenario":"newly created mixed drain","passed":false,"accepted":300,"active_at_end":300,"moved_clients":300,"elapsed_ms":57522,"ramp_to_all_login_ms":37481,"send_errors":300,"send_errors_before_shutdown":0,"drain_eof":0,"drain_timeouts":300,"disconnect_save_success_returns":300,"login_received_to_ready_max_ms":1274,"db_stage_max_ms":16,"login_completion_queue_max_ms":1202,"login_commit_world_wait_max_ms":115,"login_presence_world_wait_max_ms":65,"world_wait_threshold_ms":20,"world_wait_max_ms":935}
+  ],
+  "caveats":"All runs use opt-in trace (timing overhead), existing vs new accounts are different workloads. Send errors are timestamped at/after client shutdown; this does not explain every historical 10053. Last run passed gameplay hold but failed the independent cleanup deadline. Full server IOCP drain/durable readback/long soak/actual graphical client are not verified. No accounts deleted. Original 291-login timeout not reproduced; parent issue remains open."
+}

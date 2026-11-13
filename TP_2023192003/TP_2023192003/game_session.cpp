@@ -21,6 +21,7 @@ bool GAMESESSION::registerRecv() {
 	if (error == WSA_IO_PENDING) return true;
     recvPending=false;
     delete operation; // Immediate rejection has no IOCP completion.
+	load_trace::event("recv_submit_error",object._id,connectionId,error);
 	if (!transportFailed.exchange(true))
 		std::cerr << "[NET] Receive submission failed session=" << object._id << " error=" << error << std::endl;
 	return false;
@@ -36,6 +37,7 @@ void GAMESESSION::registerSend(void* packet) {
 	const int result = WSASend(_socket, &sessionData->_wasBuf, 1, 0, 0, &sessionData->_over, 0);
 	const int error = result == SOCKET_ERROR ? WSAGetLastError() : 0;
 	if (result == SOCKET_ERROR && error != WSA_IO_PENDING) {
+		load_trace::event("send_error",object._id,connectionId,error);
 		if (!transportFailed.exchange(true)) {
 			std::cerr << "[NET] Send submission failed session=" << object._id
 				<< " error=" << error << std::endl;

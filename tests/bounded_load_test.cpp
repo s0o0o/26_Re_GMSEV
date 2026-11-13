@@ -5,7 +5,7 @@
 #include <atomic>
 using namespace bounded_load;
 namespace {
-void fixture(int count,int mode) {
+void fixture(int count,int mode,bool mixed=false,bool drain=true) {
     WSADATA data{}; assert(WSAStartup(MAKEWORD(2,2),&data)==0);
     SOCKET listener=socket(AF_INET,SOCK_STREAM,IPPROTO_TCP); assert(listener!=INVALID_SOCKET);
     sockaddr_in address{}; address.sin_family=AF_INET; address.sin_addr.s_addr=htonl(INADDR_LOOPBACK);
@@ -21,7 +21,7 @@ void fixture(int count,int mode) {
             for(auto& p:peers) {
                 if(p.socket==INVALID_SOCKET) continue;
                 char bytes[1024]; int n=recv(p.socket,bytes,sizeof(bytes),0);
-                if(n==0) { close(p,ignored); continue; }
+                if(n==0) { if(mode!=5) close(p,ignored); continue; }
                 if(n<0 && WSAGetLastError()!=WSAEWOULDBLOCK) { close(p,ignored); continue; }
                 if(n>0) p.input.insert(p.input.end(),bytes,bytes+n);
                 while(p.input.size()>=2 && p.input.size()>=p.input[0]) {
@@ -54,6 +54,7 @@ void fixture(int count,int mode) {
         for(auto& p:peers) close(p,ignored);
     });
     Config c{count,900000000,2,mode==3 ? 2 : 15,ntohs(address.sin_port)};
+    c.mixed=mixed; c.drain=drain;
     const int result=run(c); done=true; server.join(); closesocket(listener); WSACleanup();
     assert(result==(mode==0 ? 0 : 1));
 }
@@ -74,6 +75,9 @@ int main() {
     Peer duplicate; queue(duplicate,info); queue(duplicate,ok); duplicate.input=std::move(duplicate.output);
     assert(!parse(duplicate,s) && s.accepted==1);
     fixture(300,0);
+    fixture(30,0,true,true);
+    fixture(3,0,true,false);
+    fixture(1,5); // Peer refuses EOF: cleanup timeout must fail independently of the successful hold.
     for(int mode=1;mode<=4;++mode) fixture(1,mode);
     std::cout<<"Bounded load: 300 concurrent mock peers, fragmented packets, reject/close/timeout/invalid paths passed (no DB).\n";
 }

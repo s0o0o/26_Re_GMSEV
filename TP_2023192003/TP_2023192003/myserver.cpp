@@ -424,6 +424,7 @@ void disconnect(const std::shared_ptr<GAMESESSION>& session) {
     if(!session) return;
     std::lock_guard<std::recursive_mutex> completionGuard(session->completionMutex);
     if (session->disconnectStarted.exchange(true)) return;
+    load_trace::event("disconnect_begin",session->object._id,session->connectionId);
     session->transportFailed = true;
     const bool wasInGame = session->_state == ST_INGAME;
     GameObjectState persisted;
@@ -442,8 +443,10 @@ void disconnect(const std::shared_ptr<GAMESESSION>& session) {
 #endif
         return;
     }
-	if (update_user_position(persistedAccount, persisted.location(), persisted._seedNum,
-		persisted._hp, persisted._level, persisted._exp, persisted._maxHp, persisted._damage)) {
+    const bool disconnectSaved=update_user_position(persistedAccount, persisted.location(), persisted._seedNum,
+        persisted._hp, persisted._level, persisted._exp, persisted._maxHp, persisted._damage);
+    load_trace::event("disconnect_saved",session->object._id,session->connectionId,disconnectSaved ? 1 : 0);
+	if (disconnectSaved) {
 		//cout << "없뎃성공" << endl;
 	}
 	else cout << "업뎃실패. " << endl;
@@ -471,6 +474,7 @@ void processPacket(const std::shared_ptr<GAMESESSION>& session, char* packetFrom
 	{	// 로그인 패킷이 날아온거라면 DB 확인
 		cs_packet_login* p = reinterpret_cast<cs_packet_login*>(packetFromC);
         const auto loginStarted = GetTickCount64();
+        load_trace::event("login_received",sessionId,session->connectionId);
         std::cout << "[LOGIN] Received session=" << sessionId << " bytes=" << static_cast<unsigned>(p->size) << std::endl;
 		if (!validCharacterKind(p->character_kind) || !validFurColor(p->fur_color) || !validEyeStyle(p->eye_style) || !validScarfStyle(p->scarf_style) || p->inputId < 0 || !login_input::nickname(p->name, sizeof(p->name))) {
             sc_packet_login_fail fail{};
@@ -492,6 +496,7 @@ void processPacket(const std::shared_ptr<GAMESESSION>& session, char* packetFrom
             },
             [&]() { return insert_new_user(dbId, p->name); });
         std::cout << "[LOGIN] DB lookup end session=" << sessionId << " result=" << static_cast<int>(loginResult) << " elapsed_ms=" << GetTickCount64()-loginStarted << std::endl;
+        load_trace::event("login_db_done",sessionId,session->connectionId,GetTickCount64()-loginStarted);
         if (loginResult != LoginLookupResult::Found) {
             sc_packet_login_fail fail{};
             fail.size = sizeof(fail);
@@ -502,8 +507,10 @@ void processPacket(const std::shared_ptr<GAMESESSION>& session, char* packetFrom
         }
 
         GameObjectState persisted;
+        const auto commitWait=load_trace::now();
         {
             WorldStateLock commitGuard;
+            load_trace::event("login_commit_wait",sessionId,session->connectionId,load_trace::now()-commitWait);
             if(session->disconnectStarted || session->transportFailed) break;
             const auto restored=database_position::restoreLegacy(dbUserX,dbUserY);
             dbUserX=restored.legacy.x; dbUserY=restored.legacy.y;
@@ -528,6 +535,8 @@ void processPacket(const std::shared_ptr<GAMESESSION>& session, char* packetFrom
             OVER_EXP* ov = new OVER_EXP;
             ov->_compType = OP_LOGIN_OK;
             ov->owner=session;
+            ov->traceQueuedAt=load_trace::now();
+            load_trace::event("login_queued",sessionId,session->connectionId);
             if (!PostQueuedCompletionStatus(g_hiocp,1,sessionId,&ov->_over)) {
                 std::cerr << "[LOGIN] Completion enqueue failed: " << GetLastError() << std::endl;
                 delete ov;
@@ -869,7 +878,10 @@ void workerThread(HANDLE iocp) {
             sessionOperation.reset(overEx); // Frees success, cancellation and ignored completions once.
             completionOwner=overEx->owner;
             if(!completionOwner) continue;
+            const auto sessionWait=load_trace::now();
+            if(overEx->_compType==OP_LOGIN_OK) load_trace::event("login_dequeued",completionOwner->object._id,completionOwner->connectionId,overEx->traceQueuedAt ? sessionWait-overEx->traceQueuedAt : 0);
             completionGuard=std::unique_lock<std::recursive_mutex>(completionOwner->completionMutex);
+            if(overEx->_compType==OP_LOGIN_OK) load_trace::event("login_session_wait",completionOwner->object._id,completionOwner->connectionId,load_trace::now()-sessionWait);
             if(overEx->_compType == OP_RECV) completionOwner->recvPending=false;
             const auto decision=classifySessionCompletion(*overEx,key,ret != FALSE,numBytes);
             if(decision == SessionCompletion::Ignore) {
@@ -879,6 +891,7 @@ void workerThread(HANDLE iocp) {
                 continue;
             }
             if(decision == SessionCompletion::Disconnect) {
+                load_trace::event(ret && overEx->_compType==OP_RECV && numBytes==0 ? "recv_eof" : "completion_disconnect",completionOwner->object._id,completionOwner->connectionId,completionError);
                 if(ret == FALSE) std::cerr << "[NET] Completion failed session=" << completionOwner->object._id
                     << " connection=" << completionOwner->connectionId << " error=" << completionError << std::endl;
                 disconnect(completionOwner); continue;
@@ -980,7 +993,9 @@ void workerThread(HANDLE iocp) {
 		{
 			//cout << " 로그인 성공 !!!! " << endl;
             auto session=completionOwner;
+            const auto presenceWait=load_trace::now();
             WorldStateLock presenceGuard;
+            load_trace::event("login_presence_wait",session->object._id,session->connectionId,load_trace::now()-presenceWait);
 
             if (session->disconnectStarted || session->transportFailed || session->_state != ST_ALLOC) {
                 // Released by sessionOperation.
@@ -994,6 +1009,7 @@ void workerThread(HANDLE iocp) {
                 break;
             }
             session->_state = ST_INGAME;
+            load_trace::event("login_ready",session->object._id,session->connectionId);
             std::cout << "[LOGIN] Success sends accepted session=" << key << std::endl;
             // Released by sessionOperation.
 			session->sendMapInfo(session->object._id, session->object._x, session->object._y); // 맵 정보
@@ -1020,6 +1036,7 @@ void workerThread(HANDLE iocp) {
 				}
 				session->sendAddPlayerPacket(other->object._id);	//이제 나한테.. 상대방정보 알리기
 			}
+            load_trace::event("login_presence_done",session->object._id,session->connectionId);
 #ifdef GMSEV_WORKER_TEST
             workerTestObserve(session,"login");
 #endif
