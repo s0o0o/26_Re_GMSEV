@@ -1,6 +1,6 @@
 # DB 위치 계약 검증과 지역 위치 저장 경계
 
-- 이슈 [#39](https://github.com/s0o0o/26_Re_GMSEV/issues/39), 사전 기준 eb5a4de, 2026-11-13. 상태: 구현 전.
+- 이슈 [#39](https://github.com/s0o0o/26_Re_GMSEV/issues/39), 사전 기준 eb5a4de, 2026-11-13. 상태: 구현·검증 완료(아래 한계 포함).
 - 현재 DB 조회는 get_user_info의 9개 결과 순서에 의존한다. 열 개수/이름/형식과 요청 계정 일치 검사가 부족하다. X,Y→지역 내부 위치 변환은 저장 경계가 아닌 로그인 코드에 흩어져 있다.
 
 ## 범위
@@ -22,3 +22,13 @@
 | AC-05 | 사용자 설명과 미리보기 | 생산 codec/기존 맵 렌더 기반 진단 PNG |
 
 기존 DB mutex/world 잠금 경계를 유지하고 DB I/O는 world 밖에서 수행한다. CP949 소스 보존. 실제 ODBC 로그인 조회를 테스트하지 않았다면 DB 대역/validator 검사를 실제 조회 성공으로 확대하지 않는다.
+
+## 구현과 실행 결과 (2026-11-13)
+
+- AC-01: `tools/inspect-db-contract.cpp/.ps1` 빌드 및 실제 DSN 메타데이터 SELECT 성공. 결과는 [DB 계약 기록](../database-contract.md). 키 조회도 범위에 추가했으며 계정 행/프로시저 실행/데이터 변경은 하지 않았다. 표시되는 키가 0개인 경우 연결 실패와 구분하여 경고한다. 현재 권한에서 계정 유일성을 확인하지 못했다.
+- AC-02: `database_contract.hpp`, `game_database.cpp`의 ODBC reader. 단위 검사에서 열 순서/이름/타입, NULL/길이/잘림, 다른 ID, 중복 행, fetch 실패, SHORT 범위 초과, HP 불일치와 출력 보존 확인. `server_worker_test.cpp`에서 잘못된 계정 결과를 생산 validator로 거부한 뒤 실패 패킷·저장 없음·같은 연결의 정상 재시도를 검사했다. ODBC 자체는 대역이므로 실제 로그인 조회 성공 증거는 아니다.
+- AC-03: `database_position.hpp`, `game_database.hpp`, `myserver.cpp`의 로그인/전투/종료 저장 경계. 두 지역의 모든 통행 가능 칸 왕복, 잘못된 위치 저장 시 DB 대역 호출 없음, 기존 invalid 좌표의 거점 복구 통과. 기존 DB 좌표를 유지하는 호환 codec이며 새 지역 컬럼을 도입한 것은 아니다.
+- AC-04: 서버/클라이언트/스트레스 x64 Debug·Release 빌드 통과. 최종 서버 두 빌드 재확인. 회귀 34개와 별도 서버 worker 검사 통과. `--startup-check` 통과(몬스터 3, 주민 3; DB/네트워크 없음). 기존 C4244/LNK4098/MSB8028 경고는 남아 있다. 실제 DB 로그인·계정 생성·저장·부하는 미실행.
+- AC-05: `tests/run-region-preview.cmd` 실행, 생산 맵 렌더와 codec를 사용하는 `build/tests/database-position-preview.png` 생성·육안 확인. 실제 접속 화면 캡처가 아닌 렌더 테스트 출력이다. [37단계 설명](../refactoring-step-37.md).
+
+초기 검사에서 테스트의 `<initializer_list>` 누락으로 컴파일 실패하여 수정했다. 키 메타데이터 0행을 진단 실패로 취급했던 도구도 선택 결과의 경고로 구분한 뒤 재실행 성공했다. 실제 프로시저 본문/행 데이터는 확인하지 않았으며, NULL 허용 컬럼이 있다는 사실이 잘못된 계정 행의 존재를 뜻하지 않는다. 중복 행 거부는 DB 유일 제약이나 동시 생성 경쟁 해결을 대신하지 않는다.

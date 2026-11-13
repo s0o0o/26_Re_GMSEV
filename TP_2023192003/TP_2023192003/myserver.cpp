@@ -442,7 +442,7 @@ void disconnect(const std::shared_ptr<GAMESESSION>& session) {
 #endif
         return;
     }
-	if (update_user_info(persistedAccount, persisted._x, persisted._y, persisted._seedNum,
+	if (update_user_position(persistedAccount, persisted.location(), persisted._seedNum,
 		persisted._hp, persisted._level, persisted._exp, persisted._maxHp, persisted._damage)) {
 		//cout << "绝但己傍" << endl;
 	}
@@ -505,7 +505,8 @@ void processPacket(const std::shared_ptr<GAMESESSION>& session, char* packetFrom
         {
             WorldStateLock commitGuard;
             if(session->disconnectStarted || session->transportFailed) break;
-            world_layout::safePosition(dbUserX,dbUserY);
+            const auto restored=database_position::restoreLegacy(dbUserX,dbUserY);
+            dbUserX=restored.legacy.x; dbUserY=restored.legacy.y;
             session->_userInputId = dbId;
             session->object._furColor = p->fur_color;
             session->object._characterKind = p->character_kind;
@@ -540,7 +541,7 @@ void processPacket(const std::shared_ptr<GAMESESSION>& session, char* packetFrom
             persisted=session->object;
         }
 
-		if (update_user_info(dbId, persisted._x, persisted._y, persisted._seedNum,
+		if (update_user_position(dbId, persisted.location(), persisted._seedNum,
 			persisted._hp, persisted._level, persisted._exp, persisted._maxHp, persisted._damage)) {
 			//cout << "绝但己傍" << endl;
 		}
@@ -755,7 +756,7 @@ void processPacket(const std::shared_ptr<GAMESESSION>& session, char* packetFrom
         const auto persisted=session->object;
         const int persistedAccount=session->_userInputId;
         stateGuard.unlock(); // DB I/O must not block the world gate.
-		if (update_user_info(persistedAccount, persisted._x, persisted._y, persisted._seedNum,
+		if (update_user_position(persistedAccount, persisted.location(), persisted._seedNum,
 			persisted._hp, persisted._level, persisted._exp, persisted._maxHp, persisted._damage)) {
 			//cout << "绝但己傍" << endl;
 		}
