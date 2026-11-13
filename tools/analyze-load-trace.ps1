@@ -25,6 +25,7 @@ foreach($name in @('login_db_done','login_commit_wait','login_dequeued','login_s
 $summary=[ordered]@{
     run=(Split-Path $RunDirectory -Leaf)
     client=($line.Substring(7) | ConvertFrom-Json)
+    throughput=$( $row=$client | Where-Object { $_.StartsWith('THROUGHPUT ') } | Select-Object -Last 1; if($row){$row.Substring(11) | ConvertFrom-Json}else{$null} )
     login_trace_pairs=$loginTimes.Count
     login_received_to_ready_max_ms=$(if($loginTimes.Count){[long]($loginTimes | Measure-Object -Maximum).Maximum}else{0})
     stage_maxima=$stages

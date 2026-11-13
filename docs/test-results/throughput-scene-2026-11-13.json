@@ -1,0 +1,10 @@
+{
+  "issue":44,"parent_issue":41,"date":"2026-11-13",
+  "scene":{"source":"production client code window, actual TCP and DB, not an OS screenshot of normal executable","observer_account":900001299,"peer_account_range":[900000000,900000019],"peer_objects":20,"distinct_peer_tiles":10,"stage":"GameScreen","peer_hold_seconds":20,"peer_drain_eof":20,"file":"build/tests/live-multiplayer-scene.png"},
+  "runs":[
+    {"directory":"load-20261113-184416-07db0f53","trace":false,"passed":true,"accepted":300,"ramp_ms":4220,"max_attempt_gap_ms":31,"max_loop_ms":25,"moves_queued":6053,"own_move_replies":5654,"unanswered_at_measurement_end":399,"received_bytes":30632778,"received_packets":1718269,"drain_eof":300,"drain_timeouts":0,"elapsed_ms":24783},
+    {"directory":"load-20261113-184530-131e0914","trace":true,"concurrent_regressions":true,"passed":false,"accepted":300,"ramp_ms":4566,"max_attempt_gap_ms":33,"max_loop_ms":25,"moves_queued":5518,"own_move_replies":4341,"unanswered_at_measurement_end":1177,"received_bytes":24665110,"received_packets":1315641,"drain_eof":0,"drain_timeouts":300,"elapsed_ms":25598},
+    {"directory":"load-20261113-184824-30ea65d9","trace":true,"concurrent_regressions":false,"passed":false,"accepted":290,"ramp_ms":4388,"max_attempt_gap_ms":32,"max_loop_ms":25,"moves_queued":13216,"own_move_replies":10328,"unanswered_at_measurement_end":2888,"received_bytes":48555520,"received_packets":2938200,"login_timeouts":1,"drain_eof":0,"drain_timeouts":299,"elapsed_ms":54350,"login_completion_queue_max_ms":7515,"db_stage_max_ms":16,"login_presence_world_wait_max_ms":294,"send_errors_before_shutdown":0}
+  ],
+  "limitations":"Queued moves are not OS send completions or server queue size. One run overlaps regression CPU work and is kept as a confounded observation. Trace overhead, OS scheduling and uncontrolled ambient load prevent causal claims. Parent issue remains open; accounts total600 preserved."
+}
