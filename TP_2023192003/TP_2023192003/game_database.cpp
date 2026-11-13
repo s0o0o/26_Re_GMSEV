@@ -1,6 +1,7 @@
 #include "game_database.hpp"
 #include "../../shared/clubhouse_map.hpp"
 #include "database_write.hpp"
+#include "database_contract.hpp"
 #include <Windows.h>
 #include <sqlext.h>
 #include <iostream>
@@ -83,6 +84,39 @@ public:
     }
 };
 
+class LoginResultReader {
+    SQLHSTMT statement_;
+    SQLINTEGER values_[database_contract::count]{};
+    SQLLEN lengths_[database_contract::count]{};
+    bool bound_=false;
+public:
+    explicit LoginResultReader(SQLHSTMT statement) : statement_(statement) {}
+    bool describe(std::array<database_contract::Column,database_contract::count>& output) {
+        SQLSMALLINT columns=0;
+        if(SQLNumResultCols(statement_,&columns)!=SQL_SUCCESS || columns!=database_contract::count) return false;
+        for(SQLUSMALLINT i=1;i<=database_contract::count;++i) {
+            SQLWCHAR name[128]{}; SQLSMALLINT length=0,type=0,scale=0,nullable=0; SQLULEN size=0;
+            if(SQLDescribeColW(statement_,i,name,128,&length,&type,&size,&scale,&nullable)!=SQL_SUCCESS || length<=0 || length>=128) return false;
+            std::string ascii;
+            for(int n=0;n<length;++n) { if(name[n]>127) return false; ascii.push_back(static_cast<char>(name[n])); }
+            output[i-1]={ascii,type==SQL_INTEGER};
+        }
+        return true;
+    }
+    database_contract::Fetch fetch(database_contract::Values& output,database_contract::Lengths& lengths) {
+        if(!bound_) {
+            for(SQLUSMALLINT i=0;i<database_contract::count;++i)
+                if(SQLBindCol(statement_,i+1,SQL_C_LONG,&values_[i],sizeof(values_[i]),&lengths_[i])!=SQL_SUCCESS) return database_contract::Fetch::Error;
+            bound_=true;
+        }
+        const auto status=SQLFetch(statement_);
+        if(status==SQL_NO_DATA) return database_contract::Fetch::End;
+        if(status!=SQL_SUCCESS) return database_contract::Fetch::Error;
+        for(std::size_t i=0;i<output.size();++i) { output[i]=values_[i]; lengths[i]=lengths_[i]; }
+        return database_contract::Fetch::Row;
+    }
+};
+
 } // namespace
 
 bool initializeDB() {
@@ -132,6 +166,7 @@ LoginLookupResult get_DB_login_info(int& db_id, int& db_user_x, int& db_user_y, 
     Statement statement;
     if (statement.handle == SQL_NULL_HSTMT) return LoginLookupResult::Error;
     SQLRETURN ret;
+    const int requestedId=db_id;
     const auto fail = [&]() {
         HandleDiagnosticRecord(statement.handle, SQL_HANDLE_STMT, ret);
         return LoginLookupResult::Error;
@@ -144,31 +179,16 @@ LoginLookupResult get_DB_login_info(int& db_id, int& db_user_x, int& db_user_y, 
     ret = SQLExecute(statement.handle);
     if (!SQL_SUCCEEDED(ret)) return fail();
 
-    SQLINTEGER values[9] = {};
-    SQLLEN indicators[9] = {};
-    for (SQLUSMALLINT i = 0; i < 9; ++i) {
-        ret = SQLBindCol(statement.handle, i + 1, SQL_C_LONG, &values[i], sizeof(values[i]), &indicators[i]);
-        if (!SQL_SUCCEEDED(ret)) return fail();
+    LoginResultReader reader(statement.handle);
+    database_contract::Values accepted{};
+    const auto result=database_contract::readSingle(reader,requestedId,accepted);
+    if(result==database_contract::Result::NotFound) return LoginLookupResult::NotFound;
+    if(result!=database_contract::Result::Found) {
+        std::cerr << "[DB] Login result contract/row validation failed.\n"; return LoginLookupResult::Error;
     }
-    ret = SQLFetch(statement.handle);
-    if (ret == SQL_NO_DATA) return LoginLookupResult::NotFound;
-    if (!SQL_SUCCEEDED(ret)) return fail();
-    for (auto indicator : indicators) {
-        if (indicator == SQL_NULL_DATA) {
-            std::cerr << "[DB] Login row has a NULL required column.\n";
-            return LoginLookupResult::Error;
-        }
-    }
-    // Publish outputs only after the complete row has been validated.
-    db_id = values[0];
-    db_user_x = values[1];
-    db_user_y = values[2];
-    db_user_hp = values[3];
-    db_user_level = values[4];
-    db_user_exp = values[5];
-    db_user_seed_num = values[6];
-    db_user_maxHp = values[7];
-    db_user_damage = values[8];
+    db_id=accepted[0]; db_user_x=accepted[1]; db_user_y=accepted[2]; db_user_hp=accepted[3];
+    db_user_level=accepted[4]; db_user_exp=accepted[5]; db_user_seed_num=accepted[6];
+    db_user_maxHp=accepted[7]; db_user_damage=accepted[8];
     return LoginLookupResult::Found;
 }
 

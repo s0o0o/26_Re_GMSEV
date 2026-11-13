@@ -1,6 +1,7 @@
 #include "../TP_2023192003_CLIENT/client_sample/clubhouse_renderer.hpp"
 #include "../TP_2023192003/TP_2023192003/region_sector_index.hpp"
 #include "../TP_2023192003/TP_2023192003/server_config.hpp"
+#include "../TP_2023192003/TP_2023192003/database_position.hpp"
 #include <cassert>
 #include <iostream>
 int main() {
@@ -9,7 +10,7 @@ int main() {
     assert(renderer.loadOutdoor("TP_2023192003_CLIENT/client_sample/assets/maps/sunny-peak-sheet.png"));
     sf::Font font; assert(font.loadFromFile("TP_2023192003_CLIENT/client_sample/neodgm.ttf"));
     sf::Texture hamster; assert(hamster.loadFromFile("TP_2023192003_CLIENT/client_sample/assets/characters/hamtaro/character.png"));
-    sf::RenderTexture output; assert(output.create(1800,950)); output.clear({48,32,37});
+    sf::RenderTexture output; assert(output.create(1800,990)); output.clear({48,32,37});
     const world_regions::Position positions[]={{world_regions::Id::Clubhouse,10,10},{world_regions::Id::SunnyPeak,10,10}};
     region_sectors::Index index(SECTOR_SIZE);
     assert(index.put(1,positions[0]) && index.put(2,positions[1]) && index.bucketCount()==2);
@@ -31,9 +32,15 @@ int main() {
         region_sectors::Key key; assert(index.keyFor(positions[i],key));
         sf::Text diagnostic("Local sector ("+std::to_string(key.x)+", "+std::to_string(key.y)+") / matches: "+std::to_string(candidates.size())+" / other region excluded",font,18);
         diagnostic.setFillColor({242,212,155}); centerText(diagnostic,{i*900.f,907,900,28}); output.draw(diagnostic);
+        world_regions::LegacyPosition stored; assert(database_position::encodeLegacy(positions[i],stored));
+        const auto restored=database_position::restoreLegacy(stored.x,stored.y);
+        assert(!restored.recovered && restored.position.region==positions[i].region && restored.position.x==positions[i].x && restored.position.y==positions[i].y);
+        sf::Text roundtrip("DB codec: ("+std::to_string(stored.x)+", "+std::to_string(stored.y)+") -> Region "+std::to_string(static_cast<int>(restored.position.region))+" / Local (10, 10): OK",font,18);
+        roundtrip.setFillColor({255,248,228}); centerText(roundtrip,{i*900.f,941,900,26}); output.draw(roundtrip);
     }
     output.display();
     assert(output.getTexture().copyToImage().saveToFile("build/tests/world-regions-preview.png"));
     assert(output.getTexture().copyToImage().saveToFile("build/tests/region-sectors-preview.png"));
+    assert(output.getTexture().copyToImage().saveToFile("build/tests/database-position-preview.png"));
     std::cout<<"Existing production map renderer preview saved (not a DB-connected game screenshot)\n";
 }

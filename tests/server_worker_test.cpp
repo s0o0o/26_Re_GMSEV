@@ -6,6 +6,7 @@ void workerTestObserve(const std::shared_ptr<GAMESESSION>&,const char*);
 #define main gmsev_production_main_not_executed
 #include "../TP_2023192003/TP_2023192003/myserver.cpp"
 #undef main
+#include "../TP_2023192003/TP_2023192003/database_contract.hpp"
 #include <cassert>
 #include <condition_variable>
 #include <map>
@@ -191,6 +192,12 @@ LoginLookupResult get_DB_login_info(int& id,int& x,int& y,int& hp,int& level,int
     assert(!WorldStateLock::heldByCurrentThread());
     std::lock_guard<std::mutex> lock(fixture::mutex); ++fixture::loads[id];
     if(id == 404) return LoginLookupResult::Error;
+    if(id == 405) {
+        database_contract::Values wrongAccount{{406,11,12,10,1,0,10,10,1}},output{};
+        database_contract::Lengths lengths; lengths.fill(4);
+        if(!database_contract::acceptRow(id,wrongAccount,lengths,output)) return LoginLookupResult::Error;
+        assert(false && "Wrong-account row must be rejected");
+    }
     x=fixture::spawnX; y=fixture::spawnY; hp=maxHp=10; level=1; exp=0; seed=10; damage=1;
     return LoginLookupResult::Found;
 }
@@ -799,8 +806,10 @@ int main() {
     }
     {
         auto subject=connectPeer(address,last); last=subject.accepted.connection;
-        auto fail=loginPacket(404); sendBytes(subject,reinterpret_cast<char*>(&fail),sizeof(fail));
-        assert(static_cast<std::uint8_t>(receive(subject)[1]) == S2C_P_LOGIN_FAIL && saveCount(404) == 0);
+        for(int account : {404,405}) {
+            auto fail=loginPacket(account); sendBytes(subject,reinterpret_cast<char*>(&fail),sizeof(fail));
+            assert(static_cast<std::uint8_t>(receive(subject)[1]) == S2C_P_LOGIN_FAIL && saveCount(account) == 0);
+        }
         login(subject,300,true); expectEnter(watcher,subject.accepted.id);
         closePeer(subject); expectLeave(watcher,subject.accepted.id); assert(saveCount(300) == 2);
     }
