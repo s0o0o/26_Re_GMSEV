@@ -54,6 +54,7 @@ public:
 	void sendStatChange(int);
 
 	// sector
+    // Legacy old-coordinate arguments remain for callers; the index owns canonical membership.
 	void updateSector(short, short);
 	std::unordered_set<int> getNearBySessions();
 };
