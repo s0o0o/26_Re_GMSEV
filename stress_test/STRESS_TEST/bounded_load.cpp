@@ -16,7 +16,7 @@
 #pragma comment(lib,"ws2_32.lib")
 namespace bounded_load {
 using Clock=std::chrono::steady_clock;
-struct Config { int count=0,start=0,hold=0,deadline=0,port=0; bool mixed=false,drain=true; };
+struct Config { int count=0,start=0,hold=0,deadline=0,port=0; bool mixed=false,drain=true,scene=false; };
 bool number(const char* s,int& out) {
     if(!s || !*s) return false;
     int n=0; for(;*s;++s) { if(*s<'0'||*s>'9'||n>(INT_MAX-(*s-'0'))/10) return false; n=n*10+(*s-'0'); }
@@ -35,12 +35,13 @@ bool config(int argc,char** argv,Config& c) {
 }
 struct Peer {
     SOCKET socket=INVALID_SOCKET; bool connecting=true,info=false,ok=false,logged=false;
-    int id=-1,moves=0,sentMoves=0; std::vector<unsigned char> input,output;
+    int id=-1,moves=0,sentMoves=0; unsigned lastMoveReply=0; std::vector<unsigned char> input,output;
     Clock::time_point opened{},nextMove{};
 };
 struct Stats {
     int attempts=0,accepted=0,rejected=0,errors=0,protocol=0,timeouts=0,closed=0,active=0,peak=0,moved=0;
     std::unordered_set<int> identities;
+    std::uint64_t receivedBytes=0,packets=0,maxLoopMs=0,maxAttemptGapMs=0,rampMs=0;
 };
 void close(Peer& p,Stats& s) {
     if(p.socket==INVALID_SOCKET) return;
@@ -58,6 +59,7 @@ bool parse(Peer& p,Stats& s) {
         if(size<PACKET_HEADER_SIZE) return false;
         if(p.input.size()-offset<size) break;
         if(!is_valid_server_packet(bytes,size)) return false;
+        ++s.packets;
         switch(bytes[1]) {
         case S2C_P_LOGIN_FAIL: ++s.rejected; close(p,s); return true;
         case S2C_P_AVATAR_INFO: {
@@ -73,8 +75,8 @@ bool parse(Peer& p,Stats& s) {
         case S2C_P_MOVE: {
             sc_packet_move move{}; std::memcpy(&move,bytes,sizeof(move));
             // Tokens distinguish our own movement response from broadcasts/old packets.
-            if(p.logged && move.id==p.id && move.move_time>0 && move.move_time<=static_cast<unsigned>(p.sentMoves)) {
-                if(p.moves==0) ++s.moved; ++p.moves;
+            if(p.logged && move.id==p.id && move.move_time>p.lastMoveReply && move.move_time<=static_cast<unsigned>(p.sentMoves)) {
+                if(p.moves==0) ++s.moved; ++p.moves; p.lastMoveReply=move.move_time;
             }
             break;
         }
@@ -114,12 +116,16 @@ int run(const Config& c) {
     WSADATA data{}; if(WSAStartup(MAKEWORD(2,2),&data)) return 2;
     Stats s; std::vector<Peer> peers; peers.reserve(c.count);
     const auto began=Clock::now(); auto nextConnect=began,holdStart=Clock::time_point{};
+    auto previousAttempt=began;
     bool held=false; int activeAtEnd=0;
     std::cout<<"[LOAD] localhost:"<<c.port<<" count="<<c.count<<" account_start="<<c.start<<" hold_seconds="<<c.hold<<" login_deadline="<<c.deadline<<std::endl;
     std::cout<<"PHASE ms="<<load_trace::now()<<" event=ramp_begin mode="<<(c.mixed?"mixed":"separate")<<std::endl;
     while(Clock::now()-began<std::chrono::seconds(c.deadline+c.hold+2)) {
         const auto now=Clock::now();
         if(s.attempts<c.count && now>=nextConnect) {
+            const auto gap=std::chrono::duration_cast<std::chrono::milliseconds>(now-previousAttempt).count();
+            if(s.attempts) s.maxAttemptGapMs=std::max(s.maxAttemptGapMs,static_cast<std::uint64_t>(gap));
+            previousAttempt=now;
             Peer p; p.opened=now; p.socket=::socket(AF_INET,SOCK_STREAM,IPPROTO_TCP);
             const int account=c.start+s.attempts++; nextConnect=now+std::chrono::milliseconds(10);
             u_long nonblock=1;
@@ -129,9 +135,12 @@ int run(const Config& c) {
                 const int result=connect(p.socket,reinterpret_cast<sockaddr*>(&target),sizeof(target));
                 const int error=result==0 ? 0 : WSAGetLastError();
                 if(result!=0 && error!=WSAEWOULDBLOCK && error!=WSAEINPROGRESS) { ++s.errors; close(p,s); }
-                else { p.connecting=result!=0; cs_packet_login login{}; login.size=sizeof(login); login.type=C2S_P_LOGIN; login.inputId=account; strcpy_s(login.name,"LoadTest"); queue(p,login); }
+                else { p.connecting=result!=0; cs_packet_login login{}; login.size=sizeof(login); login.type=C2S_P_LOGIN; login.inputId=account; strcpy_s(login.name,"LoadTest");
+                    if(c.scene) { sprintf_s(login.name,"Guest%02d",s.attempts); login.character_kind=static_cast<std::uint8_t>(s.attempts%2); login.fur_color=static_cast<std::uint8_t>(s.attempts%HAMSTER_FUR_COLORS); login.scarf_style=static_cast<std::uint8_t>(s.attempts%HAMSTER_SCARF_STYLES); }
+                    queue(p,login); }
             }
             peers.push_back(std::move(p));
+            if(s.attempts==c.count) s.rampMs=static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now()-began).count());
         }
         std::vector<WSAPOLLFD> descriptors; std::vector<std::size_t> indices;
         for(std::size_t i=0;i<peers.size();++i) {
@@ -141,6 +150,10 @@ int run(const Config& c) {
             if(p.logged && (c.mixed || holdStart!=Clock::time_point{}) && now>=p.nextMove) {
                 cs_packet_move move{}; move.size=sizeof(move); move.type=C2S_P_MOVE;
                 move.direction=static_cast<std::uint8_t>((p.sentMoves%2) ? 2 : 3); move.move_time=++p.sentMoves;
+                if(c.scene) {
+                    const unsigned primary=static_cast<unsigned>(i%4),steps=static_cast<unsigned>(i%3+1);
+                    move.direction=static_cast<std::uint8_t>(p.sentMoves<=static_cast<int>(steps) ? primary : (((p.sentMoves-steps)%2) ? (primary^1) : primary));
+                }
                 queue(p,move); p.nextMove=now+std::chrono::seconds(1);
             }
             descriptors.push_back({p.socket,static_cast<SHORT>(POLLRDNORM | ((p.connecting || !p.output.empty()) ? POLLWRNORM : 0)),0}); indices.push_back(i);
@@ -163,11 +176,12 @@ int run(const Config& c) {
                 }
                 if(events&(POLLRDNORM|POLLHUP)) {
                     char bytes[8192]; const int n=recv(p.socket,bytes,sizeof(bytes),0);
-                    if(n>0) { p.input.insert(p.input.end(),bytes,bytes+n); if(!parse(p,s)) { ++s.protocol; close(p,s); } }
+                    if(n>0) { s.receivedBytes+=n; p.input.insert(p.input.end(),bytes,bytes+n); if(!parse(p,s)) { ++s.protocol; close(p,s); } }
                     else if(n==0 || WSAGetLastError()!=WSAEWOULDBLOCK) { ++s.errors; close(p,s); }
                 }
             }
         } else Sleep(1);
+        s.maxLoopMs=std::max(s.maxLoopMs,static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now()-now).count()));
         if(s.active==c.count && holdStart==Clock::time_point{}) {
             holdStart=Clock::now(); std::cout<<"[LOAD] All clients logged in; hold begins"<<std::endl;
             std::cout<<"PHASE ms="<<load_trace::now()<<" event=hold_begin"<<std::endl;
@@ -177,6 +191,9 @@ int run(const Config& c) {
         if(s.errors || s.rejected || s.protocol || s.timeouts) break;
     }
     activeAtEnd=s.active;
+    std::uint64_t movesQueued=0,moveReplies=0;
+    for(const auto& p:peers) { movesQueued+=p.sentMoves; moveReplies+=p.moves; }
+    std::cout<<"THROUGHPUT {\"ramp_ms\":"<<s.rampMs<<",\"max_attempt_gap_ms\":"<<s.maxAttemptGapMs<<",\"max_loop_ms\":"<<s.maxLoopMs<<",\"moves_queued\":"<<movesQueued<<",\"own_move_replies\":"<<moveReplies<<",\"unanswered_at_measurement_end\":"<<(movesQueued-moveReplies)<<",\"received_bytes\":"<<s.receivedBytes<<",\"received_packets\":"<<s.packets<<"}"<<std::endl;
     bool passed=held && s.accepted==c.count && s.active==c.count && s.moved==c.count && !s.errors && !s.rejected && !s.protocol && !s.timeouts;
     std::cout<<"PHASE ms="<<load_trace::now()<<" event=measurement_end passed="<<passed<<std::endl;
     const auto cleanup=finish(peers,s,c.drain);

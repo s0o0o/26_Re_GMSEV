@@ -72,6 +72,10 @@ int main() {
     queue(p,info); queue(p,ok); p.input=std::move(p.output); assert(!parse(p,s));
     // Two sockets must not masquerade as two users with the same assigned session ID.
     s={}; p={}; ok.id=1; queue(p,info); queue(p,ok); p.input=std::move(p.output); assert(parse(p,s));
+    assert(s.packets==2);
+    p.sentMoves=1; sc_packet_move echo{}; echo.size=sizeof(echo); echo.type=S2C_P_MOVE; echo.id=1; echo.move_time=1;
+    queue(p,echo); queue(p,echo); p.input=std::move(p.output); assert(parse(p,s));
+    assert(p.moves==1 && s.moved==1 && s.packets==4); // Duplicate token is not an extra acknowledgement.
     Peer duplicate; queue(duplicate,info); queue(duplicate,ok); duplicate.input=std::move(duplicate.output);
     assert(!parse(duplicate,s) && s.accepted==1);
     fixture(300,0);
