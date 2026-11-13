@@ -29,9 +29,8 @@ int main() {
     assert(frame.create(900,800));
     frame.clear();
     clubhouseRenderer().draw(frame,3,2);
-    sf::Sprite resident(hamsterCustomizer().texture(0,0,0,0),{48,0,48,48});
-    resident.setOrigin(24,44); resident.setScale(2,2);
-    resident.setPosition((clubhouse::spawnX-3)*50.f+25,(clubhouse::spawnY-2)*50.f+45);
+    sf::Sprite resident(hamsterCustomizer().worldTexture(0,0,0,0),{48,0,48,48});
+    world_character::place(resident,(clubhouse::spawnX-3)*50.f,(clubhouse::spawnY-2)*50.f);
     frame.draw(resident);
     frame.display();
     assert(frame.getTexture().copyToImage().saveToFile((root / "build/tests/clubhouse-map.png").string()));
@@ -45,7 +44,7 @@ int main() {
         if(px>=0 && px<18 && py>=0 && py<16) pickupTiles[py][px]=4;
     }
     clubhouseRenderer().drawPickups(frame,&pickupTiles[0][0],18,16);
-    resident.setPosition((outsideX-outsideLeft)*50.f+25,(outsideY-outsideTop)*50.f+45);
+    world_character::place(resident,(outsideX-outsideLeft)*50.f,(outsideY-outsideTop)*50.f);
     frame.draw(resident);
     clubhouseRenderer().drawLabel(frame,gameFont(),outsideX);
     frame.display();

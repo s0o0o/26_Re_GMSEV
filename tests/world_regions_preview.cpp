@@ -1,4 +1,5 @@
 #include "../TP_2023192003_CLIENT/client_sample/clubhouse_renderer.hpp"
+#include "../TP_2023192003_CLIENT/client_sample/world_character.hpp"
 #include "../TP_2023192003/TP_2023192003/region_sector_index.hpp"
 #include "../TP_2023192003/TP_2023192003/server_config.hpp"
 #include "../TP_2023192003/TP_2023192003/database_position.hpp"
@@ -9,7 +10,8 @@ int main() {
     assert(renderer.load("TP_2023192003_CLIENT/client_sample/assets/maps/clubhouse-sheet.png"));
     assert(renderer.loadOutdoor("TP_2023192003_CLIENT/client_sample/assets/maps/sunny-peak-sheet.png"));
     sf::Font font; assert(font.loadFromFile("TP_2023192003_CLIENT/client_sample/neodgm.ttf"));
-    sf::Texture hamster; assert(hamster.loadFromFile("TP_2023192003_CLIENT/client_sample/assets/characters/hamtaro/character.png"));
+    sf::Image original; assert(original.loadFromFile("TP_2023192003_CLIENT/client_sample/assets/characters/hamtaro/character.png"));
+    sf::Texture hamster; assert(hamster.loadFromImage(world_character::nativeAtlas(original,original,0)));
     sf::RenderTexture output; assert(output.create(1800,990)); output.clear({48,32,37});
     const world_regions::Position positions[]={{world_regions::Id::Clubhouse,10,10},{world_regions::Id::SunnyPeak,10,10}};
     region_sectors::Index index(SECTOR_SIZE);
@@ -20,7 +22,7 @@ int main() {
         sf::RenderTexture scene; assert(scene.create(900,800)); scene.clear();
         renderer.draw(scene,left,top);
         sf::Sprite avatar(hamster,{48,0,48,48});
-        avatar.setPosition((encoded.x-left)*50.f,(encoded.y-top)*50.f); scene.draw(avatar);
+        world_character::place(avatar,(encoded.x-left)*50.f,(encoded.y-top)*50.f); scene.draw(avatar);
         renderer.drawLabel(scene,font,encoded.x); scene.display();
         sf::Sprite frame(scene.getTexture()); frame.setPosition(i*900.f,65); output.draw(frame);
         sf::Text title(std::string("Region ")+std::to_string(static_cast<int>(positions[i].region))+" : "+world_regions::describe(positions[i].region).name,font,26);

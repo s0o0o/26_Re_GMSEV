@@ -1,6 +1,7 @@
 #include "hamster_customizer.hpp"
 #include "background_blur.hpp"
 #include "ui_alignment.hpp"
+#include "world_character.hpp"
 
 namespace {
 const std::array<sf::Color, HAMSTER_FUR_COLORS> palette = {{
@@ -69,6 +70,11 @@ bool HamsterCustomizer::load(const std::string& root) {
             auto& texture = textures_[characterAppearanceIndex(kind,i,e,s)];
             if (!texture.loadFromImage(dressed)) return false;
             texture.setSmooth(false);
+            auto& world=worldTextures_[characterAppearanceIndex(kind,i,e,s)];
+            try {
+                if(!world.loadFromImage(world_character::nativeAtlas(dressed,original,kind))) return false;
+            } catch(const std::invalid_argument&) { return false; }
+            world.setSmooth(false);
         }
       }
     }
@@ -80,6 +86,11 @@ bool HamsterCustomizer::load(const std::string& root) {
 const sf::Texture& HamsterCustomizer::texture(std::uint8_t color, std::uint8_t eyes, std::uint8_t scarf, std::uint8_t kind) const {
     return textures_[characterAppearanceIndex(validCharacterKind(kind) ? kind : 0,validFurColor(color) ? color : 0,
         validEyeStyle(eyes) ? eyes : 0, validScarfStyle(scarf) ? scarf : 0)];
+}
+
+const sf::Texture& HamsterCustomizer::worldTexture(std::uint8_t color,std::uint8_t eyes,std::uint8_t scarf,std::uint8_t kind) const {
+    return worldTextures_[characterAppearanceIndex(validCharacterKind(kind)?kind:0,validFurColor(color)?color:0,
+        validEyeStyle(eyes)?eyes:0,validScarfStyle(scarf)?scarf:0)];
 }
 
 bool HamsterCustomizer::setBackdrop(const sf::Texture& texture) {
