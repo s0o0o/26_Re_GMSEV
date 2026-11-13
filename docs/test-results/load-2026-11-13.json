@@ -1,0 +1,49 @@
+{
+  "date": "2026-11-13",
+  "issue": 40,
+  "environment": "local Release production server, actual project DSN, three field monsters, clubhouse clients",
+  "account_range": [900000000, 900000299],
+  "accounts_remaining": 300,
+  "runs": [
+    {
+      "directory": "load-20261113-163057-18286ac6",
+      "scenario": "login ramp overlaps movement",
+      "passed": false,
+      "attempts": 300,
+      "accepted": 291,
+      "peak": 291,
+      "active_at_end": 291,
+      "moved_clients": 290,
+      "rejected": 0,
+      "transport_errors": 0,
+      "protocol_errors": 0,
+      "timeouts": 1,
+      "hold_completed": false,
+      "closed": 300,
+      "elapsed_ms": 49079,
+      "accounts_after_run": 292
+    },
+    {
+      "directory": "load-20261113-163343-11073c81",
+      "scenario": "all clients login, then move and hold for 15 seconds",
+      "passed": true,
+      "attempts": 300,
+      "accepted": 300,
+      "peak": 300,
+      "active_at_end": 300,
+      "moved_clients": 300,
+      "rejected": 0,
+      "transport_errors": 0,
+      "protocol_errors": 0,
+      "timeouts": 0,
+      "hold_completed": true,
+      "closed": 300,
+      "elapsed_ms": 19733,
+      "server_send_failure_log_lines": 300,
+      "server_send_failure_error": 10053,
+      "graceful_server_drain_verified": false
+    }
+  ],
+  "followup_issue": 41,
+  "limitations": "Client criteria only, not a server-error-free assertion. No long soak, field combat benchmark, complete save/drain assertion or root cause confirmation. Accounts were not deleted."
+}

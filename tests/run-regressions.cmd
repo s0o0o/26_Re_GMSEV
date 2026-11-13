@@ -104,7 +104,9 @@ call tests\run-region-sectors.cmd
 if not "%errorlevel%"=="0" goto failed
 call tests\run-database-contract.cmd
 if not "%errorlevel%"=="0" goto failed
-echo All 34 regression programs passed. Run tests\run-display.cmd and tests\run-town-preview.cmd separately for GPU/window checks.
+call tests\run-bounded-load.cmd
+if not "%errorlevel%"=="0" goto failed
+echo All 35 regression programs passed. Run tests\run-display.cmd and tests\run-town-preview.cmd separately for GPU/window checks.
 popd
 exit /b 0
 :failed
