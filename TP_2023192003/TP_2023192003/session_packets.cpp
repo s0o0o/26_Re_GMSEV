@@ -156,16 +156,18 @@ void GAMESESSION::sendMonsterNearPacket(nearMonsterInfo* infos, int cnt) {
 }
 
 void GAMESESSION::sendMapInfo(int player_id, int x, int y) {
-    const auto position=world_regions::decode(x,y);
+    sendMapInfo(player_id,world_regions::decode(x,y)); // Old fixture compatibility only.
+}
+void GAMESESSION::sendMapInfo(int player_id,world_regions::Position position) {
     if(!world_regions::valid(position)) return;
-	int left_x = world_layout::cameraX(x);
-	int top_y = world_layout::cameraY(y);
+	int left_x = world_layout::cameraX(position);
+	int top_y = world_layout::cameraY(position);
 
 	const int MAP_ROW_CHUNK = 4;
 	for (int chunk_y = 0; chunk_y < SCREEN_HEIGHT; chunk_y += MAP_ROW_CHUNK) {
 		sc_packet_mapInfo p{};
 		p.type = S2C_P_MAPINFO;
-		p.left_x = static_cast<std::int16_t>(left_x-world_regions::describe(position.region).originX);
+		p.left_x = static_cast<std::int16_t>(left_x);
 		p.top_y = static_cast<std::int16_t>(top_y + chunk_y);
         p.region=static_cast<std::uint8_t>(position.region);
 
@@ -174,10 +176,7 @@ void GAMESESSION::sendMapInfo(int player_id, int x, int y) {
 				int real_x = left_x + i;
 				int real_y = top_y + chunk_y + j;
 
-				if (real_x >= 0 && real_x < MAP_WIDTH && real_y >= 0 && real_y < MAP_HEIGHT)
-					p.tiles[j][i] = static_cast<std::uint8_t>(mapTileAt(real_x,real_y));
-				else
-					p.tiles[j][i] = 8;
+                p.tiles[j][i]=static_cast<std::uint8_t>(mapTileAt({position.region,real_x,real_y}));
 			}
 		}
 

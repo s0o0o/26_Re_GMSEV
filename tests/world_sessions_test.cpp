@@ -1,3 +1,4 @@
+#include "legacy_position_fixture.hpp"
 #include "../TP_2023192003/TP_2023192003/world_events.hpp"
 #include "../TP_2023192003/TP_2023192003/monster_lifecycle.hpp"
 #include "../TP_2023192003/TP_2023192003/world_map.hpp"
@@ -25,7 +26,7 @@ std::shared_ptr<GAMESESSION> add(int id) {
 }
 int main() {
     auto a=add(1),b=add(2),closed=add(3),login=add(4),npc=add(MAX_USER),other=add(MAX_USER+1);
-    for(auto s : {a,b,npc}) { s->object._x=36; s->object._y=6; }
+    for(auto s : {a,b,npc}) { setTestLegacyX(s->object,36); setTestLegacyY(s->object,6); }
     closed->disconnectStarted=true; login->_state=ST_ALLOC;
     const std::unordered_set<int> audience{1,2,3,4,MAX_USER,999};
     npc->object._hp=npc->object._maxHp=5; a->object._seedNum=3;

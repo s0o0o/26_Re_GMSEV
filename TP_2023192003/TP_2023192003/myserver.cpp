@@ -73,9 +73,9 @@ bool isCanSee(int from, int to)
     if(!fromUser || !toUser) return false;
     if(!world_regions::same(fromUser->object.location(),toUser->object.location())) return false;
 
-	if (abs(fromUser->object._x - toUser->object._x) > VIEW_RANGE)
+	if (abs(fromUser->object.position.x - toUser->object.position.x) > VIEW_RANGE)
 		return false;
-	return abs(fromUser->object._y - toUser->object._y) <= VIEW_RANGE;
+	return abs(fromUser->object.position.y - toUser->object.position.y) <= VIEW_RANGE;
 }
 
 bool isMonSee(int from, int to)
@@ -89,9 +89,9 @@ bool isMonSee(int from, int to)
     if(!fromUser || !toUser) return false;
     if(!world_regions::same(fromUser->object.location(),toUser->object.location())) return false;
 
-	if (abs(fromUser->object._x - toUser->object._x) > 5)
+	if (abs(fromUser->object.position.x - toUser->object.position.x) > 5)
 		return false;
-	return abs(fromUser->object._y - toUser->object._y) <= 5;
+	return abs(fromUser->object.position.y - toUser->object.position.y) <= 5;
 }
 
 
@@ -153,7 +153,7 @@ int API_get_x(lua_State* L) {
     const int id=static_cast<int>(raw);
     WorldStateLock stateLock; // Validate Lua arguments before RAII locks.
     const auto it=clients.get(id);
-    if(it) lua_pushinteger(L,it->object._x); else lua_pushnil(L);
+    if(it) lua_pushinteger(L,it->object.position.x); else lua_pushnil(L);
     return 1;
 }
 int API_get_y(lua_State* L) {
@@ -162,7 +162,7 @@ int API_get_y(lua_State* L) {
     const int id=static_cast<int>(raw);
     WorldStateLock stateLock; // Validate Lua arguments before RAII locks.
     const auto it=clients.get(id);
-    if(it) lua_pushinteger(L,it->object._y); else lua_pushnil(L);
+    if(it) lua_pushinteger(L,it->object.position.y); else lua_pushnil(L);
     return 1;
 }
 int API_SendMessage(lua_State* L) {
@@ -271,19 +271,19 @@ void doMonsterRandomMoving(int monId) {
 			old_vl.insert(id);
 		}
 	}
-	short x = monster->object._x;
-	short y = monster->object._y;
+	short x = monster->object.position.x;
+	short y = monster->object.position.y;
 	short old_x = x;
 	short old_y = y;
 	switch (npcDirection(*monster)) {
-	case 0: if (x < (MAP_WIDTH - 1)) x++; break;
+	case 0: if (x < (world_regions::describe(monster->object.position.region).width - 1)) x++; break;
 	case 1: if (x > 0) x--; break;
-	case 2: if (y < (MAP_HEIGHT - 1)) y++; break;
+	case 2: if (y < (world_regions::describe(monster->object.position.region).height - 1)) y++; break;
 	case 3:if (y > 0) y--; break;
 	}
-    if (!field_content::monsterCanStand(x,y)) { x=old_x; y=old_y; }
-	monster->object._x = x;
-	monster->object._y = y;
+    if (!field_content::monsterCanStand({monster->object.position.region,x,y})) { x=old_x; y=old_y; }
+	monster->object.position.x = x;
+	monster->object.position.y = y;
 
 	monster->updateSector(old_x, old_y);
 
@@ -342,7 +342,7 @@ void initializeTownResidents() {
     static_assert(town_npcs::baseId >= MAX_USER+NUM_MONSTER,"Resident IDs overlap monsters");
     for(const auto& resident : town_npcs::residents) {
         auto npc=std::make_shared<GAMESESSION>();
-        npc->object._id=resident.id; npc->object._x=static_cast<short>(resident.x); npc->object._y=static_cast<short>(resident.y);
+        npc->object._id=resident.id; npc->object.position.x=static_cast<short>(resident.x); npc->object.position.y=static_cast<short>(resident.y);
         npc->monster.residentBehaviour.random=static_cast<std::uint32_t>(resident.id); npc->object._hp=npc->object._maxHp=1; npc->monster._monType=resident.type; npc->_state=ST_INGAME;
         sprintf_s(npc->object._name,"%s",resident.name);
         clients.set(resident.id,npc);
@@ -359,8 +359,7 @@ bool monsterInit(int count)
     for (int i = MAX_USER; i < MAX_USER + count; ++i) {
 		auto newMonster = std::make_shared<GAMESESSION>();
 
-		newMonster->object._x = static_cast<short>(field_content::monsters[i-MAX_USER].x);
-		newMonster->object._y = static_cast<short>(field_content::monsters[i-MAX_USER].y);
+		newMonster->object.position=field_content::position(field_content::monsters[i-MAX_USER]);
 		newMonster->object._hp = newMonster->object._maxHp = 5;
 
 		newMonster->monster._monType = 1;	// 1이면 일반, 2면 훈스터
@@ -519,8 +518,7 @@ void processPacket(const std::shared_ptr<GAMESESSION>& session, char* packetFrom
             session->object._characterKind = p->character_kind;
             session->object._eyeStyle = p->eye_style;
             session->object._scarfStyle = p->scarf_style;
-            session->object._x = dbUserX;
-            session->object._y = dbUserY;
+            session->object.position=restored.position;
             session->object._hp = dbUserHp;
             session->object._level = dbUserLevel;
             session->object._exp = dbUserExp;
@@ -530,7 +528,7 @@ void processPacket(const std::shared_ptr<GAMESESSION>& session, char* packetFrom
             session->monster._monType = 0;
 
             strncpy_s(session->object._name, p->name, MAX_ID_LENGTH - 1);
-            //session->sendMapInfo(session->object._id, session->object._x, session->object._y);
+            //session->sendMapInfo(session->object._id,session->object.location());
 
             OVER_EXP* ov = new OVER_EXP;
             ov->_compType = OP_LOGIN_OK;
@@ -561,45 +559,30 @@ void processPacket(const std::shared_ptr<GAMESESSION>& session, char* packetFrom
 	{
 		cs_packet_move* p = reinterpret_cast<cs_packet_move*>(packetFromC);
 
-		short oldX = session->object._x;
-		short oldY = session->object._y;
-		short x = session->object._x;
-		short y = session->object._y;
-
-		switch (p->direction) {	// 이건 이동방향 계산..
-		case 0: if (y > 0) y--; break;
-		case 1: if (y < MAP_HEIGHT - 1) y++; break;
-		case 2: if (x > 0) x--; break;
-		case 3: if (x < MAP_WIDTH - 1) x++; break;
-		}
-
-		if (playerCanMove(x, y)) {
-            if (collectSeed(x,y)) {
-                ++session->object._seedNum;
-                session->sendStatChange(4);
-                for (int observerId : session->getNearBySessions()) {
-                    if (!isPlayer(observerId)) continue;
-                    auto observer = clients.get(observerId);
-                    if (observer && observer->_state == ST_INGAME)
-                        observer->sendMapInfo(observerId,observer->object._x,observer->object._y);
+		        const auto before=session->object.location();
+        auto next=before;
+        switch(p->direction) {
+        case 0: --next.y; break;
+        case 1: ++next.y; break;
+        case 2: --next.x; break;
+        case 3: ++next.x; break;
+        }
+        if(playerCanMove(next)) {
+            if(collectSeed(next)) {
+                ++session->object._seedNum; session->sendStatChange(4);
+                for(int observerId : session->getNearBySessions()) {
+                    if(!isPlayer(observerId)) continue;
+                    auto observer=clients.get(observerId);
+                    if(observer && observer->_state==ST_INGAME) observer->sendMapInfo(observerId,observer->object.location());
                 }
             }
-            int destinationX=x,destinationY=y;
-            if (world_layout::portal(destinationX,destinationY)) {
+            if(world_layout::portal(next)) {
                 cancelRegionChases(sessionId);
-                x=static_cast<short>(destinationX); y=static_cast<short>(destinationY);
-                std::cout << "[MAP] Portal session=" << sessionId << " to=" << x << ',' << y << std::endl;
+                std::cout<<"[MAP] Portal session="<<sessionId<<" region="<<static_cast<int>(next.region)<<" local="<<next.x<<','<<next.y<<std::endl;
             }
-            session->object._x = x;
-            session->object._y = y;
-		}
-		else {
-			//cout << " 이동 불가.. " << endl;
-			session->object._x = oldX;
-			session->object._y = oldY;
-		}
-
-		session->updateSector(oldX, oldY);
+            session->object.position=next;
+        }
+        session->updateSector(static_cast<short>(before.x),static_cast<short>(before.y));
 		unordered_set<int> _near_vlist = session->getNearBySessions();
 		unordered_set<int> nearMonsterList = _near_vlist;
 
@@ -608,7 +591,7 @@ void processPacket(const std::shared_ptr<GAMESESSION>& session, char* packetFrom
 		session->_vlL.unlock();
 
 		session->sendMovePacket(sessionId, p->move_time);	// 나한테 나 움직였다고 알리기
-		session->sendMapInfo(session->object._id, session->object._x, session->object._y);
+		session->sendMapInfo(session->object._id,session->object.location());
 
 		for (auto& pl : _near_vlist) {	// nearlist돌면서... (이거 상대방기준임****)
 			auto it = clients.get(pl);
@@ -647,8 +630,8 @@ void processPacket(const std::shared_ptr<GAMESESSION>& session, char* packetFrom
 		}
 
 		vector<shared_ptr<GAMESESSION>> targets;
-		int myX = session->object._x;
-		int myY = session->object._y;
+		int myX = session->object.position.x;
+		int myY = session->object.position.y;
 		for (int id : nearMonsterList) {
 			if (isPlayer(id)) continue;
 			if (targets.size() >= MAX_NEAR_MONSTERS) break;
@@ -659,10 +642,10 @@ void processPacket(const std::shared_ptr<GAMESESSION>& session, char* packetFrom
 			std::shared_ptr<GAMESESSION> monster = it;
     if(!monster) return;
 
-			int dx = abs(monster->object._x - myX);
-			int dy = abs(monster->object._y - myY);
+			int dx = abs(monster->object.position.x - myX);
+			int dy = abs(monster->object.position.y - myY);
 
-			if (town_npcs::hostile(monster->monster._monType) && !monster->monster._isDie && world_regions::combatAllowed(myX,myY) && world_regions::inRange(session->object.location(),monster->object.location(),2) && dx <= 2 && dy <= 2) targets.push_back(monster);
+			if (town_npcs::hostile(monster->monster._monType) && !monster->monster._isDie && world_regions::combatAllowed(session->object.location()) && world_regions::inRange(session->object.location(),monster->object.location(),2) && dx <= 2 && dy <= 2) targets.push_back(monster);
 		}
 
 		//cout << " 공격가능 몬스터 수 : " << targets.size() << endl;
@@ -683,14 +666,14 @@ void processPacket(const std::shared_ptr<GAMESESSION>& session, char* packetFrom
 	case C2S_P_ATTACK:
 	{
         if (session->_state != ST_INGAME) break;
-        if (!world_regions::combatAllowed(session->object._x,session->object._y)) { session->sendAttackFeedback(AttackFeedback::SafeZone); break; }
+        if (!world_regions::combatAllowed(session->object.location())) { session->sendAttackFeedback(AttackFeedback::SafeZone); break; }
         if (session->object._seedNum <= 0) { session->sendAttackFeedback(AttackFeedback::NoSeeds); break; }
 		cout << "seed : " << session->object._seedNum << endl;
 		unordered_set<int> viewList = session->getNearBySessions();
 		vector<shared_ptr<GAMESESSION>> targets;
 
-		int myX = session->object._x;
-		int myY = session->object._y;
+		int myX = session->object.position.x;
+		int myY = session->object.position.y;
 
 		for (int id : viewList) {
 			if (isPlayer(id)) continue;
@@ -701,10 +684,10 @@ void processPacket(const std::shared_ptr<GAMESESSION>& session, char* packetFrom
 
 			std::shared_ptr<GAMESESSION> monster = it;
     if(!monster) return;
-			int dx = abs(monster->object._x - myX);
-			int dy = abs(monster->object._y - myY);
+			int dx = abs(monster->object.position.x - myX);
+			int dy = abs(monster->object.position.y - myY);
 
-			if (town_npcs::hostile(monster->monster._monType) && !monster->monster._isDie && world_regions::combatAllowed(myX,myY) && world_regions::inRange(session->object.location(),monster->object.location(),2) && dx <= 2 && dy <= 2) targets.push_back(monster);	// 범위 설정
+			if (town_npcs::hostile(monster->monster._monType) && !monster->monster._isDie && world_regions::combatAllowed(session->object.location()) && world_regions::inRange(session->object.location(),monster->object.location(),2) && dx <= 2 && dy <= 2) targets.push_back(monster);	// 범위 설정
 		}
 
 		//cout << "주변 몬스터 수 : " << targets.size() << endl;
@@ -730,7 +713,7 @@ void processPacket(const std::shared_ptr<GAMESESSION>& session, char* packetFrom
 			}
 			else {
 
-				auto path = findPathAStar(target->object._x, target->object._y, session->object._x, session->object._y);
+				auto path = findPathAStar(target->object.location(),session->object.location());
 				if (!path.empty() && path.size() > 1) {
 					// path[0] = 현재 위치, path[1] = 다음 목적지
 					int next_x = path[1].first;
@@ -804,17 +787,17 @@ void serviceTownResidents(respawn_policy::Tick now) {
         bool watched=false;
         for(int id : oldAudience) if(isPlayer(id)) { watched=true; break; }
         if(!watched) { npc->monster.residentBehaviour.next=now+2000; continue; }
-        const auto step=town_behaviour::tick(home,npc->object._x,npc->object._y,npc->monster.residentBehaviour,now,[&](int x,int y) {
+        const auto step=town_behaviour::tick(home,npc->object.position.x,npc->object.position.y,npc->monster.residentBehaviour,now,[&](int x,int y) {
             for(const auto& entry : clients.snapshot()) {
                 const auto& other=entry.second;
                 if(other && other.get()!=npc.get() && other->_state==ST_INGAME && !other->disconnectStarted &&
-                   world_regions::same(npc->object.location(),other->object.location()) && std::abs(other->object._x-x)<=1 && std::abs(other->object._y-y)<=1) return true;
+                   world_regions::same(npc->object.location(),other->object.location()) && std::abs(other->object.position.x-x)<=1 && std::abs(other->object.position.y-y)<=1) return true;
             }
             return false;
         });
         if(!step.moved) continue;
-        const auto oldX=npc->object._x,oldY=npc->object._y;
-        npc->object._x=static_cast<short>(step.x); npc->object._y=static_cast<short>(step.y); npc->updateSector(oldX,oldY);
+        const auto oldX=npc->object.position.x,oldY=npc->object.position.y;
+        npc->object.position.x=static_cast<short>(step.x); npc->object.position.y=static_cast<short>(step.y); npc->updateSector(oldX,oldY);
         const auto audience=npc->getNearBySessions();
         forWorldPlayers(oldAudience,[&](GAMESESSION& viewer) { if(!audience.count(viewer.object._id)) viewer.sendRemoveSessionPacket(home.id); });
         forWorldPlayers(audience,[&](GAMESESSION& viewer) {
@@ -832,12 +815,12 @@ void serviceRespawns() {
     serviceTownResidents(now);
     for(auto seed : restoreSeeds(now)) {
         GAMESESSION anchor;
-        anchor.object._x=static_cast<short>(seed.x); anchor.object._y=static_cast<short>(seed.y);
+        anchor.object.position=field_content::position(seed);
         for(int viewerId : anchor.getNearBySessions()) {
             if(!isPlayer(viewerId)) continue;
             auto viewer=clients.get(viewerId);
             if(viewer && viewer->_state == ST_INGAME)
-                viewer->sendMapInfo(viewerId,viewer->object._x,viewer->object._y);
+                viewer->sendMapInfo(viewerId,viewer->object.location());
         }
     }
     for(std::size_t i=0;i<field_content::monsters.size();++i) {
@@ -845,7 +828,7 @@ void serviceRespawns() {
         if(!it) continue;
         auto monster=it;
         std::lock_guard<std::recursive_mutex> lifeGuard(monster->monster.combatMutex);
-        const short oldX=monster->object._x,oldY=monster->object._y;
+        const short oldX=monster->object.position.x,oldY=monster->object.position.y;
         if(!reviveMonster(monster->object,monster->monster,now)) continue;
         monster->updateSector(oldX,oldY);
         { std::lock_guard<std::mutex> viewGuard(monster->_vlL); monster->_viewList.clear(); }
@@ -1020,7 +1003,7 @@ void workerThread(HANDLE iocp) {
             load_trace::event("login_ready",session->object._id,session->connectionId);
             std::cout << "[LOGIN] Success sends accepted session=" << key << std::endl;
             // Released by sessionOperation.
-			session->sendMapInfo(session->object._id, session->object._x, session->object._y); // 맵 정보
+			session->sendMapInfo(session->object._id,session->object.location()); // 맵 정보
 
             worldSectors.put(session->object._id,session->object.location());
 
@@ -1137,24 +1120,24 @@ void workerThread(HANDLE iocp) {
 
             auto target = clients.get(targetPlayerId);
             if (!target || target->_state != ST_INGAME || target->disconnectStarted || target->transportFailed ||
-                !world_regions::same(monster->object.location(),target->object.location()) || !world_regions::combatAllowed(target->object._x,target->object._y) || monster->monster._isDie ||
-                !field_content::monsterCanStand(monster->monster._nextMonX,monster->monster._nextMonY)) {
+                !world_regions::same(monster->object.location(),target->object.location()) || !world_regions::combatAllowed(target->object.location()) || monster->monster._isDie ||
+                !field_content::monsterCanStand({monster->object.position.region,monster->monster._nextMonX,monster->monster._nextMonY})) {
                 monster->monster.chaseTarget = -1;
                 monster->monster._isMonsterChase = false;
                 monster->monster._isActive = false;
                 delete overEx;
                 break;
             }
-            const short previousX=monster->object._x,previousY=monster->object._y;
-            monster->object._x = monster->monster._nextMonX;
-            monster->object._y = monster->monster._nextMonY;
+            const short previousX=monster->object.position.x,previousY=monster->object.position.y;
+            monster->object.position.x = monster->monster._nextMonX;
+            monster->object.position.y = monster->monster._nextMonY;
             monster->updateSector(previousX,previousY);
             std::shared_ptr<GAMESESSION> player=target;
 			player->sendMovePacket(monster->object._id);
 
 			if (isMonSee(monster->object._id, targetPlayerId)) {
 				shared_ptr<GAMESESSION> player = clients.get(targetPlayerId);
-				auto path = findPathAStar(monster->object._x, monster->object._y, player->object._x, player->object._y);
+				auto path = findPathAStar(monster->object.location(),player->object.location());
 				if (!path.empty() && path.size() > 1) {
 					monster->monster._nextMonX = path[1].first;
 					monster->monster._nextMonY = path[1].second;

@@ -1,3 +1,4 @@
+#include "legacy_position_fixture.hpp"
 #include "../TP_2023192003/TP_2023192003/world_events.hpp"
 #include "../TP_2023192003/TP_2023192003/pathfinder.hpp"
 #include "../TP_2023192003/TP_2023192003/world_map.hpp"
@@ -7,7 +8,7 @@
 static std::map<int,std::vector<int>> packets;
 void GAMESESSION::registerSend(void* input) { packets[object._id].push_back(static_cast<unsigned char*>(input)[1]); }
 static std::shared_ptr<GAMESESSION> add(int id,int x,int y) {
-    auto s=std::make_shared<GAMESESSION>(); s->object._id=id; s->object._x=x; s->object._y=y; s->_state=ST_INGAME;
+    auto s=std::make_shared<GAMESESSION>(); s->object._id=id; setTestLegacyX(s->object,x); setTestLegacyY(s->object,y); s->_state=ST_INGAME;
     clients.set(id,s); return s;
 }
 int main() {

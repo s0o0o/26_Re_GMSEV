@@ -24,5 +24,5 @@ struct MonsterState {
     std::atomic<int> chaseTarget{-1};
     std::atomic<bool> _isDie{false};
     int _monType = 0;
-    short _nextMonX = 0, _nextMonY = 0;
+    short _nextMonX = 0, _nextMonY = 0; // Local to the monster's current region; generation guards stale routes.
 };

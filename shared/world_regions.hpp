@@ -39,4 +39,5 @@ constexpr bool inRange(Position a,Position b,int range) {
 constexpr bool combatAllowed(int x,int y) {
     const auto p=decode(x,y); return valid(p) && describe(p.region).combat;
 }
+constexpr bool combatAllowed(Position p) { return valid(p) && describe(p.region).combat; }
 }

@@ -3,6 +3,17 @@
 #include <mutex>
 
 int map_data[MAP_HEIGHT][MAP_WIDTH];
+int mapTileAt(world_regions::Position position) {
+    world_regions::LegacyPosition legacy;
+    return world_regions::encode(position,legacy) ? mapTileAt(legacy.x,legacy.y) : 8;
+}
+bool playerCanMove(world_regions::Position position) noexcept {
+    return world_regions::valid(position) && mapTileAt(position)!=3;
+}
+bool collectSeed(world_regions::Position position,respawn_policy::Tick now) {
+    world_regions::LegacyPosition legacy;
+    return world_regions::encode(position,legacy) && collectSeed(legacy.x,legacy.y,now);
+}
 namespace {
 std::mutex mapMutex;
 std::array<respawn_policy::Tick,field_content::seeds.size()> seedDeadlines{};

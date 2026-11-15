@@ -1,3 +1,4 @@
+#include "legacy_position_fixture.hpp"
 // Compile the production worker/parser, replacing only the DB link boundary.
 #include <memory>
 class GAMESESSION;
@@ -171,7 +172,7 @@ void workerTestObserve(const std::shared_ptr<GAMESESSION>& session,const char* e
     WorldStateLock stateLock;
     fixture::Snapshot snapshot;
     snapshot.id=session->object._id; snapshot.connection=session->connectionId; snapshot.state=session->_state;
-    snapshot.x=session->object._x; snapshot.y=session->object._y; snapshot.fragment=session->_prevRemainData; snapshot.owner=session;
+    snapshot.x=testLegacy(session->object).x; snapshot.y=testLegacy(session->object).y; snapshot.fragment=session->_prevRemainData; snapshot.owner=session;
     snapshot.account=session->_userInputId;
     snapshot.hp=session->object._hp; snapshot.seeds=session->object._seedNum;
     snapshot.active=session->monster._isActive; snapshot.chasing=session->monster._isMonsterChase;
@@ -210,7 +211,7 @@ bool insert_new_user(int,const char*) { assert(false && "Fixture accounts alread
 bool update_user_info(int id,int x,int y,int seed,int hp,int level,int exp,int maxHp,int damage) {
     assert(!WorldStateLock::heldByCurrentThread());
     std::lock_guard<std::mutex> lock(fixture::mutex); ++fixture::saves[id];
-    auto& saved=fixture::savedState[id]; saved._x=static_cast<short>(x); saved._y=static_cast<short>(y);
+    auto& saved=fixture::savedState[id]; setTestLegacyX(saved,static_cast<short>(x)); setTestLegacyY(saved,static_cast<short>(y));
     saved._seedNum=static_cast<short>(seed); saved._hp=static_cast<short>(hp); saved._level=static_cast<short>(level);
     saved._exp=static_cast<short>(exp); saved._maxHp=static_cast<short>(maxHp); saved._damage=static_cast<short>(damage);
     return true;
@@ -238,12 +239,12 @@ void runSectorIndex(const sockaddr_in& address,std::vector<std::thread>& workers
       assert(actual.count(subject->object._id) && !actual.count(observer->object._id));
     }
     expect(peer,S2C_P_MONSTER_NEAR); // Drain map/visibility before the next command.
-    { WorldStateLock lock; subject->object._x=10; subject->object._y=13; subject->updateSector(20,16); }
+    { WorldStateLock lock; setTestLegacyX(subject->object,10); setTestLegacyY(subject->object,13); subject->updateSector(20,16); }
     move.direction=1; move.move_time=8081; sendBytes(peer,reinterpret_cast<char*>(&move),sizeof(move));
     response=decode<sc_packet_move>(expect(peer,S2C_P_MOVE)); assert(response.x==42 && response.y==10);
     expectLeave(watcher,peer.accepted.id); expect(peer,S2C_P_MONSTER_NEAR);
     { WorldStateLock lock;
-      observer->object._x=10; observer->object._y=10; observer->updateSector(19,16);
+      setTestLegacyX(observer->object,10); setTestLegacyY(observer->object,10); observer->updateSector(19,16);
       const auto club=worldSectors.nearby({world_regions::Id::Clubhouse,10,10},0);
       const auto field=worldSectors.nearby({world_regions::Id::SunnyPeak,10,10},0);
       assert(club==std::unordered_set<int>{observer->object._id} && field==std::unordered_set<int>{subject->object._id});
@@ -252,7 +253,7 @@ void runSectorIndex(const sockaddr_in& address,std::vector<std::thread>& workers
     }
     // Exercise the real respawn service's re-registration, using an old bucket in another region.
     auto revived=std::make_shared<GAMESESSION>(); revived->object._id=MAX_USER;
-    revived->object._x=21; revived->object._y=16; revived->object._hp=0; revived->_state=ST_INGAME;
+    setTestLegacyX(revived->object,21); setTestLegacyY(revived->object,16); revived->object._hp=0; revived->_state=ST_INGAME;
     revived->monster._monType=1; revived->monster._isDie=true; revived->monster.respawnAt=1;
     auto script=npc_script::loadText("function set_uid(id) end; function choose_direction() return 0 end; function event_player_move(p,c) end",MAX_USER,{API_get_x,API_get_y,API_SendMessage});
     assert(script); revived->monster.script=std::move(script.state);
@@ -293,10 +294,10 @@ void runTown(const sockaddr_in& address,std::vector<std::thread>& workers) {
         const auto previous=clients.get(town_npcs::baseId)->object;
         serviceTownResidents(tick);
         const auto current=clients.get(town_npcs::baseId)->object;
-        if(previous._x!=current._x || previous._y!=current._y) ++autonomousMoves;
+        if(testLegacy(previous).x!=testLegacy(current).x || testLegacy(previous).y!=testLegacy(current).y) ++autonomousMoves;
         for(const auto& definition : town_npcs::residents) {
             const auto npc=clients.get(definition.id);
-            assert(town_behaviour::allowed(definition,npc->object._x,npc->object._y));
+            assert(town_behaviour::allowed(definition,testLegacy(npc->object).x,testLegacy(npc->object).y));
             assert(!npc->monster._isActive && !npc->monster.script);
         }
     }
@@ -314,16 +315,16 @@ void runTown(const sockaddr_in& address,std::vector<std::thread>& workers) {
     assert(walkMarker && receivedMoves>=autonomousMoves);
     // Put a viewer exactly at Pashmina's visibility boundary; force a valid right step.
     { WorldStateLock lock;
-      const auto oldX=subject->object._x,oldY=subject->object._y;
-      subject->object._x=6; subject->object._y=16; subject->updateSector(oldX,oldY);
+      const auto oldX=testLegacy(subject->object).x,oldY=testLegacy(subject->object).y;
+      setTestLegacyX(subject->object,6); setTestLegacyY(subject->object,16); subject->updateSector(oldX,oldY);
       for(const auto& definition : town_npcs::residents) {
-          auto npc=clients.get(definition.id); const auto x=npc->object._x,y=npc->object._y;
-          npc->object._x=definition.x; npc->object._y=definition.y; npc->updateSector(x,y);
+          auto npc=clients.get(definition.id); const auto x=testLegacy(npc->object).x,y=testLegacy(npc->object).y;
+          setTestLegacyX(npc->object,definition.x); setTestLegacyY(npc->object,definition.y); npc->updateSector(x,y);
           npc->monster.residentBehaviour.next=1000000;
       }
       // Isolate visibility from occupancy: keep Snoozer away from the forced boundary step.
-      auto sleeper=clients.get(town_npcs::baseId+2); const auto sx=sleeper->object._x,sy=sleeper->object._y;
-      sleeper->object._x=19; sleeper->object._y=12; sleeper->updateSector(sx,sy);
+      auto sleeper=clients.get(town_npcs::baseId+2); const auto sx=testLegacy(sleeper->object).x,sy=testLegacy(sleeper->object).y;
+      setTestLegacyX(sleeper->object,19); setTestLegacyY(sleeper->object,12); sleeper->updateSector(sx,sy);
     }
     cs_packet_move boundary{}; boundary.size=sizeof(boundary); boundary.type=C2S_P_MOVE; boundary.direction=2;
     sendBytes(peer,reinterpret_cast<char*>(&boundary),sizeof(boundary));
@@ -335,18 +336,18 @@ void runTown(const sockaddr_in& address,std::vector<std::thread>& workers) {
       while((((seed*1664525u+1013904223u)>>8)%5)!=0) ++seed;
       walker->monster.residentBehaviour={seed,90000};
       serviceTownResidents(90000);
-      assert(walker->object._x==13 && walker->object._y==15 && !subject->_viewList.count(walker->object._id));
-      serviceTownResidents(94000); assert(walker->object._x==13); // Nobody sees it: pause, not catch-up.
+      assert(testLegacy(walker->object).x==13 && testLegacy(walker->object).y==15 && !subject->_viewList.count(walker->object._id));
+      serviceTownResidents(94000); assert(testLegacy(walker->object).x==13); // Nobody sees it: pause, not catch-up.
     }
     assert(decode<sc_packet_leave>(expect(peer,S2C_P_LEAVE)).id==town_npcs::baseId+1);
     // Reset positions for the existing role/portal fixture, using proper sector updates.
     { WorldStateLock lock;
       for(const auto& definition : town_npcs::residents) {
-          auto npc=clients.get(definition.id); const auto x=npc->object._x,y=npc->object._y;
-          npc->object._x=definition.x; npc->object._y=definition.y; npc->updateSector(x,y);
+          auto npc=clients.get(definition.id); const auto x=testLegacy(npc->object).x,y=testLegacy(npc->object).y;
+          setTestLegacyX(npc->object,definition.x); setTestLegacyY(npc->object,definition.y); npc->updateSector(x,y);
       }
-      const auto oldX=subject->object._x,oldY=subject->object._y;
-      subject->object._x=spawnX; subject->object._y=spawnY; subject->updateSector(oldX,oldY);
+      const auto oldX=testLegacy(subject->object).x,oldY=testLegacy(subject->object).y;
+      setTestLegacyX(subject->object,spawnX); setTestLegacyY(subject->object,spawnY); subject->updateSector(oldX,oldY);
     }
     movePair(peer,7050); // Player re-approach must restore ENTER for the previously hidden resident.
     { WorldStateLock lock; assert(subject->_viewList.count(town_npcs::baseId+1)); }
@@ -359,7 +360,7 @@ void runTown(const sockaddr_in& address,std::vector<std::thread>& workers) {
       }
       resident->monster._isActive=true; // Even erroneous activation must not cause movement/timer work.
       doMonsterRandomMoving(resident->object._id);
-      assert(resident->object._x==12 && resident->object._y==9);
+      assert(testLegacy(resident->object).x==12 && testLegacy(resident->object).y==9);
       const int idx=get_timer_queue_index(resident->object._id);
       { std::lock_guard<std::mutex> timers(timerLocks[idx]);
         timerQueues[idx].push(TIMER_EVENT{resident->object._id,Clock::now(),EV_RANDOM_MOVE,0,resident->monster.generation.load()}); }
@@ -372,7 +373,7 @@ void runTown(const sockaddr_in& address,std::vector<std::thread>& workers) {
         WorldStateLock lock; assert(resident->object._hp==1 && subject->object._seedNum==10);
     };
     attack(AttackFeedback::SafeZone);
-    { WorldStateLock lock; subject->object._x=10; subject->object._y=13; subject->updateSector(spawnX,spawnY); }
+    { WorldStateLock lock; setTestLegacyX(subject->object,10); setTestLegacyY(subject->object,13); subject->updateSector(spawnX,spawnY); }
     cs_packet_move step{}; step.size=sizeof(step); step.type=C2S_P_MOVE; step.direction=1; step.move_time=7070;
     sendBytes(peer,reinterpret_cast<char*>(&step),sizeof(step));
     std::set<int> left; bool arrived=false,receivedNear=false;
@@ -387,11 +388,11 @@ void runTown(const sockaddr_in& address,std::vector<std::thread>& workers) {
     { WorldStateLock lock;
       const auto boss=clients.get(town_npcs::baseId)->object;
       serviceTownResidents(1000000);
-      assert(clients.get(town_npcs::baseId)->object._x==boss._x && clients.get(town_npcs::baseId)->object._y==boss._y); }
+      assert(testLegacy(clients.get(town_npcs::baseId)->object).x==testLegacy(boss).x && testLegacy(clients.get(town_npcs::baseId)->object).y==testLegacy(boss).y); }
     { WorldStateLock lock;
       assert(!subject->_viewList.count(resident->object._id));
-      const auto oldX=resident->object._x,oldY=resident->object._y;
-      resident->object._x=42; resident->object._y=11; resident->updateSector(oldX,oldY);
+      const auto oldX=testLegacy(resident->object).x,oldY=testLegacy(resident->object).y;
+      setTestLegacyX(resident->object,42); setTestLegacyY(resident->object,11); resident->updateSector(oldX,oldY);
       assert(subject->getNearBySessions().count(resident->object._id)); }
     attack(AttackFeedback::NoTarget); // Noncombat role is enforced even outside the safe zone.
     closePeer(peer); subject.reset(); resident.reset();
@@ -530,12 +531,12 @@ void runRegions(const sockaddr_in& address,std::vector<std::thread>& workers,std
     { WorldStateLock lock;
       assert(isCanSee(subject->object._id,target->object._id));
       assert(isMonSee(target->object._id,subject->object._id));
-      subject->object._x=31; subject->object._y=7; // Same sector/range as field NPC, but invalid region.
+      setTestLegacyX(subject->object,31); setTestLegacyY(subject->object,7); // Same sector/range as field NPC, but invalid region.
       assert(!isCanSee(subject->object._id,target->object._id) && !isMonSee(target->object._id,subject->object._id));
       assert(!subject->getNearBySessions().count(target->object._id));
-      subject->object._x=42; subject->object._y=11; subject->updateSector(39,7);
+      setTestLegacyX(subject->object,42); setTestLegacyY(subject->object,11); subject->updateSector(39,7);
       target->monster.chaseTarget=subject->object._id; target->monster._isActive=true; target->monster._isMonsterChase=true;
-      target->_viewList.insert(subject->object._id); target->monster._nextMonX=39; target->monster._nextMonY=6;
+      target->_viewList.insert(subject->object._id); target->monster._nextMonX=7; target->monster._nextMonY=6;
       oldGeneration=target->monster.generation.load(); }
     cs_packet_move step{}; step.size=sizeof(step); step.type=C2S_P_MOVE; step.direction=1; step.move_time=6060;
     sendBytes(peer,reinterpret_cast<char*>(&step),sizeof(step));
@@ -611,15 +612,15 @@ void runLuaAI(const sockaddr_in& address,std::vector<std::thread>& workers,std::
     { WorldStateLock lock;
       assert(npc_script::direction(target->monster.script.get(),expected,error));
       assert(npc_script::invoke(target->monster.script.get(),"set_uid",{MAX_USER},0,error));
-      target->object._x=38; target->object._y=7;
+      setTestLegacyX(target->object,38); setTestLegacyY(target->object,7);
       target->monster._isActive=true; target->monster._isMonsterChase=false; }
     auto moved=tick(EV_RANDOM_MOVE);
     const int dx[]={1,-1,0,0},dy[]={0,0,1,-1};
     assert(moved.x==38+dx[expected] && moved.y==7+dy[expected] && !moved.scriptDisabled);
     { WorldStateLock lock;
-      target->object._x=spawnX; target->object._y=spawnY;
+      setTestLegacyX(target->object,spawnX); setTestLegacyY(target->object,spawnY);
       target->monster._isMonsterChase=true; target->monster.chaseTarget=peer.accepted.id;
-      target->monster._nextMonX=spawnX; target->monster._nextMonY=spawnY; }
+      target->monster._nextMonX=static_cast<short>(world_regions::decode(spawnX,spawnY).x); target->monster._nextMonY=spawnY; }
     auto resumed=tick(EV_CHASE); assert(resumed.active && !resumed.chasing);
     { WorldStateLock lock;
       auto broken=npc_script::loadText("calls=0; function set_uid(id) end; function event_player_move(p) end; function choose_direction() calls=calls+1; while true do end end",MAX_USER,{API_get_x,API_get_y,API_SendMessage});
@@ -698,7 +699,7 @@ void runWorldState(const sockaddr_in& address,std::vector<std::thread>& workers)
     for(int i=0;i<count;++i) {
         std::lock_guard<std::mutex> lock(mutex);
         const auto& saved=savedState.at(40000+i);
-        assert(saved._x == spawnX && saved._y == spawnY && saved._hp == 10 && saved._seedNum == 10-spent[peers[i].accepted.id]);
+        assert(testLegacy(saved).x == spawnX && testLegacy(saved).y == spawnY && saved._hp == 10 && saved._seedNum == 10-spent[peers[i].accepted.id]);
     }
     const auto deadline=Clock::now()+std::chrono::seconds(3);
     auto drained=[&] { for(const auto& peer : peers) if(peer.accepted.owner.use_count() != 1) return false; return true; };
@@ -719,7 +720,7 @@ int main() {
 #endif
 #ifdef GMSEV_WORLD_TEST
     auto target=std::make_shared<GAMESESSION>();
-    target->object._id=MAX_USER; target->object._x=38; target->object._y=6;
+    target->object._id=MAX_USER; setTestLegacyX(target->object,38); setTestLegacyY(target->object,6);
     target->object._hp=target->object._maxHp=5; target->_state=ST_INGAME; target->monster._monType=1;
 #ifdef GMSEV_LUA_AI_TEST
     auto loaded=npc_script::loadFile("TP_2023192003/TP_2023192003/npc.lua",MAX_USER,{API_get_x,API_get_y,API_SendMessage});
@@ -735,6 +736,10 @@ int main() {
     }
     clients.set(MAX_USER,target);
     { auto L=target->monster.script.get();
+      lua_getglobal(L,"API_get_x"); lua_pushinteger(L,MAX_USER);
+      assert(lua_pcall(L,1,1,0)==LUA_OK && lua_tointeger(L,-1)==6); lua_pop(L,1); // Local, not legacy 38.
+      lua_getglobal(L,"API_get_y"); lua_pushinteger(L,MAX_USER);
+      assert(lua_pcall(L,1,1,0)==LUA_OK && lua_tointeger(L,-1)==6); lua_pop(L,1);
       for(const char* name : {"API_get_x","API_get_y"}) {
         lua_getglobal(L,name); lua_pushinteger(L,MAX_USER+100);
         assert(lua_pcall(L,1,1,0)==LUA_OK && lua_isnil(L,-1)); lua_pop(L,1);

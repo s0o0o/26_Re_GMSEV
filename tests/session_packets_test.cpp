@@ -1,3 +1,4 @@
+#include "legacy_position_fixture.hpp"
 #include "../TP_2023192003/TP_2023192003/game_session.hpp"
 #include "../TP_2023192003/TP_2023192003/session_registry.hpp"
 #include "../TP_2023192003/TP_2023192003/world_map.hpp"
@@ -102,11 +103,11 @@ int main() {
         if (chunk == 0) assert(packet.tiles[0][0] == 6);
     }
     sent.clear();
-    receiver.object._x=42; receiver.object._y=10;
+    setTestLegacyX(receiver.object,42); setTestLegacyY(receiver.object,10);
     receiver.sendSessionLoginPacket();
     std::memcpy(&avatar,sent.back().data(),sizeof(avatar));
     assert(avatar.version==PROTOCOL_VERSION && avatar.region==2 && avatar.x==10 && avatar.y==10);
-    clients.get(123)->object._x=42; clients.get(123)->object._y=10;
+    setTestLegacyX(clients.get(123)->object,42); setTestLegacyY(clients.get(123)->object,10);
     receiver.sendMovePacket(123,9876);
     std::memcpy(&move,sent.back().data(),sizeof(move));
     assert(move.region==2 && move.x==10 && move.y==10 && move.move_time==9876);
@@ -117,7 +118,7 @@ int main() {
     assert(fieldMap.region==2 && fieldMap.left_x<world_regions::fieldWidth);
     assert(is_valid_server_packet(reinterpret_cast<const std::uint8_t*>(sent.back().data()),sent.back().size()));
     const auto count=sent.size();
-    clients.get(123)->object._x=31; receiver.sendMovePacket(123); receiver.sendMapInfo(0,31,10);
-    receiver.object._x=31; receiver.sendSessionLoginPacket();
+    setTestLegacyX(clients.get(123)->object,31); receiver.sendMovePacket(123); receiver.sendMapInfo(0,31,10);
+    setTestLegacyX(receiver.object,31); receiver.sendSessionLoginPacket();
     assert(sent.size()==count);
 }

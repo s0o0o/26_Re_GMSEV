@@ -16,9 +16,9 @@ inline bool reviveMonster(GameObjectState& object,MonsterState& monster,respawn_
     if(index < 0 || index >= static_cast<int>(field_content::monsters.size()) ||
         !monster._isDie || !respawn_policy::due(monster.respawnAt,now)) return false;
     auto home=field_content::monsters[index];
-    object._x=static_cast<short>(home.x); object._y=static_cast<short>(home.y);
+    object.position=field_content::position(home);
     object._hp=object._maxHp=5;
-    monster._nextMonX=object._x; monster._nextMonY=object._y;
+    monster._nextMonX=static_cast<short>(object.position.x); monster._nextMonY=static_cast<short>(object.position.y);
     monster._isActive=false; monster._isMonsterChase=false;
     monster.chaseTarget=-1;
     monster.respawnAt=0; ++monster.generation;

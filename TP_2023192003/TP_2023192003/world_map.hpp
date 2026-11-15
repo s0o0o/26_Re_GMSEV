@@ -12,3 +12,7 @@ int mapTileAt(int x,int y);
 bool collectSeed(int x,int y,respawn_policy::Tick now=respawn_policy::now());
 std::vector<field_content::Point> restoreSeeds(respawn_policy::Tick now);
 void initializeFieldMap();
+// Canonical runtime APIs; legacy array addressing remains inside this boundary.
+bool playerCanMove(world_regions::Position position) noexcept;
+int mapTileAt(world_regions::Position position);
+bool collectSeed(world_regions::Position position,respawn_policy::Tick now=respawn_policy::now());
