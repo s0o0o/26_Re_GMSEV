@@ -11,8 +11,7 @@ void GAMESESSION::sendSessionLoginPacket() {
 	p.id = object._id;
 	p.size = sizeof(sc_packet_avatar_info);
 	p.type = S2C_P_AVATAR_INFO;
-	p.x = object._x;
-	p.y = object._y;
+    if(!packet_position::write(p,object.location())) return;
 	p.hp = object._hp;
 	p.level = object._level;
 	p.exp = object._exp;
@@ -44,8 +43,7 @@ void GAMESESSION::sendMovePacket(int sessionId, std::uint32_t moveTime) {
 	p.id = sessionId;
 	p.size = sizeof(sc_packet_move);
 	p.type = S2C_P_MOVE;
-	p.x = user->object._x;
-	p.y = user->object._y;
+    if(!packet_position::write(p,user->object.location())) return;
 	registerSend(&p);
 }
 
@@ -69,8 +67,7 @@ void GAMESESSION::sendAddPlayerPacket(int sessionId) {
 	p.eye_style = user->object._eyeStyle;
 	p.character_kind = user->object._characterKind;
 	p.scarf_style = user->object._scarfStyle;
-	p.x = user->object._x;
-	p.y = user->object._y;
+    if(!packet_position::write(p,user->object.location())) return;
 	_vlL.lock();
 	_viewList.insert(sessionId);
 	_vlL.unlock();
@@ -159,6 +156,8 @@ void GAMESESSION::sendMonsterNearPacket(nearMonsterInfo* infos, int cnt) {
 }
 
 void GAMESESSION::sendMapInfo(int player_id, int x, int y) {
+    const auto position=world_regions::decode(x,y);
+    if(!world_regions::valid(position)) return;
 	int left_x = world_layout::cameraX(x);
 	int top_y = world_layout::cameraY(y);
 
@@ -166,8 +165,9 @@ void GAMESESSION::sendMapInfo(int player_id, int x, int y) {
 	for (int chunk_y = 0; chunk_y < SCREEN_HEIGHT; chunk_y += MAP_ROW_CHUNK) {
 		sc_packet_mapInfo p{};
 		p.type = S2C_P_MAPINFO;
-		p.left_x = static_cast<std::int16_t>(left_x);
+		p.left_x = static_cast<std::int16_t>(left_x-world_regions::describe(position.region).originX);
 		p.top_y = static_cast<std::int16_t>(top_y + chunk_y);
+        p.region=static_cast<std::uint8_t>(position.region);
 
 		for (int j = 0; j < MAP_ROW_CHUNK; ++j) {
 			for (int i = 0; i < SCREEN_WIDTH; ++i) {

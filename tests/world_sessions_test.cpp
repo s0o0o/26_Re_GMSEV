@@ -49,7 +49,7 @@ int main() {
     forWorldPlayers(audience,[&](GAMESESSION& viewer) { viewer.sendAddPlayerPacket(MAX_USER); });
     for(int id : {1,2}) {
         auto enter=read<sc_packet_enter>(id,2);
-        assert(enter.hp == 5 && enter.max_hp == 5 && enter.x == field_content::monsters[0].x);
+        assert(enter.hp == 5 && enter.max_hp == 5 && enter.region==2 && enter.x == field_content::monsters[0].x-world_regions::fieldOrigin);
         assert(clients.get(id)->_viewList.count(MAX_USER));
     }
     initializeFieldMap(); const auto seed=field_content::seeds[0];

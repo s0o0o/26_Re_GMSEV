@@ -6,6 +6,7 @@
 #include <iostream>
 #include "world_character.hpp"
 #include "client_asset_paths.hpp"
+#include "../../shared/legacy_packet_adapter.hpp"
 #include <unordered_map>
 #include <Windows.h>
 #include <chrono>
@@ -357,6 +358,10 @@ void client_finish()
 // 서버로부터 온거 까는거 
 void ProcessPacket(char* ptr)
 {
+    LegacyPacketAdapter positionAdapter;
+    auto* decoded=positionAdapter.decode(ptr,static_cast<unsigned char>(ptr[0]));
+    if(!decoded) return;
+    ptr=reinterpret_cast<char*>(decoded);
 	static bool first_time = true;
 	switch (ptr[1])
 	{

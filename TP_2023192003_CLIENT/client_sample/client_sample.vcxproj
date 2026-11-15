@@ -149,6 +149,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\shared\protocol.hpp" />
+    <ClInclude Include="..\..\shared\legacy_packet_adapter.hpp" />
     <ClInclude Include="..\..\shared\login_input.hpp" />
     <ClInclude Include="..\..\shared\appearance.hpp" />
     <ClInclude Include="hamster_customizer.hpp" />

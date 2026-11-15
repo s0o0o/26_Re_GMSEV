@@ -98,7 +98,12 @@ std::vector<char> receive(Peer& peer) {
 }
 template<class Packet> Packet decode(const std::vector<char>& bytes) {
     Packet packet{}; assert(bytes.size() == sizeof(packet));
-    std::memcpy(&packet,bytes.data(),sizeof(packet)); return packet;
+    std::memcpy(&packet,bytes.data(),sizeof(packet));
+    // Existing gameplay assertions use legacy state; validate local wire before adapting.
+    if constexpr(std::is_same_v<Packet,sc_packet_avatar_info> || std::is_same_v<Packet,sc_packet_move> || std::is_same_v<Packet,sc_packet_enter>) {
+        assert(packet_position::valid(packet)); assert(packet_position::restoreLegacy(packet));
+    }
+    return packet;
 }
 std::vector<char> expect(Peer& peer,std::uint8_t type) {
     for(int i=0;i<128;++i) { auto packet=receive(peer); if(static_cast<std::uint8_t>(packet[1]) == type) return packet; }
@@ -832,6 +837,10 @@ int main() {
     }
     {
         auto subject=connectPeer(address,last); last=subject.accepted.connection;
+        auto oldVersion=loginPacket(403); oldVersion.version=1;
+        sendBytes(subject,reinterpret_cast<char*>(&oldVersion),sizeof(oldVersion));
+        assert(static_cast<std::uint8_t>(receive(subject)[1])==S2C_P_LOGIN_FAIL);
+        assert(loadCount(403)==0 && saveCount(403)==0);
         for(int account : {404,405}) {
             auto fail=loginPacket(account); sendBytes(subject,reinterpret_cast<char*>(&fail),sizeof(fail));
             assert(static_cast<std::uint8_t>(receive(subject)[1]) == S2C_P_LOGIN_FAIL && saveCount(account) == 0);
