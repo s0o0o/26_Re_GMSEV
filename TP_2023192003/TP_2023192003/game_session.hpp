@@ -30,6 +30,7 @@ public:
 
     GameObjectState object;
     MonsterState monster;
+    world_travel::Journal travel;
 
     GAMESESSION() = default;
     GameObjectState snapshotObject() const { WorldStateLock lock; return object; }

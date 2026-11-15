@@ -455,6 +455,8 @@ void disconnect(const std::shared_ptr<GAMESESSION>& session) {
 }
 
 // 받았으면 보낼 준비
+#include "region_transition.hpp"
+
 void processPacket(const std::shared_ptr<GAMESESSION>& session, char* packetFromC) {
 	//cout << "날아온 아이디 확인용 :" << sessionId << endl;
     if(!session || session->disconnectStarted || session->transportFailed) return;
@@ -577,8 +579,8 @@ void processPacket(const std::shared_ptr<GAMESESSION>& session, char* packetFrom
                 }
             }
             if(world_layout::portal(next)) {
-                cancelRegionChases(sessionId);
-                std::cout<<"[MAP] Portal session="<<sessionId<<" region="<<static_cast<int>(next.region)<<" local="<<next.x<<','<<next.y<<std::endl;
+                transitionRegion(*session,next,p->move_time);
+                break;
             }
             session->object.position=next;
         }
@@ -772,7 +774,13 @@ void processPacket(const std::shared_ptr<GAMESESSION>& session, char* packetFrom
 	break;
 	case C2S_P_TELEPORT:
 	{
-
+        const auto& request=*reinterpret_cast<const cs_packet_teleport*>(packetFromC);
+        const auto result=session->travel.request(request.requestId,request.action,session->object.location(),
+            [&](world_regions::Position target) { return transitionRegion(*session,target); });
+        sc_packet_travel_result response{};
+        response.size=sizeof(response); response.type=S2C_P_TRAVEL_RESULT;
+        response.requestId=request.requestId; response.result=result;
+        session->registerSend(&response);
 	}
 	break;
 	}

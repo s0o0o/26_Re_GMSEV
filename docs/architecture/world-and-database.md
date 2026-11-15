@@ -1,6 +1,6 @@
 # 월드·지역 좌표·DB 경계
 
-갱신: 2026-11-16, #52. [구조 입구](README.md).
+갱신: 2026-11-16, #53. [구조 입구](README.md).
 
 ## 위치의 단일 원본
 
@@ -11,7 +11,7 @@
 ```text
 기존 DB (42,10)
   → restoreLegacy → Position(SunnyPeak,10,10)
-  → 서버 이동/시야/AI/섹터 → v2(region=2,x=10,y=10)
+  → 서버 이동/시야/AI/섹터 → v3(region=2,x=10,y=10)
   → 클라 Position + local camera/render
 종료 저장: Position → encodeLegacy → 기존 DB (42,10)
 ```
@@ -43,5 +43,7 @@
 world 잠금 안에서 상태 스냅샷을 만들고 DB 호출은 world 밖에서 수행한다. 그래도 동기 호출이므로 worker는 그동안 기다린다. DB 풀·비동기 DB 큐가 이미 있다고 가정하지 않는다.
 
 ## 아직 남은 경계
+
+#53의 transitionRegion은 기존 포털과 명시적 귀환 요청을 공통 처리한다. [전환 흐름](travel.md). 새 DB 저장 형식이나 개인 집은 도입하지 않았다.
 
 맵원본/field_content/DB에는legacy호환이남는다. #52에서GUIstress도region/local위치로바뀌었다. 큰필드/새지역을추가하려면자료·충돌·활성범위·DB표현을함께설계해야하며descriptor만늘리면완료되지않는다. tests/legacy_position_fixture.hpp는과거시나리오를보존하는테스트전용어댑터이며생산위치필드가아니다.

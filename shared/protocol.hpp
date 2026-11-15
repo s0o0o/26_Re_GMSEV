@@ -7,11 +7,12 @@
 #include "appearance.hpp"
 #include "combat_rules.hpp"
 #include "world_regions.hpp"
+#include "world_travel.hpp"
 
 using ObjectId = std::int32_t;
 
 constexpr std::uint16_t GAME_PORT = 3000;
-constexpr std::uint8_t PROTOCOL_VERSION = 2;
+constexpr std::uint8_t PROTOCOL_VERSION = 3;
 
 constexpr std::size_t MAX_CHAT_LENGTH = 30;
 constexpr std::size_t MAX_ID_LENGTH = 48;
@@ -45,6 +46,7 @@ constexpr std::uint8_t S2C_P_MONSTER_DIE = 16;
 constexpr std::uint8_t S2C_P_MONSTER_NEAR = 17;
 constexpr std::uint8_t S2C_P_MAPINFO = 18;
 constexpr std::uint8_t S2C_P_ATTACK_FEEDBACK = 19;
+constexpr std::uint8_t S2C_P_TRAVEL_RESULT = 20;
 
 constexpr std::uint8_t MOVE_UP = 1;
 constexpr std::uint8_t MOVE_DOWN = 2;
@@ -209,6 +211,14 @@ struct cs_packet_chat {
 struct cs_packet_teleport {
 	std::uint8_t size;
 	std::uint8_t type;
+    world_travel::Action action;
+    std::uint32_t requestId;
+};
+
+struct sc_packet_travel_result {
+    std::uint8_t size, type;
+    std::uint32_t requestId;
+    world_travel::Result result;
 };
 
 #pragma pack(pop)
@@ -260,6 +270,7 @@ static_assert(valid_packet_layout<cs_packet_move>(), "invalid packet layout");
 static_assert(valid_packet_layout<cs_packet_attack>(), "invalid packet layout");
 static_assert(valid_packet_layout<cs_packet_chat>(), "invalid packet layout");
 static_assert(valid_packet_layout<cs_packet_teleport>(), "invalid packet layout");
+static_assert(valid_packet_layout<sc_packet_travel_result>(), "invalid packet layout");
 
 inline bool is_valid_client_packet(std::uint8_t type, std::size_t size) noexcept
 {
@@ -280,6 +291,8 @@ inline bool is_valid_server_packet(const std::uint8_t* packet, std::size_t size)
 	}
 
 	switch (packet[1]) {
+    case S2C_P_TRAVEL_RESULT: return size == sizeof(sc_packet_travel_result)
+        && world_travel::valid(reinterpret_cast<const sc_packet_travel_result*>(packet)->result);
 	case S2C_P_AVATAR_INFO: return size == sizeof(sc_packet_avatar_info)
         && reinterpret_cast<const sc_packet_avatar_info*>(packet)->version==PROTOCOL_VERSION
         && packet_position::valid(*reinterpret_cast<const sc_packet_avatar_info*>(packet));
