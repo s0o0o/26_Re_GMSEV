@@ -19,8 +19,8 @@ int main() {
     sc_packet_move move{}; move.size=sizeof(move); move.type=S2C_P_MOVE; move.x=10; move.y=10;
     for(const auto region : {0,3,255}) { move.region=static_cast<std::uint8_t>(region); assert(!adapter.decode(&move,sizeof(move))); }
     move.region=2;
-    for(const auto x : {-1,20,42,32767}) { move.x=static_cast<short>(x); assert(!adapter.decode(&move,sizeof(move))); }
-    move.x=10; move.y=18; assert(!adapter.decode(&move,sizeof(move)));
+    for(const auto x : {-1,world_regions::fieldWidth,world_regions::fieldWidth+22,32767}) { move.x=static_cast<short>(x); assert(!adapter.decode(&move,sizeof(move))); }
+    move.x=10; move.y=world_regions::fieldHeight; assert(!adapter.decode(&move,sizeof(move)));
     const auto before=move; assert(!packet_position::write(move,{})); assert(std::memcmp(&before,&move,sizeof(move))==0);
     move.y=10; move.size=sizeof(move)-1; assert(!adapter.decode(&move,move.size)); // Old MOVE length.
     sc_packet_avatar_info info{}; info.size=sizeof(info); info.type=S2C_P_AVATAR_INFO;
@@ -30,6 +30,7 @@ int main() {
     sc_packet_mapInfo map{}; map.size=sizeof(map); map.type=S2C_P_MAPINFO; map.region=2; map.left_x=2; map.top_y=14;
     const auto* local=adapter.decode(&map,sizeof(map)); assert(local);
     assert(reinterpret_cast<const sc_packet_mapInfo*>(local)->left_x==34 && map.left_x==2);
-    map.left_x=3; assert(!adapter.decode(&map,sizeof(map))); map.left_x=2; map.top_y=15; assert(!adapter.decode(&map,sizeof(map)));
+    map.left_x=world_regions::fieldWidth-17; assert(!adapter.decode(&map,sizeof(map)));
+    map.left_x=2; map.top_y=world_regions::fieldHeight-3; assert(!adapter.decode(&map,sizeof(map)));
     assert(!adapter.decode(nullptr,0));
 }

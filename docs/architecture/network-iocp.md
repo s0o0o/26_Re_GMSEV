@@ -1,6 +1,6 @@
 # 서버 IOCP·패킷·연결 수명
 
-갱신: 2026-11-16, #53. [구조 입구](README.md).
+갱신: 2026-11-16, #54. [구조 입구](README.md).
 
 ## 용어와 큰 흐름
 
@@ -22,7 +22,7 @@ main → AcceptEx 요청 → 완료큐 → workerThread(OP_ACCEPT)
 | 같은 파일 | processPacket | 로그인/이동/공격/채팅요청처리 |
 | [game_session.cpp](../../TP_2023192003/TP_2023192003/game_session.cpp) | registerRecv/registerSend/closeTransport | 비동기요청과소켓종료 |
 | [iocp_operation.hpp](../../TP_2023192003/TP_2023192003/iocp_operation.hpp) | OVER_EXP/COMP_TYPE | OVERLAPPED·버퍼·작업종류·원래연결owner |
-| [session_packets.cpp](../../TP_2023192003/TP_2023192003/session_packets.cpp) | sendSessionLoginPacket/sendMovePacket/sendAddPlayerPacket/sendMapInfo | 상태를wire v3로직렬화 |
+| [session_packets.cpp](../../TP_2023192003/TP_2023192003/session_packets.cpp) | sendSessionLoginPacket/sendMovePacket/sendAddPlayerPacket/sendMapInfo | 상태를wire v4로직렬화 |
 | [session_completion.hpp](../../TP_2023192003/TP_2023192003/session_completion.hpp) | classifySessionCompletion/releaseSendCompletionWithoutLock | 실패/옛연결/정상송신완료분류 |
 | [session_registry.hpp](../../TP_2023192003/TP_2023192003/session_registry.hpp) | SessionRegistry | ID별연결등록/조회/스냅샷 |
 
@@ -71,4 +71,4 @@ IOCP가 잠금 경합·느린 DB·잘못된 세션 수명을 자동으로 해결
 
 ## #53 귀환 요청과 native 부분 송신
 
-공유 패킷은 v3다. C2S_P_TELEPORT(12)는 action/requestId, S2C_P_TRAVEL_RESULT(20)는 판정 결과다. [전환·중복 요청 흐름](travel.md)을 참조한다. 이는 OS 송신 완료와 다른 앱 응답이다. native PacketOutbox의 부분 송신 재시도는 서버 IOCP의 부분 송신 오류 정책을 바꾸지 않는다.
+귀환은 v3에서 추가했고 현재 공유 패킷은 넓은 필드 계약 v4다. C2S_P_TELEPORT(12)는 action/requestId, S2C_P_TRAVEL_RESULT(20)는 판정 결과다. [전환 흐름](travel.md), [청크/범위 계약](field-chunks.md)을 참조한다. 이는 OS 송신 완료와 다른 앱 응답이다. native PacketOutbox의 부분 송신 재시도는 서버 IOCP의 부분 송신 오류 정책을 바꾸지 않는다.

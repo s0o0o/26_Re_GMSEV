@@ -5,7 +5,7 @@
 // Region identity is explicit; legacy X/Y is a temporary storage/wire adapter.
 namespace world_regions {
 enum class Id : std::uint8_t { Invalid=0,Clubhouse=1,SunnyPeak=2 };
-constexpr int fieldOrigin=32,fieldWidth=20,fieldHeight=18;
+constexpr int fieldOrigin=32,fieldWidth=256,fieldHeight=256;
 struct Position { Id region=Id::Invalid; int x=0,y=0; };
 struct LegacyPosition { int x=0,y=0; };
 struct Descriptor { Id id; int originX,width,height; const char* name; bool combat; };

@@ -13,7 +13,7 @@ int main() {
     assert(index.put(1,{Id::SunnyPeak,10,10}));
     assert(index.bucketCount()==1 && index.snapshot().size()==2 && index.memberships(1)==1);
     for(int i=0;i<50;++i) assert(index.put(1,{Id::SunnyPeak,10,10}));
-    assert(!index.put(1,{Id::Invalid,0,0}) && !index.put(1,{Id::SunnyPeak,20,10}) && !index.put(-1,{Id::Clubhouse,10,10}));
+    assert(!index.put(1,{Id::Invalid,0,0}) && !index.put(1,{Id::SunnyPeak,world_regions::fieldWidth,10}) && !index.put(-1,{Id::Clubhouse,10,10}));
     assert(index.memberships(1)==1 && index.nearby({},100).empty() && index.nearby({Id::Clubhouse,0,0},-1).empty());
     assert(index.remove(1) && !index.remove(1) && index.remove(2) && index.bucketCount()==0);
     assert(index.put(3,{Id::Clubhouse,19,16}) && index.put(4,{Id::Clubhouse,20,16}));

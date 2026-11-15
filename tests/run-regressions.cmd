@@ -124,7 +124,9 @@ build\tests\server_region_state_test.exe
 if not "%errorlevel%"=="0" goto failed
 call tests\run-travel.cmd
 if not "%errorlevel%"=="0" goto failed
-echo All 41 regression programs passed. Run tests\run-display.cmd, tests\run-travel-client.cmd and tests\run-town-preview.cmd separately for GPU/window checks.
+call tests\run-field-chunks.cmd
+if not "%errorlevel%"=="0" goto failed
+echo All 43 regression programs passed. Run tests\run-display.cmd, tests\run-field-preview.cmd, tests\run-travel-client.cmd and tests\run-town-preview.cmd separately for GPU/window checks.
 popd
 exit /b 0
 :failed

@@ -12,7 +12,7 @@
 using ObjectId = std::int32_t;
 
 constexpr std::uint16_t GAME_PORT = 3000;
-constexpr std::uint8_t PROTOCOL_VERSION = 3;
+constexpr std::uint8_t PROTOCOL_VERSION = 4;
 
 constexpr std::size_t MAX_CHAT_LENGTH = 30;
 constexpr std::size_t MAX_ID_LENGTH = 48;

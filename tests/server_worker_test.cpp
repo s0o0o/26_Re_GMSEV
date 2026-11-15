@@ -15,7 +15,9 @@ void workerTestObserve(const std::shared_ptr<GAMESESSION>&,const char*);
 
 namespace fixture {
 using Clock=std::chrono::steady_clock;
-#if defined(GMSEV_TRAVEL_TEST)
+#if defined(GMSEV_CHUNK_TEST)
+constexpr int spawnX=47,spawnY=9; // Local (15,9), adjacent to the first chunk boundary.
+#elif defined(GMSEV_TRAVEL_TEST)
 constexpr int spawnX=clubhouse::spawnX,spawnY=clubhouse::spawnY;
 #elif defined(GMSEV_SECTOR_TEST)
 constexpr int spawnX=19,spawnY=16; // Right/left crosses Clubhouse's LOCAL sector boundary at x=20.
@@ -515,6 +517,58 @@ void runMultiworker(const sockaddr_in& address,std::vector<std::thread>& workers
     for(const auto& entry : observed) assert(entry.second.owner.expired());
 }
 #ifdef GMSEV_WORLD_TEST
+void runChunks(const sockaddr_in& address,std::vector<std::thread>& workers,std::shared_ptr<GAMESESSION> target) {
+    using world_regions::Id; using world_regions::Position;
+    auto old=connectPeer(address,0);
+    auto oldLogin=loginPacket(62001); oldLogin.version=3;
+    sendBytes(old,reinterpret_cast<char*>(&oldLogin),sizeof(oldLogin));
+    expect(old,S2C_P_LOGIN_FAIL); closePeer(old); assert(loadCount(62001)==0 && saveCount(62001)==0);
+    auto peer=connectPeer(address,old.accepted.connection); login(peer,62000,true);
+    auto subject=peer.accepted.owner.lock(); assert(subject);
+    { WorldStateLock lock;
+      target->object.position={Id::SunnyPeak,31,9}; target->updateSector(0,0);
+      assert(!target->monster._isActive); }
+    std::uint32_t token=0;
+    auto step=[&](int direction,Position expected) {
+        cs_packet_move packet{sizeof(packet),C2S_P_MOVE,static_cast<std::uint8_t>(direction),++token};
+        sendBytes(peer,reinterpret_cast<char*>(&packet),sizeof(packet));
+        sc_packet_move own{};
+        for(int n=0;n<128;++n) {
+            const auto bytes=expect(peer,S2C_P_MOVE); std::memcpy(&own,bytes.data(),sizeof(own));
+            if(own.id==peer.accepted.id) break;
+        }
+        assert(own.id==peer.accepted.id && own.move_time==token && own.region==static_cast<std::uint8_t>(expected.region));
+        assert(own.x==expected.x && own.y==expected.y);
+        for(int chunk=0;chunk<4;++chunk) {
+            const auto bytes=expect(peer,S2C_P_MAPINFO); sc_packet_mapInfo map{}; std::memcpy(&map,bytes.data(),sizeof(map));
+            assert(map.region==own.region && map.left_x==world_layout::cameraX(expected));
+            assert(map.top_y==world_layout::cameraY(expected)+chunk*4);
+            for(int y=0;y<4;++y) for(int x=0;x<18;++x)
+                assert(map.tiles[y][x]==mapTileAt(Position{expected.region,map.left_x+x,map.top_y+y}));
+        }
+        expect(peer,S2C_P_MONSTER_NEAR);
+        WorldStateLock lock; assert(worldSectors.memberships(subject->object._id)==1);
+    };
+    for(int x=16;x<=48;++x) {
+        step(3,{Id::SunnyPeak,x,9});
+        if(x==24) { WorldStateLock lock; assert(target->monster._isActive); }
+    }
+    { WorldStateLock lock; assert(!target->monster._isActive); }
+    for(int y=10;y<=32;++y) step(1,{Id::SunnyPeak,48,y});
+    for(int x=49;x<=85;++x) step(3,{Id::SunnyPeak,x,32}); // Real bridge crossing, not a fixture teleport.
+    { WorldStateLock lock; subject->object.position={Id::SunnyPeak,79,30}; subject->updateSector(0,0); }
+    step(3,{Id::SunnyPeak,79,30}); // Water blocks actual movement.
+    { WorldStateLock lock; subject->object.position={Id::SunnyPeak,254,254}; subject->updateSector(0,0); }
+    step(3,{Id::SunnyPeak,254,254}); // Boundary cliff; camera/map must remain clamped.
+    cs_packet_teleport request{sizeof(request),C2S_P_TELEPORT,world_travel::Action::ReturnHome,1};
+    sendBytes(peer,reinterpret_cast<char*>(&request),sizeof(request));
+    const auto result=decode<sc_packet_travel_result>(expect(peer,S2C_P_TRAVEL_RESULT));
+    assert(result.result==world_travel::Result::Success);
+    { WorldStateLock lock; assert(subject->object.position.region==Id::Clubhouse && worldSectors.memberships(subject->object._id)==1); }
+    closePeer(peer); subject.reset(); stopWorkers(workers); clients.clear();
+    { std::lock_guard<std::mutex> lock(mutex); assert(savedState[62000].position.region==Id::Clubhouse && saves[62000]==2); }
+    std::puts("field worker: chunk/sector movement, terrain maps, bridge, water/edge collision, NPC activation/sleep, return/DB-stub PASS");
+}
 void runTravel(const sockaddr_in& address,std::vector<std::thread>& workers,std::shared_ptr<GAMESESSION> target) {
     using namespace world_travel;
     auto home=connectPeer(address,0); login(home,61000,true);
@@ -835,7 +889,9 @@ int main() {
 #elif defined(GMSEV_TOWN_TEST)
     runTown(address,workers);
 #elif defined(GMSEV_WORLD_TEST)
-#ifdef GMSEV_TRAVEL_TEST
+#ifdef GMSEV_CHUNK_TEST
+    runChunks(address,workers,target);
+#elif defined(GMSEV_TRAVEL_TEST)
     runTravel(address,workers,target);
 #elif defined(GMSEV_REGION_TEST)
     runRegions(address,workers,target);
@@ -964,7 +1020,9 @@ int main() {
 #elif defined(GMSEV_TOWN_TEST)
     std::cout << "Town residents: autonomous walk, MOVE/visibility/re-entry, no monster AI/attack, field role defense passed (4 workers, DB stub)\n";
 #elif defined(GMSEV_WORLD_TEST)
-#ifdef GMSEV_TRAVEL_TEST
+#ifdef GMSEV_CHUNK_TEST
+    std::cout << "Field chunks: real worker wide-world checks passed (4 workers, DB stub)\n";
+#elif defined(GMSEV_TRAVEL_TEST)
     std::cout << "Travel: explicit requests/results and region transition passed (4 workers, DB stub)\n";
 #elif defined(GMSEV_REGION_TEST)
     std::cout << "Regions: real portal, observer leave, chase cancellation, stale AI, cross-region Lua chat and safe-zone attack passed (4 workers, DB stub)\n";

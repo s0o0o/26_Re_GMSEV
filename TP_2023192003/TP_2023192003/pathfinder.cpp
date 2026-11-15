@@ -42,7 +42,10 @@ std::vector<std::pair<int,int>> findPathAStar(int startX,int startY,int goalX,in
     for(auto& point : path) point.first+=world_regions::describe(start.region).originX;
     return path;
 }
-std::vector<std::pair<int,int>> findPathAStar(world_regions::Position start,world_regions::Position goal) {
+std::vector<std::pair<int,int>> findPathAStar(world_regions::Position start,world_regions::Position goal,
+    std::size_t maxExpanded,PathSearchStats* stats) {
+    PathSearchStats local; if(!stats) stats=&local; *stats={};
+    if(!maxExpanded) { stats->exhausted=true; return {}; }
     if(!world_regions::same(start,goal)) return {};
     const auto region=start.region;
     const int startX=start.x,startY=start.y,goalX=goal.x,goalY=goal.y;
@@ -58,6 +61,8 @@ std::vector<std::pair<int,int>> findPathAStar(world_regions::Position start,worl
 	openList.push(startNode);
 
 	while (!openList.empty()) {
+        stats->allocated=nodes.size();
+        if(stats->expanded>=maxExpanded) { stats->exhausted=true; return {}; }
 		Node* current = openList.top();
 		openList.pop();
 
@@ -72,6 +77,7 @@ std::vector<std::pair<int,int>> findPathAStar(world_regions::Position start,worl
 		}
 
 		if (!closedSet.insert(hash(current->x, current->y)).second) continue;
+        ++stats->expanded;
 
 		const int dx[4] = { 0, 0, -1, 1 };
 		const int dy[4] = { -1, 1, 0, 0 };

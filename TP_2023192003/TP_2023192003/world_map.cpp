@@ -1,49 +1,52 @@
 #include "world_map.hpp"
-#include "../../shared/field_content.hpp"
 #include <mutex>
 
-int map_data[MAP_HEIGHT][MAP_WIDTH];
-int mapTileAt(world_regions::Position position) {
-    world_regions::LegacyPosition legacy;
-    return world_regions::encode(position,legacy) ? mapTileAt(legacy.x,legacy.y) : 8;
-}
-bool playerCanMove(world_regions::Position position) noexcept {
-    return world_regions::valid(position) && mapTileAt(position)!=3;
-}
-bool collectSeed(world_regions::Position position,respawn_policy::Tick now) {
-    world_regions::LegacyPosition legacy;
-    return world_regions::encode(position,legacy) && collectSeed(legacy.x,legacy.y,now);
-}
 namespace {
 std::mutex mapMutex;
+field_chunks::Cache terrain;
 std::array<respawn_policy::Tick,field_content::seeds.size()> seedDeadlines{};
+bool walkableLocked(world_regions::Position p) {
+    if(!world_regions::valid(p)) return false;
+    return p.region==world_regions::Id::SunnyPeak ? field_terrain::walkable(terrain.at(p))
+        : clubhouse::walkable(p.x,p.y);
 }
-
-int mapTileAt(int x,int y) {
-    if (x < 0 || y < 0 || x >= MAP_WIDTH || y >= MAP_HEIGHT) return 8;
-    std::lock_guard<std::mutex> lock(mapMutex);
-    return map_data[y][x];
-}
-
-bool collectSeed(int x,int y,respawn_policy::Tick now) {
-    if (x < 0 || y < 0 || x >= MAP_WIDTH || y >= MAP_HEIGHT) return false;
-    std::lock_guard<std::mutex> lock(mapMutex);
-    if (map_data[y][x] != 4) return false;
-    map_data[y][x] = 0;
+int seedIndex(world_regions::Position p) {
     for(std::size_t i=0;i<field_content::seeds.size();++i) {
-        auto p=field_content::seeds[i];
-        if(p.x == x && p.y == y) seedDeadlines[i]=now+respawn_policy::seedDelay;
+        const auto seed=field_content::position(field_content::seeds[i]);
+        if(p.region==seed.region && p.x==seed.x && p.y==seed.y) return static_cast<int>(i);
     }
+    return -1;
+}
+}
+int mapTileAt(world_regions::Position p) {
+    if(!world_regions::valid(p)) return 8;
+    std::lock_guard<std::mutex> lock(mapMutex);
+    if(!walkableLocked(p)) return 3;
+    const int seed=seedIndex(p);
+    return seed>=0 && seedDeadlines[seed]==0 ? 4 : 0;
+}
+int mapTileAt(int x,int y) { return mapTileAt(world_regions::decode(x,y)); }
+bool playerCanMove(world_regions::Position p) noexcept {
+    if(!world_regions::valid(p)) return false;
+    std::lock_guard<std::mutex> lock(mapMutex);
+    return walkableLocked(p);
+}
+bool playerCanMove(int x,int y) noexcept { return playerCanMove(world_regions::decode(x,y)); }
+bool collectSeed(world_regions::Position p,respawn_policy::Tick now) {
+    if(!world_regions::valid(p)) return false;
+    std::lock_guard<std::mutex> lock(mapMutex);
+    const int seed=seedIndex(p);
+    if(seed<0 || seedDeadlines[seed]!=0 || !walkableLocked(p)) return false;
+    seedDeadlines[seed]=now+respawn_policy::seedDelay;
     return true;
 }
-
+bool collectSeed(int x,int y,respawn_policy::Tick now) { return collectSeed(world_regions::decode(x,y),now); }
 std::vector<field_content::Point> restoreSeeds(respawn_policy::Tick now) {
     std::lock_guard<std::mutex> lock(mapMutex);
     std::vector<field_content::Point> restored;
     for(std::size_t i=0;i<seedDeadlines.size();++i) {
         if(!respawn_policy::due(seedDeadlines[i],now)) continue;
-        auto p=field_content::seeds[i]; map_data[p.y][p.x]=4;
-        seedDeadlines[i]=0; restored.push_back(p);
+        seedDeadlines[i]=0; restored.push_back(field_content::seeds[i]);
     }
     return restored;
 }
@@ -51,16 +54,6 @@ std::vector<field_content::Point> restoreSeeds(respawn_policy::Tick now) {
 void initializeFieldMap() {
     std::lock_guard<std::mutex> lock(mapMutex);
     seedDeadlines.fill(0);
-    for (int y=0;y<MAP_HEIGHT;++y) for(int x=0;x<MAP_WIDTH;++x)
-        map_data[y][x]=world_layout::walkable(x,y) ? 0 : 3;
-    for(auto seed : field_content::seeds) map_data[seed.y][seed.x]=4;
+    terrain.clear();
 }
-
-bool playerCanMove(int x, int y) noexcept
-{
-	if (x < 0 || x >= MAP_WIDTH || y < 0 || y >= MAP_HEIGHT) {
-		return false;
-	}
-
-	return mapTileAt(x,y) != 3;
-}
+field_chunks::Stats mapCacheStats() { std::lock_guard<std::mutex> lock(mapMutex); return terrain.stats(); }

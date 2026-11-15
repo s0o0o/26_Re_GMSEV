@@ -737,7 +737,7 @@ void client_main()
 	temp = false;
 	avatar.draw();
 	    for (auto& pl : players) {
-        if(pl.second.position.region!=avatar.position.region) continue;
+        if(!field_chunks::onScreen(pl.second.position,avatar.position.region,g_left_x,g_top_y,18,16,1)) continue;
         pl.second.draw();
         if(pl.first >= MAX_USER && town_npcs::hostile(pl.second._monType)) combatHud().drawMonster(*g_window,gameFont(),pl.first,
             (pl.second.position.x-g_left_x)*50.f+1,(pl.second.position.y-g_top_y)*50.f+1,combatClock.getElapsedTime().asSeconds());
