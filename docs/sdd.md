@@ -33,6 +33,7 @@
 
 ## 명세 목록
 
+- [기존 GUI 부하 수명·단계 재현](specs/gui-load-lifecycle.md): 승인계정/local상태·IOCP중지/수거와미재현한계.
 - [서버 지역 상태·구조 문서](specs/server-region-state.md): 서버Position단일원본/이동·AI/DB경계와상시architecture갱신.
 - [일반클라 지역 내부 상태](specs/client-region-state.md): 2B-2B1 native위치/카메라local, 서버상태는후속.
 - [지역 좌표 패킷 v2](specs/region-wire-v2.md): 2B-2A wire/local과 임시legacy렌더·DB경계, canonical상태는후속.

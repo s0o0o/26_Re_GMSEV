@@ -2,6 +2,8 @@
 #include <atomic>
 
 void InitializeNetwork();
+bool ShutdownNetwork();
+bool NetworkRunFinished();
 void GetPointCloud(int* size, float** points);
 
 struct LoadTestStats {

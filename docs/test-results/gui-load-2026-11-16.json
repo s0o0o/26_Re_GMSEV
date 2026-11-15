@@ -1,0 +1,21 @@
+{
+  "date":"2026-11-16","issue":52,"parent_issue":10,"base_commit":"91adbf2",
+  "program":"original STRESS_TEST.exe OpenGL GUI with IOCP, bounded self-test mode",
+  "final_directory":"gui-load-20261116-025717","hold_seconds_per_stage":15,"repetitions_final":1,
+  "account_start":900001000,"new_accounts":0,"preserved_accounts_total":600,
+  "phases":[
+    {"clients":30,"accepted":30,"moved":30,"closed":30,"gui_errors":0,"pending":0,"drained":true,"exit_code":0,"scene_drawn":true,"frame_swapped":true,"server_alive":true,"saved_success":30,"save_failed":0,"server_send_errors_before_stop":0,"server_send_errors_after_stop":4},
+    {"clients":100,"accepted":100,"moved":100,"closed":100,"gui_errors":0,"pending":0,"drained":true,"exit_code":0,"scene_drawn":true,"frame_swapped":true,"server_alive":true,"saved_success":100,"save_failed":0,"server_send_errors_before_stop":0,"server_send_errors_after_stop":54},
+    {"clients":300,"accepted":300,"moved":300,"closed":300,"gui_errors":0,"pending":0,"drained":true,"exit_code":0,"scene_drawn":true,"frame_swapped":true,"server_alive":true,"saved_success":300,"save_failed":0,"server_send_errors_before_stop":0,"server_send_errors_after_stop":276}
+  ],
+  "prior_runs":[
+    {"directory":"gui-load-20261116-024819","outcome":"harness READY argument error before GUI launch"},
+    {"directory":"gui-load-20261116-025003","outcome":"30/100/300 network and stop passed before explicit scene coverage"},
+    {"directory":"gui-load-20261116-025518","outcome":"30/100/300 network and stop passed before explicit scene coverage"}
+  ],
+  "regressions":39,"builds":["GUI x64 Debug","GUI x64 Release"],"server_build":"unchanged #51 Release reused",
+  "server_completion_errors_after_stop":[30,100,212],"server_completion_errors_before_stop":[0,0,0],
+  "historical_crash":"not reproduced under stated conditions; original cause unknown",
+  "preview_kind":"measured result chart, not OS/game screenshot",
+  "not_verified":["manual GUI input","OS screenshot","long soak","forced pending timeout","all error injection","durable DB readback","max performance"]
+}

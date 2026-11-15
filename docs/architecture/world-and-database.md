@@ -1,6 +1,6 @@
 # 월드·지역 좌표·DB 경계
 
-갱신: 2026-11-16, #51. [구조 입구](README.md).
+갱신: 2026-11-16, #52. [구조 입구](README.md).
 
 ## 위치의 단일 원본
 
@@ -44,4 +44,4 @@ world 잠금 안에서 상태 스냅샷을 만들고 DB 호출은 world 밖에�
 
 ## 아직 남은 경계
 
-맵원본/field_content/DB와GUIstress에는legacy호환이남는다. 큰필드/새지역을추가하려면자료·충돌·활성범위·DB표현을함께설계해야하며descriptor만늘리면완료되지않는다. tests/legacy_position_fixture.hpp는과거시나리오를보존하는테스트전용어댑터이며생산위치필드가아니다.
+맵원본/field_content/DB에는legacy호환이남는다. #52에서GUIstress도region/local위치로바뀌었다. 큰필드/새지역을추가하려면자료·충돌·활성범위·DB표현을함께설계해야하며descriptor만늘리면완료되지않는다. tests/legacy_position_fixture.hpp는과거시나리오를보존하는테스트전용어댑터이며생산위치필드가아니다.

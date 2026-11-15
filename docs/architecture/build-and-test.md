@@ -1,6 +1,6 @@
 # 빌드·실행·검증 안내
 
-갱신: 2026-11-16, #51. [구조 입구](README.md).
+갱신: 2026-11-16, #52. [구조 입구](README.md).
 
 ## 개발 환경과 출력
 
@@ -36,5 +36,7 @@ Debug도Configuration만바꿔빌드한다. 출력은각각`TP_2023192003/x64/Re
 `analyze-load-trace.ps1`는단계대기·EOF·저장성공반환을요약한다. 성공반환은별도의durable DB readback검증과다르다. `render-load-report.ps1`의PNG는실측도표이지게임캡처가아니다. #10은기존GUI도구를직접검사해야하며새콘솔통과만으로닫지않는다.
 
 ## 결과를 남길 위치와 유지보수
+
+기존GUI도구는 [GUI 수명 안내](gui-stress.md)의 별도 실행기 `tools/run-approved-gui-load.ps1 -ConfirmAccountWrites`를 쓴다. 콘솔 실행기와 혼동하지 않는다. 30/100/300 각15초·scene/swap/종료코드·pending수거를 확인하며 실제 DB 저장이 발생한다. GUI의 일괄 close 뒤 서버 송신 오류는 종료 전/후를 구분한다. `tools/render-gui-load-report.ps1`은 실측 도표이며 OS 캡처가 아니다.
 
 실행시점/기준commit/명령/계정범위/성공·실패/미실행은`docs/test-results/`와작업설명에기록한다. 구조설명은이폴더를갱신하고과거실행결과는덮어쓰지않는다. 빌드/회귀와성능부하를동시에돌리지않는다. CP949기존소스수정은인코딩을보존하고새문서는UTF-8로쓴다. 실제게임캡처·생산렌더러테스트출력·설계목업을구분하여미리보기를제공한다.
