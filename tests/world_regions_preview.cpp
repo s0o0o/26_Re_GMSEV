@@ -3,7 +3,6 @@
 #include "../TP_2023192003/TP_2023192003/region_sector_index.hpp"
 #include "../TP_2023192003/TP_2023192003/server_config.hpp"
 #include "../TP_2023192003/TP_2023192003/database_position.hpp"
-#include "../shared/legacy_packet_adapter.hpp"
 #include <cassert>
 #include <iostream>
 int main() {
@@ -21,15 +20,13 @@ int main() {
         world_regions::LegacyPosition encoded; assert(world_regions::encode(positions[i],encoded));
         sc_packet_avatar_info wire{}; wire.size=sizeof(wire); wire.type=S2C_P_AVATAR_INFO;
         assert(packet_position::write(wire,positions[i]));
-        LegacyPacketAdapter adapter; const auto* decoded=adapter.decode(&wire,sizeof(wire)); assert(decoded);
-        const auto* rendered=reinterpret_cast<const sc_packet_avatar_info*>(decoded);
-        assert(rendered->x==encoded.x && rendered->y==encoded.y);
-        const int left=world_layout::cameraX(encoded.x),top=world_layout::cameraY(encoded.y);
+        const world_regions::Position clientState{static_cast<world_regions::Id>(wire.region),wire.x,wire.y};
+        const int left=world_layout::cameraX(clientState),top=world_layout::cameraY(clientState);
         sf::RenderTexture scene; assert(scene.create(900,800)); scene.clear();
-        renderer.draw(scene,left,top);
+        renderer.draw(scene,clientState.region,left,top);
         sf::Sprite avatar(hamster,{48,0,48,48});
-        world_character::place(avatar,(encoded.x-left)*50.f,(encoded.y-top)*50.f); scene.draw(avatar);
-        renderer.drawLabel(scene,font,encoded.x); scene.display();
+        world_character::place(avatar,(clientState.x-left)*50.f,(clientState.y-top)*50.f); scene.draw(avatar);
+        renderer.drawLabel(scene,font,clientState.region); scene.display();
         sf::Sprite frame(scene.getTexture()); frame.setPosition(i*900.f,65); output.draw(frame);
         sf::Text title(std::string("Region ")+std::to_string(static_cast<int>(positions[i].region))+" : "+world_regions::describe(positions[i].region).name,font,26);
         title.setFillColor({255,248,228}); centerText(title,{i*900.f,5,900,50}); output.draw(title);
@@ -38,7 +35,7 @@ int main() {
         const auto candidates=index.nearby(positions[i],0);
         assert(candidates.size()==1 && candidates.count(i+1) && !candidates.count(2-i));
         region_sectors::Key key; assert(index.keyFor(positions[i],key));
-        sf::Text diagnostic("Wire v2: region="+std::to_string(wire.region)+" / local ("+std::to_string(wire.x)+", "+std::to_string(wire.y)+") -> render adapter: OK",font,18);
+        sf::Text diagnostic("Client local (10, 10) / camera ("+std::to_string(left)+", "+std::to_string(top)+") / no native legacy adapter",font,18);
         diagnostic.setFillColor({242,212,155}); centerText(diagnostic,{i*900.f,907,900,28}); output.draw(diagnostic);
         world_regions::LegacyPosition stored; assert(database_position::encodeLegacy(positions[i],stored));
         const auto restored=database_position::restoreLegacy(stored.x,stored.y);
@@ -51,5 +48,6 @@ int main() {
     assert(output.getTexture().copyToImage().saveToFile("build/tests/region-sectors-preview.png"));
     assert(output.getTexture().copyToImage().saveToFile("build/tests/database-position-preview.png"));
     assert(output.getTexture().copyToImage().saveToFile("build/tests/region-wire-v2-preview.png"));
+    assert(output.getTexture().copyToImage().saveToFile("build/tests/client-region-state-preview.png"));
     std::cout<<"Existing production map renderer preview saved (not a DB-connected game screenshot)\n";
 }

@@ -15,6 +15,7 @@ int main() {
         ProcessPacket(reinterpret_cast<char*>(&packet));
         const auto& object=players.at(definition.id);
         assert(object._monType==definition.type && object.id==definition.id && std::strcmp(object.name,definition.name)==0);
+        assert(object.position.region==world_regions::Id::Clubhouse && object.position.x==definition.x);
         assert(combatHud().hp(definition.id)==-1);
         sc_packet_move move{}; move.size=sizeof(move); move.type=S2C_P_MOVE; move.id=definition.id;
         move.x=definition.x+1; move.y=definition.y;
@@ -29,15 +30,17 @@ int main() {
     ProcessPacket(reinterpret_cast<char*>(&unknown)); assert(!players.count(unknown.id));
     sf::Image pixels; pixels.create(104,52,sf::Color::White); sf::Texture texture; assert(texture.loadFromImage(pixels));
     monHamster=&texture; hunHamster=&texture;
-    for(int type : {1,2}) {
-        sc_packet_enter monster{}; monster.size=sizeof(monster); monster.type=S2C_P_ENTER; monster.id=MAX_USER+type;
-        monster.monType=type; monster.hp=monster.max_hp=5; strcpy_s(monster.name,"Field");
-        ProcessPacket(reinterpret_cast<char*>(&monster));
-        assert(players.at(monster.id)._monType==type && combatHud().hp(monster.id)==5);
-    }
     for(const auto& definition : town_npcs::residents) {
         sc_packet_leave leave{}; leave.size=sizeof(leave); leave.type=S2C_P_LEAVE; leave.id=definition.id;
         ProcessPacket(reinterpret_cast<char*>(&leave)); assert(!players.count(leave.id));
+    }
+    moveAvatar({world_regions::Id::SunnyPeak,10,10});
+    for(int type : {1,2}) {
+        sc_packet_enter monster{}; monster.size=sizeof(monster); monster.type=S2C_P_ENTER; monster.id=MAX_USER+type;
+        monster.region=2; monster.x=11; monster.y=10;
+        monster.monType=type; monster.hp=monster.max_hp=5; strcpy_s(monster.name,"Field");
+        ProcessPacket(reinterpret_cast<char*>(&monster));
+        assert(players.at(monster.id)._monType==type && combatHud().hp(monster.id)==5);
     }
     players.clear(); window.close(); g_window=nullptr;
     std::cout<<"Production client: resident ENTER/draw/LEAVE, no HP HUD, unknown type rejection, hostile types retained passed\n";

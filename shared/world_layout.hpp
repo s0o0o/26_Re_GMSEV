@@ -34,4 +34,11 @@ constexpr int cameraX(int x) {
     return outdoors(x) ? fieldX+clamp(x-fieldX-9,fieldWidth-18) : clamp(x-9,clubhouse::width-18);
 }
 constexpr int cameraY(int y) { return clamp(y-8,height-16); }
+// Canonical client camera: no legacy field origin participates in its state.
+constexpr int cameraX(world_regions::Position position) {
+    return world_regions::valid(position) ? clamp(position.x-9,world_regions::describe(position.region).width-18) : 0;
+}
+constexpr int cameraY(world_regions::Position position) {
+    return world_regions::valid(position) ? clamp(position.y-8,world_regions::describe(position.region).height-16) : 0;
+}
 }

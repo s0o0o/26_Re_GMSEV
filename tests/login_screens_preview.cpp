@@ -53,6 +53,7 @@ int main() {
     assert(enemyTexture.loadFromFile("monHam.png"));
     monHamster=&enemyTexture;
     g_myid=1; avatar._seedNum=22;
+    moveAvatar({world_regions::Id::SunnyPeak,10,10});
     sc_packet_enter enemy{};
     enemy.size=sizeof(enemy); enemy.type=S2C_P_ENTER; enemy.id=MAX_USER+1;
     enemy.monType=1; enemy.region=2; enemy.x=10; enemy.y=8; enemy.hp=3; enemy.max_hp=5;
@@ -198,16 +199,35 @@ int main() {
         assert(g_myid == 1 && g_left_x == world_layout::cameraX(10) && g_top_y == world_layout::cameraY(12));
         sc_packet_move move{};
         move.size=sizeof(move); move.type=S2C_P_MOVE; move.id=1;
+        players.emplace(77,OBJECT{}); combatHud().enter(77,3,5);
+        clientMapData[0][0]=4; nearMonCnt=1;
         move.region=2; move.x=10; move.y=10;
         process_data(reinterpret_cast<char*>(&move),sizeof(move));
-        assert(avatar.m_x == 42 && avatar.m_y == 10 && g_left_x == world_layout::cameraX(42));
+        assert(avatar.position.region==world_regions::Id::SunnyPeak && avatar.position.x==10 && avatar.position.y==10);
+        assert(g_left_x==1 && g_top_y==2);
+        assert(players.empty() && nearMonCnt==0 && clientMapData[0][0]==0 && combatHud().hp(77)==-1);
+        players.emplace(78,OBJECT{}); players.at(78).position=avatar.position;
+        sc_packet_move staleMove=move; staleMove.id=78; staleMove.region=1; staleMove.x=11;
+        ProcessPacket(reinterpret_cast<char*>(&staleMove));
+        assert(players.at(78).position.region==world_regions::Id::SunnyPeak && players.at(78).position.x==10);
+        sc_packet_enter staleEnter{}; staleEnter.size=sizeof(staleEnter); staleEnter.type=S2C_P_ENTER;
+        staleEnter.id=79; staleEnter.x=10; staleEnter.y=10;
+        ProcessPacket(reinterpret_cast<char*>(&staleEnter)); assert(!players.count(79));
+        clientMapData[0][0]=4;
+        sc_packet_mapInfo staleMap{}; staleMap.size=sizeof(staleMap); staleMap.type=S2C_P_MAPINFO;
+        staleMap.left_x=1; staleMap.top_y=2; staleMap.tiles[0][0]=8;
+        ProcessPacket(reinterpret_cast<char*>(&staleMap)); assert(clientMapData[0][0]==4);
+        move.region=1; move.x=10; move.y=10; // Same local coordinate, different region.
+        process_data(reinterpret_cast<char*>(&move),sizeof(move));
+        assert(avatar.position.region==world_regions::Id::Clubhouse && avatar.position.x==10 && avatar.position.y==10);
+        assert(players.empty() && clientMapData[0][0]==0);
         move.region=1; move.x=10; move.y=14;
         process_data(reinterpret_cast<char*>(&move),sizeof(move));
-        assert(avatar.m_x == 10 && avatar.m_y == 14 && g_left_x == world_layout::cameraX(10));
+        assert(avatar.position.x==10 && avatar.position.y==14 && g_left_x==world_layout::cameraX(avatar.position));
         const auto original=move;
         move.region=255;
         ProcessPacket(reinterpret_cast<char*>(&move));
-        assert(avatar.m_x==10 && avatar.m_y==14); // Invalid wire cannot mutate rendered position.
+        assert(avatar.position.x==10 && avatar.position.y==14); // Invalid wire cannot mutate rendered position.
         move=original;
         sc_packet_mapInfo map{};
         map.size=sizeof(map); map.type=S2C_P_MAPINFO;
@@ -216,10 +236,10 @@ int main() {
         process_data(reinterpret_cast<char*>(&map),sizeof(map));
         assert(g_left_x == world_layout::cameraX(10) && g_top_y == world_layout::cameraY(14));
         assert(clientMapData[0][0] == 4);
-        const auto snapshot=avatar.m_x;
+        const auto snapshot=avatar.position.x;
         map.region=255; map.tiles[0][0]=8;
         ProcessPacket(reinterpret_cast<char*>(&map));
-        assert(avatar.m_x==snapshot && clientMapData[0][0]==4);
+        assert(avatar.position.x==snapshot && clientMapData[0][0]==4);
     }
     {
         sf::TcpSocket peer;
