@@ -1,7 +1,8 @@
 param([switch]$ConfirmAccountWrites,[switch]$ReuseApprovedTestAccounts,
     [ValidateSet('mixed','separate')][string]$LoadMode='separate',
     [ValidateSet('drain','immediate')][string]$CloseMode='drain',[switch]$Trace,
-    [ValidateSet(900000000,900001000)][int]$TestAccountStart=900000000)
+    [ValidateSet(900000000,900001000)][int]$TestAccountStart=900000000,
+    [ValidateRange(2,300)][int]$HoldSeconds=15)
 $ErrorActionPreference='Stop'
 if(!$ConfirmAccountWrites) { throw 'Requires -ConfirmAccountWrites: creates/updates 300 accounts from TestAccountStart. No automatic deletion.' }
 $root=[System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
@@ -26,8 +27,8 @@ try {
         if(!$ready) { Start-Sleep -Milliseconds 100 }
     } until($ready -or [DateTime]::UtcNow -gt $readyDeadline)
     if(!$ready) { throw 'Server READY deadline exceeded; load not started.' }
-    $client=Start-Process -FilePath $clientExe -ArgumentList @('300',"$TestAccountStart",'15','45','3000',$LoadMode,$CloseMode) -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $runDirectory 'client.log') -RedirectStandardError (Join-Path $runDirectory 'client-error.log')
-    if(!$client.WaitForExit(70000)) { throw 'Load client exceeded the outer deadline.' }
+    $client=Start-Process -FilePath $clientExe -ArgumentList @('300',"$TestAccountStart","$HoldSeconds",'45','3000',$LoadMode,$CloseMode) -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $runDirectory 'client.log') -RedirectStandardError (Join-Path $runDirectory 'client-error.log')
+    if(!$client.WaitForExit((45+$HoldSeconds+15)*1000)) { throw 'Load client exceeded the outer deadline.' }
     $client.Refresh()
     Get-Content -LiteralPath (Join-Path $runDirectory 'client.log')
     Start-Sleep -Seconds 3

@@ -4,6 +4,9 @@ Add-Type -AssemblyName System.Drawing
 $line=Get-Content -LiteralPath (Join-Path $RunDirectory 'client.log') | Where-Object { $_.StartsWith('RESULT ') } | Select-Object -Last 1
 if(!$line) { throw 'No measured load result found.' }
 $result=$line.Substring(7) | ConvertFrom-Json
+$configuration=Get-Content -LiteralPath (Join-Path $RunDirectory 'client.log') | Where-Object { $_ -match '^\[LOAD\].*hold_seconds=(\d+)' } | Select-Object -First 1
+if(!$configuration -or $configuration -notmatch 'hold_seconds=(\d+)') { throw 'No measured hold duration found.' }
+$holdSeconds=[int]$Matches[1]
 $serverErrors=@(Get-Content -LiteralPath (Join-Path $RunDirectory 'server-error.log') | Select-String -SimpleMatch 'Send submission failed').Count
 $bitmap=New-Object System.Drawing.Bitmap 1200,750
 $g=[System.Drawing.Graphics]::FromImage($bitmap)
@@ -20,7 +23,7 @@ try {
     $g.DrawString('Hamster RPG | 300-client load test',$title,$white,45,35)
     $g.DrawString('Measured result chart - NOT a game screenshot',$body,$muted,45,96)
     $g.DrawString('Actual local server + actual DB | Dedicated test accounts',$small,$muted,45,137)
-    $g.DrawString(('Client criteria passed: '+$result.passed+' | 15-second hold: '+$result.hold_completed),$body,$green,45,190)
+    $g.DrawString(('Client criteria passed: '+$result.passed+' | '+$holdSeconds+'-second hold: '+$result.hold_completed),$body,$green,45,190)
     $labels=@('Login accepted','Peak concurrent','Still active at end','Clients with move replies')
     $values=@($result.accepted,$result.peak,$result.active_at_end,$result.moved_clients)
     for($i=0;$i -lt 4;$i++) {

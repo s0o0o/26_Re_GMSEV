@@ -1,0 +1,16 @@
+{
+  "date": "2026-11-15",
+  "base_commit": "fd9b0fb",
+  "issue": 48,
+  "parent_issue": 41,
+  "account_range": [900001000, 900001299],
+  "new_accounts": 0,
+  "preserved_accounts_total": 600,
+  "limits": {"clients": 300, "login_seconds": 45, "hold_seconds": 120, "drain_seconds": 5},
+  "runs": [
+    {"directory": "load-20261115-183849-f0bd80af", "trace": true, "passed": true, "accepted": 300, "peak": 300, "active_at_end": 300, "moved_clients": 300, "hold_completed": true, "client_errors": 0, "drain_eof": 300, "drain_timeouts": 0, "drain_ms": 4512, "elapsed_ms": 129836, "queued_moves": 36970, "own_move_replies": 35935, "unanswered_at_measurement_end": 1035, "send_errors": 0, "disconnect_saved_success": 300, "disconnect_saved_failure": 0, "login_ready_max_ms": 1026, "login_queue_max_ms": 68, "world_wait_max_ms": 2353},
+    {"directory": "load-20261115-184118-ac648b6b", "trace": false, "passed": true, "accepted": 300, "peak": 300, "active_at_end": 300, "moved_clients": 300, "hold_completed": true, "client_errors": 0, "drain_eof": 300, "drain_timeouts": 0, "drain_ms": 448, "elapsed_ms": 125615, "queued_moves": 36794, "own_move_replies": 36754, "unanswered_at_measurement_end": 40, "send_errors": 0, "disconnect_saved_success": null}
+  ],
+  "verification": ["bounded TCP mock regression and hold bounds", "PowerShell default/range/early rejection", "console W4 and solution server Release build", "actual DB mixed 120-second ON/OFF sequential", "postflight counts 300+300", "measured report image visual inspection"],
+  "limitations": "Not long soak, fresh creation, other map/combat, max capacity, all-move response latency, durable DB readback or historical GUI crash proof. Full 37 regressions not rerun. ON drain 4512ms is close to the unchanged 5-second limit; causal trace overhead not established."
+}

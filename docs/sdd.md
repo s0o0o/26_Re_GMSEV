@@ -32,6 +32,7 @@
 
 ## 명세 목록
 
+- [기존300계정 유지 시간 확장](specs/extended-mixed-load.md): 제한형120초 혼합/실제 DB 재사용과 미검증 조건 구분.
 - [일반 exe 로그인·재시도](specs/native-login-validation.md): 실행 경로 독립 리소스 탐색과 실제 OS 창/DB 증거.
 - [템플릿](specs/_template.md)
 - [송신 완료 경합 완화](specs/send-completion-fast-path.md): 정상/이미종료중SEND의수명해제와부분송신차단.
