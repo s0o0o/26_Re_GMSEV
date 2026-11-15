@@ -22,6 +22,13 @@ using namespace std;
 #include "loading_screen.hpp"
 #include "clubhouse_renderer.hpp"
 #include "combat_hud.hpp"
+#include "travel_panel.hpp"
+#include "../../shared/packet_outbox.hpp"
+world_travel::ClientState travelState;
+PacketOutbox gameOutbox;
+TravelPanel travelPanel;
+void send_packet(void* packet);
+void gameConnectionLost();
 #include "town_npc_renderer.hpp"
 TownNpcRenderer& townNpcRenderer() { static TownNpcRenderer value; return value; }
 CombatHud& combatHud() { static CombatHud value; return value; }
@@ -33,6 +40,19 @@ HamsterCustomizer& hamsterCustomizer() {
 }
 
 sf::TcpSocket s_socket;
+void gameConnectionLost() {
+    extern bool isChatMode; isChatMode=false;
+    travelState.disconnect(); gameOutbox.clear(); s_socket.disconnect();
+}
+bool flushGamePackets() {
+    const bool okay=gameOutbox.pump([](const std::uint8_t* data,std::size_t size,std::size_t& sent) {
+        const auto status=s_socket.send(data,size,sent);
+        if(status==sf::Socket::Error || status==sf::Socket::Disconnected) return PacketOutbox::Send::Failed;
+        return status==sf::Socket::NotReady ? PacketOutbox::Send::Wait : PacketOutbox::Send::Progress;
+    });
+    if(!okay) gameConnectionLost();
+    return okay;
+}
 
 
 constexpr auto TILE_WIDTH = 50;
@@ -368,12 +388,25 @@ void moveAvatar(world_regions::Position next) {
     avatar.move(next);
     g_left_x=world_layout::cameraX(next); g_top_y=world_layout::cameraY(next);
 }
+bool handleTravelInput(const sf::Event& event,sf::Vector2f mouse,bool chat) {
+    const bool enabled=!travelState.pending() && travelState.status!=world_travel::ClientStatus::Disconnected;
+    if(travelPanel.activate(event,mouse,chat,enabled)) {
+        cs_packet_teleport packet{};
+        if(travelState.begin(avatar.position,GetTickCount64(),packet)) send_packet(&packet);
+        return true;
+    }
+    return event.type==sf::Event::KeyPressed && event.key.code!=sf::Keyboard::Escape
+        && (!enabled || (!chat && event.key.code==sf::Keyboard::R));
+}
 void ProcessPacket(char* ptr)
 {
     if(!is_valid_server_packet(reinterpret_cast<const std::uint8_t*>(ptr),static_cast<unsigned char>(ptr[0]))) return;
 	static bool first_time = true;
 	switch (ptr[1])
 	{
+    case S2C_P_TRAVEL_RESULT:
+        travelState.receive(*reinterpret_cast<const sc_packet_travel_result*>(ptr));
+        break;
 	case S2C_P_AVATAR_INFO:
 	{
 		sc_packet_avatar_info* packet = reinterpret_cast<sc_packet_avatar_info*>(ptr);
@@ -690,17 +723,12 @@ void client_main()
 	char net_buf[BUF_SIZE];
 	size_t   received;
 
-	auto recv_result = s_socket.receive(net_buf, BUF_SIZE, received);
-	if (recv_result == sf::Socket::Error) {
-		wcout << L"Recv 에러!";
-		exit(-1);
-	}
-	if (recv_result == sf::Socket::Disconnected) {
-		wcout << L"Disconnected\n";
-		exit(-1);
-	}
-	if (recv_result != sf::Socket::NotReady)
-		if (received > 0) process_data(net_buf, received);
+    travelState.tick(GetTickCount64());
+    if(travelState.status!=world_travel::ClientStatus::Disconnected && flushGamePackets()) {
+        const auto recv_result=s_socket.receive(net_buf,BUF_SIZE,received);
+        if(recv_result==sf::Socket::Error || recv_result==sf::Socket::Disconnected) gameConnectionLost();
+        else if(recv_result!=sf::Socket::NotReady && received>0) process_data(net_buf,received);
+    }
 
 	// 맵그리기 
 
@@ -716,6 +744,8 @@ void client_main()
     }
     combatHud().drawMessage(*g_window,gameFont(),combatClock.getElapsedTime().asSeconds());
     clubhouseRenderer().drawLabel(*g_window,gameFont(),avatar.position.region);
+    travelPanel.draw(*g_window,gameFont(),avatar.position.region,travelState,
+        g_window->mapPixelToCoords(sf::Mouse::getPosition(*g_window)),isChatMode);
 	sf::Text text;
 	text.setFont(gameFont());
 	char buf[100];
@@ -816,9 +846,10 @@ void client_main()
 
 void send_packet(void* packet)
 {
-	unsigned char* p = reinterpret_cast<unsigned char*>(packet);
-	size_t sent = 0;
-	s_socket.send(packet, p[0], sent);
+    const auto* p=static_cast<const std::uint8_t*>(packet);
+    if(travelState.status==world_travel::ClientStatus::Disconnected) return;
+    if(!gameOutbox.enqueue(packet,p[0])) gameConnectionLost();
+    else flushGamePackets();
 }
 
 void drawStartScreen(sf::RenderTarget& window, const sf::String& nickname) {
@@ -904,6 +935,7 @@ void drawCustomizationScreen(sf::RenderTarget& window) {
 }
 
 void beginLoginConnection(unsigned short port = GAME_PORT) {
+    travelState={}; gameOutbox.clear(); travelPanel.pressed=false; travelPanel.rDown=false;
     s_socket.disconnect();
     in_packet_size = saved_packet_size = 0;
     s_socket.setBlocking(true);
@@ -1036,6 +1068,10 @@ int main()
                 }
             }
             else if (loginFlow.stage() == GAMESTATE::GameScreen) {
+                sf::Vector2i pixel=sf::Mouse::getPosition(window);
+                if(event.type==sf::Event::MouseButtonPressed || event.type==sf::Event::MouseButtonReleased)
+                    pixel={event.mouseButton.x,event.mouseButton.y};
+                if(handleTravelInput(event,window.mapPixelToCoords(pixel),isChatMode)) continue;
 
 				if (event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::Tab) {
 					isChatMode = !isChatMode;
@@ -1125,7 +1161,7 @@ int main()
 						break;
 					}
 					if (-1 != direction) {
-						cs_packet_move p;
+						cs_packet_move p{};
 						p.size = sizeof(p);
 						p.type = C2S_P_MOVE;
 						p.direction = direction;

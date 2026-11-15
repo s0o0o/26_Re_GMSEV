@@ -15,7 +15,9 @@ void workerTestObserve(const std::shared_ptr<GAMESESSION>&,const char*);
 
 namespace fixture {
 using Clock=std::chrono::steady_clock;
-#if defined(GMSEV_SECTOR_TEST)
+#if defined(GMSEV_TRAVEL_TEST)
+constexpr int spawnX=clubhouse::spawnX,spawnY=clubhouse::spawnY;
+#elif defined(GMSEV_SECTOR_TEST)
 constexpr int spawnX=19,spawnY=16; // Right/left crosses Clubhouse's LOCAL sector boundary at x=20.
 #elif defined(GMSEV_WORLD_TEST) || defined(GMSEV_LUA_AI_TEST)
 constexpr int spawnX=39,spawnY=7; // Field regression coordinates; now both lie in local sector (0,0).
@@ -513,6 +515,69 @@ void runMultiworker(const sockaddr_in& address,std::vector<std::thread>& workers
     for(const auto& entry : observed) assert(entry.second.owner.expired());
 }
 #ifdef GMSEV_WORLD_TEST
+void runTravel(const sockaddr_in& address,std::vector<std::thread>& workers,std::shared_ptr<GAMESESSION> target) {
+    using namespace world_travel;
+    auto home=connectPeer(address,0); login(home,61000,true);
+    auto field=connectPeer(address,home.accepted.connection); login(field,61001,false);
+    expectEnter(home,field.accepted.id);
+    auto request=[&](Peer& peer,std::uint32_t sequence,Action action,Result expected,bool moved) {
+        cs_packet_teleport packet{sizeof(packet),C2S_P_TELEPORT,action,sequence};
+        // Exercise framing, not direct processPacket calls.
+        sendBytes(peer,reinterpret_cast<char*>(&packet),1);
+        sendBytes(peer,reinterpret_cast<char*>(&packet)+1,sizeof(packet)-1);
+        bool ownMove=false;
+        for(int i=0;i<128;++i) {
+            auto bytes=receive(peer);
+            if(static_cast<std::uint8_t>(bytes[1])==S2C_P_MOVE) {
+                sc_packet_move move{}; std::memcpy(&move,bytes.data(),sizeof(move));
+                if(move.id==peer.accepted.id) {
+                    const auto destination=world_travel::destination(action);
+                    assert(move.region==static_cast<std::uint8_t>(destination.region));
+                    assert(move.x==destination.x && move.y==destination.y); ownMove=true;
+                }
+            }
+            if(static_cast<std::uint8_t>(bytes[1])==S2C_P_TRAVEL_RESULT) {
+                auto result=decode<sc_packet_travel_result>(bytes);
+                assert(result.requestId==sequence && result.result==expected && ownMove==moved); return;
+            }
+        }
+        assert(false);
+    };
+    request(field,1,Action::EnterField,Result::Success,true);
+    expectLeave(home,field.accepted.id);
+    auto peer=connectPeer(address,field.accepted.connection); login(peer,61002,true);
+    expectEnter(home,peer.accepted.id);
+    auto subject=peer.accepted.owner.lock(); assert(subject);
+    request(peer,0,Action::EnterField,Result::InvalidRequest,false);
+    request(peer,1,static_cast<Action>(99),Result::InvalidRequest,false);
+    request(peer,1,Action::EnterField,Result::Success,true);
+    expectLeave(home,peer.accepted.id); expectEnter(field,peer.accepted.id);
+    request(peer,1,Action::EnterField,Result::Success,false);
+    request(peer,1,Action::ReturnHome,Result::InvalidRequest,false);
+    request(peer,2,Action::EnterField,Result::AlreadyThere,false);
+    request(peer,1,Action::EnterField,Result::StaleRequest,false);
+    std::uint64_t generation;
+    { WorldStateLock lock;
+      target->monster.chaseTarget=peer.accepted.id; target->monster._isMonsterChase=true;
+      target->monster._isActive=true; target->_viewList.insert(peer.accepted.id);
+      generation=target->monster.generation;
+      assert(!transitionRegion(*subject,{world_regions::Id::Invalid,0,0}));
+      assert(worldSectors.memberships(subject->object._id)==1); }
+    request(peer,3,Action::ReturnHome,Result::Success,true);
+    expectLeave(field,peer.accepted.id); expectEnter(home,peer.accepted.id);
+    { WorldStateLock lock;
+      assert(target->monster.generation>generation && target->monster.chaseTarget==-1);
+      assert(!target->monster._isMonsterChase && !target->_viewList.count(peer.accepted.id));
+      assert(!subject->_viewList.count(field.accepted.id));
+      assert(worldSectors.memberships(subject->object._id)==1); }
+    request(peer,4,Action::ReturnHome,Result::AlreadyThere,false);
+    closePeer(peer); closePeer(field); closePeer(home); subject.reset();
+    { std::lock_guard<std::mutex> guard(mutex);
+      assert(saves[61002]==2 && savedState[61002].position.region==world_regions::Id::Clubhouse);
+      assert(savedState[61002].position.x==11 && savedState[61002].position.y==12); }
+    stopWorkers(workers); clients.clear();
+    std::puts("travel worker: TCP/authority/observers/replay/chase/sector/DB-stub save PASS");
+}
 void runRegions(const sockaddr_in& address,std::vector<std::thread>& workers,std::shared_ptr<GAMESESSION> target) {
     auto peer=connectPeer(address,0); login(peer,60000,true);
     auto watcher=connectPeer(address,peer.accepted.connection); login(watcher,60001,true);
@@ -770,7 +835,9 @@ int main() {
 #elif defined(GMSEV_TOWN_TEST)
     runTown(address,workers);
 #elif defined(GMSEV_WORLD_TEST)
-#ifdef GMSEV_REGION_TEST
+#ifdef GMSEV_TRAVEL_TEST
+    runTravel(address,workers,target);
+#elif defined(GMSEV_REGION_TEST)
     runRegions(address,workers,target);
 #elif defined(GMSEV_LUA_AI_TEST)
     runLuaAI(address,workers,target);
@@ -897,7 +964,9 @@ int main() {
 #elif defined(GMSEV_TOWN_TEST)
     std::cout << "Town residents: autonomous walk, MOVE/visibility/re-entry, no monster AI/attack, field role defense passed (4 workers, DB stub)\n";
 #elif defined(GMSEV_WORLD_TEST)
-#ifdef GMSEV_REGION_TEST
+#ifdef GMSEV_TRAVEL_TEST
+    std::cout << "Travel: explicit requests/results and region transition passed (4 workers, DB stub)\n";
+#elif defined(GMSEV_REGION_TEST)
     std::cout << "Regions: real portal, observer leave, chase cancellation, stale AI, cross-region Lua chat and safe-zone attack passed (4 workers, DB stub)\n";
 #elif defined(GMSEV_LUA_AI_TEST)
     std::cout << "Lua AI: actual policy movement, same-tile chase recovery, budget fallback, sleep and stale timer passed (4 workers, DB stub)\n";

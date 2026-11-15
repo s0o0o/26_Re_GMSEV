@@ -1,6 +1,6 @@
 # 빌드·실행·검증 안내
 
-갱신: 2026-11-16, #52. [구조 입구](README.md).
+갱신: 2026-11-16, #53. [구조 입구](README.md).
 
 ## 개발 환경과 출력
 
@@ -16,7 +16,8 @@ Debug도Configuration만바꿔빌드한다. 출력은각각`TP_2023192003/x64/Re
 
 ## DB 없는 검사부터
 
-- `tests/run-regressions.cmd`:현재39개프로그램. 단위·실제worker/loopback+DB대역·모의TCP부하를포함한다. 실제DB300명실행이아니다.
+- `tests/run-regressions.cmd`:현재41개프로그램. 귀환 규칙/실제worker, 단위·loopback+DB대역·모의TCP부하를포함한다. 실제DB300명실행이아니다.
+- `tests/run-travel-client.cmd`:생산클라의 버튼/R키·부분응답·실패/timeout·해상도별 렌더러 출력. 실제 OS 입력/DB 캡처와 구분한다.
 - `tests/run-login-screens-preview.cmd`:생산클라파서/커마/loopback·이미지. 일반exe OS입력검증과구분한다.
 - `tests/run-region-preview.cmd`:생산맵렌더러/지역·카메라·DBcodec출력. 실제DB조회아님.
 - `tests/run-town-preview.cmd`:주민이미지/생산클라입장·보간·퇴장. `run-display.cmd`는화면크기/F11, `run-world-character.cmd`는픽셀스케일/외형검사.
