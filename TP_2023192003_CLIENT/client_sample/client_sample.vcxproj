@@ -137,6 +137,11 @@
       <OptimizeReferences>true</OptimizeReferences>
     </Link>
   </ItemDefinitionGroup>
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+    </ClCompile>
+  </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="client.cpp" />
     <ClCompile Include="hamster_customizer.cpp" />
@@ -159,6 +164,7 @@
     <ClInclude Include="town_npc_renderer.hpp" />
     <ClInclude Include="town_motion.hpp" />
     <ClInclude Include="world_character.hpp" />
+    <ClInclude Include="client_asset_paths.hpp" />
     <ClInclude Include="..\..\shared\town_npcs.hpp" />
     <ClInclude Include="..\..\shared\clubhouse_map.hpp" />
     <ClInclude Include="..\..\shared\world_layout.hpp" />

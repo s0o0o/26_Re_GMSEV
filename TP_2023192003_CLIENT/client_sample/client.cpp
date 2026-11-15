@@ -5,6 +5,7 @@
 #include <SFML/Network.hpp>
 #include <iostream>
 #include "world_character.hpp"
+#include "client_asset_paths.hpp"
 #include <unordered_map>
 #include <Windows.h>
 #include <chrono>
@@ -938,6 +939,16 @@ void pumpLogin(sf::Time timeout = sf::seconds(10)) {
 }
 int main()
 {
+    std::array<wchar_t,32768> executable{};
+    const auto length=GetModuleFileNameW(nullptr,executable.data(),static_cast<DWORD>(executable.size()));
+    std::error_code assetError;
+    const auto originalCwd=std::filesystem::current_path(assetError);
+    if(!length || length>=executable.size() || assetError) return 1;
+    const auto assetRoot=client_assets::locate(std::filesystem::path(executable.data()),originalCwd);
+    if(assetRoot.empty()) { std::cerr<<"[STARTUP] Game assets missing near executable.\n"; return 1; }
+    std::filesystem::current_path(assetRoot,assetError);
+    if(assetError) return 1;
+    std::cout<<"[STARTUP] Game assets ready.\n";
 	wcout.imbue(locale("korean"));
 	gameFont().loadFromFile("neodgm.ttf");
 	if (!gameFont().loadFromFile("neodgm.ttf")) {
