@@ -110,7 +110,11 @@ cl /nologo /EHsc /std:c++17 tests\load_trace_test.cpp /Fo:build\tests\ /Fe:build
 if not "%errorlevel%"=="0" goto failed
 build\tests\load_trace_test.exe
 if not "%errorlevel%"=="0" goto failed
-echo All 36 regression programs passed. Run tests\run-display.cmd and tests\run-town-preview.cmd separately for GPU/window checks.
+cl /nologo /EHsc /std:c++17 tests\client_asset_paths_test.cpp /Fo:build\tests\ /Fe:build\tests\client_asset_paths_test.exe
+if not "%errorlevel%"=="0" goto failed
+build\tests\client_asset_paths_test.exe
+if not "%errorlevel%"=="0" goto failed
+echo All 37 regression programs passed. Run tests\run-display.cmd and tests\run-town-preview.cmd separately for GPU/window checks.
 popd
 exit /b 0
 :failed

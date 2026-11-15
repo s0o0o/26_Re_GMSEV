@@ -32,6 +32,7 @@
 
 ## 명세 목록
 
+- [일반 exe 로그인·재시도](specs/native-login-validation.md): 실행 경로 독립 리소스 탐색과 실제 OS 창/DB 증거.
 - [템플릿](specs/_template.md)
 - [송신 완료 경합 완화](specs/send-completion-fast-path.md): 정상/이미종료중SEND의수명해제와부분송신차단.
 - [월드 캐릭터 크기·픽셀](specs/world-character-scale.md): 커마 표시 보존, native 월드 아틀라스와 정수2배.

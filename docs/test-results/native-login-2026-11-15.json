@@ -1,0 +1,18 @@
+{
+  "date": "2026-11-15",
+  "base": "d085cef",
+  "issues": [19, 47],
+  "kind": "ordinary Release executable, actual OS UI input and capture",
+  "account": 900001299,
+  "existing_range_preflight_rows": 300,
+  "accounts_created": 0,
+  "regression_programs_passed": 37,
+  "final_client_builds": ["x64 Debug", "x64 Release"],
+  "db_changes": "existing test account nickname UI, Bijou appearance and position saved",
+  "startup_before": {"exit_code": -1, "error": "Font Loading Error"},
+  "silence_fixture": {"real_db": false, "received_bytes": 58, "sent_bytes": 0, "timeout_ui_observed": true},
+  "same_process_retry": {"real_db": true, "connection_id": 7, "position_before": [13, 12], "position_after": [14, 12], "saved": true},
+  "ordinary_exe_reconnect": {"connection_id": 8, "restored_position": [14, 12], "character": "Bijou", "nickname": "UI", "saved": true},
+  "screenshots_under_build_tests": ["native-login-timeout.png", "native-login-retry-success.png", "native-login-movement.png", "native-login-reconnect.png"],
+  "not_verified": ["historical 10053 initial cause", "all IMEs", "multiple devices", "new account load", "long duration load"]
+}
