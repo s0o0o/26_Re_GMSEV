@@ -32,6 +32,7 @@
 
 ## 명세 목록
 
+- [일반클라 지역 내부 상태](specs/client-region-state.md): 2B-2B1 native위치/카메라local, 서버상태는후속.
 - [지역 좌표 패킷 v2](specs/region-wire-v2.md): 2B-2A wire/local과 임시legacy렌더·DB경계, canonical상태는후속.
 - [기존300계정 유지 시간 확장](specs/extended-mixed-load.md): 제한형120초 혼합/실제 DB 재사용과 미검증 조건 구분.
 - [일반 exe 로그인·재시도](specs/native-login-validation.md): 실행 경로 독립 리소스 탐색과 실제 OS 창/DB 증거.

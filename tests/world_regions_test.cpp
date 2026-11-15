@@ -10,6 +10,9 @@ int main() {
         for(int y=0;y<d.height;++y) for(int x=0;x<d.width;++x) {
             LegacyPosition legacy; assert(encode({id,x,y},legacy));
             auto p=decode(legacy.x,legacy.y); assert(p.region==id && p.x==x && p.y==y);
+            const auto left=world_layout::cameraX(p),top=world_layout::cameraY(p);
+            assert(left>=0 && top>=0 && left+18<=d.width && top+16<=d.height);
+            assert(left==world_layout::cameraX(legacy.x)-d.originX && top==world_layout::cameraY(legacy.y));
         }
     }
     assert(!same(Position{Id::Clubhouse,10,10},Position{Id::SunnyPeak,10,10}));
@@ -22,6 +25,7 @@ int main() {
         assert(!encode(p,unchanged)); assert(unchanged.x==12 && unchanged.y==13);
     }
     assert(!combatAllowed(10,10) && combatAllowed(42,10) && !combatAllowed(999,10));
+    assert(world_layout::cameraX(Position{})==0 && world_layout::cameraY(Position{})==0);
     int x=10,y=14; assert(world_layout::portal(x,y) && decode(x,y).region==Id::SunnyPeak);
     y=12; assert(world_layout::portal(x,y) && decode(x,y).region==Id::Clubhouse);
 }

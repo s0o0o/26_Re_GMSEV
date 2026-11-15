@@ -6,7 +6,7 @@
 #include <iostream>
 #include "world_character.hpp"
 #include "client_asset_paths.hpp"
-#include "../../shared/legacy_packet_adapter.hpp"
+// Native objects and camera consume region-local wire coordinates directly.
 #include <unordered_map>
 #include <Windows.h>
 #include <chrono>
@@ -133,7 +133,7 @@ private:
 	chrono::system_clock::time_point m_mess_end_time;
 public:
 	int         id=-1;
-	int         m_x=0, m_y=0;
+	world_regions::Position position{world_regions::Id::Clubhouse,0,0};
     town_motion::State townMotion;
 	char        name[NAME_SIZE];
 	short		_hp, _maxHp, _level, _exp, _seedNum, _damage; // hp, 최대hp, 레벨, 경험치. 획득씨앗갯수
@@ -168,11 +168,12 @@ public:
 		g_window->draw(m_sprite);
 	}
 
-	void move(int x, int y) {
-        if(town_npcs::isResident(_monType)) townMotion.move(x,y,combatClock.getElapsedTime().asSeconds());
-		m_x = x;
-		m_y = y;
-	}
+	void move(world_regions::Position next) {
+        if(!world_regions::valid(next)) return;
+        if(position.region!=next.region) townMotion={};
+        if(town_npcs::isResident(_monType)) townMotion.move(next.x,next.y,combatClock.getElapsedTime().asSeconds());
+        position=next;
+    }
 
 	void draw() {
 		if (false == m_showing) return;
@@ -182,8 +183,8 @@ public:
             townNpcRenderer().draw(*g_window,_monType,(position.x-g_left_x)*50.f,(position.y-g_top_y)*50.f,gameFont(),name,seconds,townMotion.facing);
             return;
         }
-		float rx = (m_x - g_left_x) * TILE_WIDTH + 1;
-		float ry = (m_y - g_top_y) * TILE_WIDTH + 1;
+		float rx = (position.x - g_left_x) * TILE_WIDTH + 1;
+		float ry = (position.y - g_top_y) * TILE_WIDTH + 1;
 		        if (id >= 0 && id < MAX_USER) {
             world_character::place(m_sprite,rx-1.f,ry-1.f);
         } else m_sprite.setPosition(rx,ry);
@@ -343,7 +344,7 @@ void client_initialize()
 
 	// 프로필
 	profileSprite.setPosition(0 + 15, WINDOW_HEIGHT - profileHeight - 15);
-	avatar.move(4, 4);
+	avatar.move({world_regions::Id::Clubhouse,4,4});
 }
 
 void client_finish()
@@ -356,12 +357,20 @@ void client_finish()
 
 
 // 서버로부터 온거 까는거 
+void moveAvatar(world_regions::Position next) {
+    if(!world_regions::valid(next)) return;
+    if(avatar.position.region!=next.region) {
+        players.clear();
+        memset(clientMapData,0,sizeof(clientMapData));
+        combatHud().clear(); nearMonCnt=0;
+        memset(nearMonsters,0,sizeof(nearMonsters));
+    }
+    avatar.move(next);
+    g_left_x=world_layout::cameraX(next); g_top_y=world_layout::cameraY(next);
+}
 void ProcessPacket(char* ptr)
 {
-    LegacyPacketAdapter positionAdapter;
-    auto* decoded=positionAdapter.decode(ptr,static_cast<unsigned char>(ptr[0]));
-    if(!decoded) return;
-    ptr=reinterpret_cast<char*>(decoded);
+    if(!is_valid_server_packet(reinterpret_cast<const std::uint8_t*>(ptr),static_cast<unsigned char>(ptr[0]))) return;
 	static bool first_time = true;
 	switch (ptr[1])
 	{
@@ -382,9 +391,9 @@ void ProcessPacket(char* ptr)
 		avatar._seedNum = packet->seedNum;
 		seedNumText.setString(to_string(avatar._seedNum));
 
-		avatar.move(packet->x, packet->y);
-		g_left_x = world_layout::cameraX(packet->x);
-		g_top_y = world_layout::cameraY(packet->y);
+		moveAvatar({static_cast<world_regions::Id>(packet->region),packet->x,packet->y});
+		g_left_x = world_layout::cameraX(avatar.position);
+		g_top_y = world_layout::cameraY(avatar.position);
 		avatar.show();
 	}
 	break;
@@ -392,13 +401,14 @@ void ProcessPacket(char* ptr)
 	{
 		sc_packet_enter* my_packet = reinterpret_cast<sc_packet_enter*>(ptr);
 		int id = my_packet->id;
+        if(id!=g_myid && my_packet->region!=static_cast<std::uint8_t>(avatar.position.region)) break;
 		cout << "sc_packet_enter : " << id << endl;
 
 		if (id == g_myid) {
-			if (world_layout::outdoors(avatar.m_x) != world_layout::outdoors(my_packet->x)) { memset(clientMapData,0,sizeof(clientMapData)); combatHud().clear(); }
-            avatar.move(my_packet->x, my_packet->y);
-			g_left_x = world_layout::cameraX(my_packet->x);
-			g_top_y = world_layout::cameraY(my_packet->y);
+			// moveAvatar owns region transition cleanup.
+            moveAvatar({static_cast<world_regions::Id>(my_packet->region),my_packet->x,my_packet->y});
+			g_left_x = world_layout::cameraX(avatar.position);
+			g_top_y = world_layout::cameraY(avatar.position);
 			avatar.show();
 		}
 		else if (id < MAX_USER) {
@@ -406,7 +416,7 @@ void ProcessPacket(char* ptr)
 			players[id]._monType = my_packet->monType;
             players[id].get_sprite().setTexture(hamsterCustomizer().worldTexture(my_packet->fur_color, my_packet->eye_style, my_packet->scarf_style, my_packet->character_kind));
 			players[id].id = id;
-			players[id].move(my_packet->x, my_packet->y);
+			players[id].move({static_cast<world_regions::Id>(my_packet->region),my_packet->x,my_packet->y});
 			players[id].set_name(my_packet->name);
 			players[id].show();
 
@@ -421,7 +431,7 @@ void ProcessPacket(char* ptr)
             else break; // Unknown NPC types must not leave an uninitialized object.
             players[id]._monType=static_cast<short>(type);
             if(town_npcs::hostile(type)) combatHud().enter(id,my_packet->hp,my_packet->max_hp);
-            players[id].id=id; players[id].move(my_packet->x,my_packet->y);
+            players[id].id=id; players[id].move({static_cast<world_regions::Id>(my_packet->region),my_packet->x,my_packet->y});
             players[id].set_name(my_packet->name); players[id].show();
         }
 		break;
@@ -432,14 +442,15 @@ void ProcessPacket(char* ptr)
 		sc_packet_move* my_packet = reinterpret_cast<sc_packet_move*>(ptr);
 		int other_id = my_packet->id;
 		if (other_id == g_myid) {
-			if (world_layout::outdoors(avatar.m_x) != world_layout::outdoors(my_packet->x)) { memset(clientMapData,0,sizeof(clientMapData)); combatHud().clear(); }
-            avatar.move(my_packet->x, my_packet->y);
-			g_left_x = world_layout::cameraX(my_packet->x);
-			g_top_y = world_layout::cameraY(my_packet->y);
+			// moveAvatar owns region transition cleanup.
+            moveAvatar({static_cast<world_regions::Id>(my_packet->region),my_packet->x,my_packet->y});
+			g_left_x = world_layout::cameraX(avatar.position);
+			g_top_y = world_layout::cameraY(avatar.position);
 		}
 		else {
-			auto moving=players.find(other_id);
-            if (moving != players.end()) moving->second.move(my_packet->x,my_packet->y);
+			if(my_packet->region!=static_cast<std::uint8_t>(avatar.position.region)) break;
+            auto moving=players.find(other_id);
+            if (moving != players.end()) moving->second.move({static_cast<world_regions::Id>(my_packet->region),my_packet->x,my_packet->y});
 		}
 		break;
 	}
@@ -531,9 +542,10 @@ void ProcessPacket(char* ptr)
 	{
 		//cout << "S2C_P_MAPINFO 날라옴 " << endl;
 		sc_packet_mapInfo* p = reinterpret_cast<sc_packet_mapInfo*>(ptr);
+        if(p->region!=static_cast<std::uint8_t>(avatar.position.region)) break;
 
-		g_left_x = world_layout::cameraX(avatar.m_x);
-		g_top_y = world_layout::cameraY(avatar.m_y);
+		g_left_x = world_layout::cameraX(avatar.position);
+		g_top_y = world_layout::cameraY(avatar.position);
 
 		const int MAP_ROW_CHUNK = 4;
 
@@ -692,21 +704,22 @@ void client_main()
 
 	// 맵그리기 
 
-    clubhouseRenderer().draw(*g_window,g_left_x,g_top_y);
+    clubhouseRenderer().draw(*g_window,avatar.position.region,g_left_x,g_top_y);
     clubhouseRenderer().drawPickups(*g_window,&clientMapData[0][0],SCREEN_WIDTH,SCREEN_HEIGHT);
 	temp = false;
 	avatar.draw();
 	    for (auto& pl : players) {
+        if(pl.second.position.region!=avatar.position.region) continue;
         pl.second.draw();
         if(pl.first >= MAX_USER && town_npcs::hostile(pl.second._monType)) combatHud().drawMonster(*g_window,gameFont(),pl.first,
-            (pl.second.m_x-g_left_x)*50.f+1,(pl.second.m_y-g_top_y)*50.f+1,combatClock.getElapsedTime().asSeconds());
+            (pl.second.position.x-g_left_x)*50.f+1,(pl.second.position.y-g_top_y)*50.f+1,combatClock.getElapsedTime().asSeconds());
     }
     combatHud().drawMessage(*g_window,gameFont(),combatClock.getElapsedTime().asSeconds());
-    clubhouseRenderer().drawLabel(*g_window,gameFont(),avatar.m_x);
+    clubhouseRenderer().drawLabel(*g_window,gameFont(),avatar.position.region);
 	sf::Text text;
 	text.setFont(gameFont());
 	char buf[100];
-	sprintf_s(buf, "(%d, %d)", avatar.m_x, avatar.m_y);
+	sprintf_s(buf, "(%d, %d)", avatar.position.x, avatar.position.y);
 
 	g_window->draw(profileSprite); // 프로필그리는거
 
@@ -1099,8 +1112,8 @@ int main()
 							p.id = avatar.id;
 							p.hp = avatar._hp;
 							p.damage = avatar._damage;
-							p.x = avatar.m_y;
-							p.y = avatar.m_y;
+							p.x = 0; // Reserved legacy claim; server owns attack position.
+							p.y = 0;
 							p.seedNum = avatar._seedNum;
 							send_packet(&p);
 						}

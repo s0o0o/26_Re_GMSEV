@@ -1,0 +1,15 @@
+{
+  "date": "2026-11-15",
+  "base_commit": "a7bddf1",
+  "issue": 50,
+  "stage": "2B-2B1 native client region/local state; server canonical state pending",
+  "wire_version_unchanged": 2,
+  "regression_programs_passed": 38,
+  "checks": ["all region cells local camera bounds and visual position equivalence", "production client TCP loopback and split frames", "same local coordinate different region", "region transition scene cleanup", "foreign region ENTER/MOVE/MAP ignored", "invalid position/version state unchanged", "resident local state and interpolation/LEAVE", "display F11 and sizing", "world character regression", "live client scene compile only"],
+  "client_builds": ["x64 Debug", "x64 Release"],
+  "real_db_executed": false,
+  "accounts_created": 0,
+  "db_data_changed": false,
+  "preview": {"path": "build/tests/client-region-state-preview.png", "kind": "production renderer local state/camera test output, not actual DB game capture", "regions": [1,2], "local_position": [10,10], "local_camera": [1,2]},
+  "not_verified": ["server canonical local state", "actual DB or load this turn", "ordinary executable OS input this turn", "historical GUI crash", "region generations for positionless messages"]
+}

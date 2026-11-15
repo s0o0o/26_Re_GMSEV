@@ -39,7 +39,7 @@ int main() {
         if(!window.isOpen()) break;
         window.clear(); client_main(); window.display();
         int count=0; std::set<std::pair<int,int>> positions;
-        for(const auto& entry:players) if(entry.first>=0 && entry.first<MAX_USER) { ++count; positions.emplace(entry.second.m_x,entry.second.m_y); }
+        for(const auto& entry:players) if(entry.first>=0 && entry.first<MAX_USER && entry.second.position.region==avatar.position.region) { ++count; positions.emplace(entry.second.position.x,entry.second.position.y); }
         if(!captured && count>=15 && bounded_load::Clock::now()-began>=std::chrono::seconds(8)) {
             sf::Texture pixels; assert(pixels.create(window.getSize().x,window.getSize().y)); pixels.update(window);
             assert(pixels.copyToImage().saveToFile(output.string())); captured=true;
