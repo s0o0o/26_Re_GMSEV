@@ -96,7 +96,7 @@ bool isMonSee(int from, int to)
 
 
 void initializeMap() {
-    std::cout << "[MAP] Preparing Club House + Sunny Peak 52x18..." << std::endl;
+    std::cout << "[MAP] Clubhouse 24x18 + Sunny Peak " << world_regions::fieldWidth << "x" << world_regions::fieldHeight << " (lazy 16x16 terrain chunks)" << std::endl;
     initializeFieldMap();
     std::cout << "[MAP] Two regions ready." << std::endl;
 }

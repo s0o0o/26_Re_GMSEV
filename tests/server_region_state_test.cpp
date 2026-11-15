@@ -11,7 +11,7 @@ int main() {
     assert(world_regions::combatAllowed(field.location()) && !world_regions::combatAllowed(club.location()));
     initializeFieldMap();
     assert(playerCanMove(field.location()) && playerCanMove(club.location()));
-    assert(!playerCanMove(Position{Id::SunnyPeak,20,10}) && !playerCanMove(Position{}));
+    assert(!playerCanMove(Position{Id::SunnyPeak,world_regions::fieldWidth,10}) && !playerCanMove(Position{}));
     const Position seed{Id::SunnyPeak,4,8},indoor{Id::Clubhouse,4,8};
     assert(mapTileAt(seed)==4 && mapTileAt(indoor)!=4);
     assert(!collectSeed(indoor,1000) && collectSeed(seed,1000) && !collectSeed(seed,1001));

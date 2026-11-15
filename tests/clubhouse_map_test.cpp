@@ -42,14 +42,14 @@ int main() {
     world_layout::safePosition(x,y);
     assert(x == 42 && y == 10);
     assert(!world_layout::walkable(27,10));
-    assert(world_layout::cameraX(34) == 32 && world_layout::cameraX(49) == 34);
+    assert(world_layout::cameraX(34) == 32 && world_layout::cameraX(49) == 40);
     bool fieldSeen[18][20]{};
     pending.push({10,10}); fieldSeen[10][10]=true;
     while (!pending.empty()) {
         auto p=pending.front(); pending.pop();
         for (auto d : {std::make_pair(1,0),std::make_pair(-1,0),std::make_pair(0,1),std::make_pair(0,-1)}) {
             int nx=p.first+d.first,ny=p.second+d.second;
-            if (world_layout::fieldWalkable(nx,ny) && !fieldSeen[ny][nx]) {
+            if (nx>=0 && ny>=0 && nx<20 && ny<18 && world_layout::fieldWalkable(nx,ny) && !fieldSeen[ny][nx]) {
                 fieldSeen[ny][nx]=true; pending.push({nx,ny});
             }
         }

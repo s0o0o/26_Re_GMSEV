@@ -1,12 +1,12 @@
 #pragma once
 #include "world_regions.hpp"
+#include "field_terrain.hpp"
 namespace world_layout {
 constexpr int fieldX = world_regions::fieldOrigin, fieldWidth = world_regions::fieldWidth;
-constexpr int width = fieldX+fieldWidth, height = 18;
+constexpr int width = fieldX+fieldWidth, height = world_regions::fieldHeight;
 constexpr bool outdoors(int x) { return x >= fieldX; }
 constexpr bool fieldWalkable(int x,int y) {
-    return x >= 2 && x <= 17 && y >= 5 && y <= 12
-        && !(x >= 9 && x <= 13 && y == 5);
+    return field_terrain::walkable(x,y);
 }
 constexpr bool walkable(int x,int y) {
     const auto p=world_regions::decode(x,y);
@@ -33,7 +33,9 @@ constexpr int clamp(int value,int maximum) { return value < 0 ? 0 : (value > max
 constexpr int cameraX(int x) {
     return outdoors(x) ? fieldX+clamp(x-fieldX-9,fieldWidth-18) : clamp(x-9,clubhouse::width-18);
 }
-constexpr int cameraY(int y) { return clamp(y-8,height-16); }
+// Ambiguous historical Y-only helper: retained for old starter-scene fixtures.
+// Production and expanded-field callers must pass Position instead.
+constexpr int cameraY(int y) { return clamp(y-8,clubhouse::height-16); }
 // Canonical client camera: no legacy field origin participates in its state.
 constexpr int cameraX(world_regions::Position position) {
     return world_regions::valid(position) ? clamp(position.x-9,world_regions::describe(position.region).width-18) : 0;

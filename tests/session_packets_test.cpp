@@ -90,7 +90,7 @@ int main() {
     assert(sent.size() == 1);
 
     sent.clear();
-    map_data[0][0] = 6;
+    initializeFieldMap();
     receiver.sendMapInfo(0, 0, 0);
     assert(sent.size() == 4);
     for (int chunk = 0; chunk < 4; ++chunk) {
@@ -100,7 +100,7 @@ int main() {
         assert(packet.type == S2C_P_MAPINFO);
         assert(packet.left_x == 0);
         assert(packet.top_y == chunk * 4);
-        if (chunk == 0) assert(packet.tiles[0][0] == 6);
+        if (chunk == 0) assert(packet.tiles[0][0] == 3); // Actual authored wall, not an array mutation.
     }
     sent.clear();
     setTestLegacyX(receiver.object,42); setTestLegacyY(receiver.object,10);

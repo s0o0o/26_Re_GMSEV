@@ -33,6 +33,9 @@
 
 ## 명세 목록
 
+- [넓은 필드 청크·충돌](specs/field-chunks.md): 256×256 지형/충돌, 제한 LRU·가시 표시·경로 예산과 v4 범위 계약.
+- [거점↔필드 귀환](specs/hub-field-travel.md): 서버 권위 목적지·중복 방지·전환 정리·native 버튼/R키와 실패 처리.
+
 - [기존 GUI 부하 수명·단계 재현](specs/gui-load-lifecycle.md): 승인계정/local상태·IOCP중지/수거와미재현한계.
 - [서버 지역 상태·구조 문서](specs/server-region-state.md): 서버Position단일원본/이동·AI/DB경계와상시architecture갱신.
 - [일반클라 지역 내부 상태](specs/client-region-state.md): 2B-2B1 native위치/카메라local, 서버상태는후속.

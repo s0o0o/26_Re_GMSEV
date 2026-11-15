@@ -1,6 +1,6 @@
 # 빌드·실행·검증 안내
 
-갱신: 2026-11-16, #53. [구조 입구](README.md).
+갱신: 2026-11-16, #54. [구조 입구](README.md).
 
 ## 개발 환경과 출력
 
@@ -16,7 +16,9 @@ Debug도Configuration만바꿔빌드한다. 출력은각각`TP_2023192003/x64/Re
 
 ## DB 없는 검사부터
 
-- `tests/run-regressions.cmd`:현재41개프로그램. 귀환 규칙/실제worker, 단위·loopback+DB대역·모의TCP부하를포함한다. 실제DB300명실행이아니다.
+- `tests/run-regressions.cmd`:현재43개프로그램. 청크/충돌·귀환 규칙/실제worker, 단위·loopback+DB대역·모의TCP부하를포함한다. 실제DB300명실행이아니다.
+- `tests/run-field-chunks.cmd`:모든 필드 칸·연결성·제한 캐시·수집 상태·경로 예산과 실제TCP/IOCP4worker+DB대역 이동 검사.
+- `tests/run-field-preview.cmd`:가시 청크·타일·캐시 예산, 시작/다리/절벽/끝·충돌 진단과 해상도별 생산 렌더러 출력. 실제 OS 입력/DB 화면/FPS 측정이 아니다.
 - `tests/run-travel-client.cmd`:생산클라의 버튼/R키·부분응답·실패/timeout·해상도별 렌더러 출력. 실제 OS 입력/DB 캡처와 구분한다.
 - `tests/run-login-screens-preview.cmd`:생산클라파서/커마/loopback·이미지. 일반exe OS입력검증과구분한다.
 - `tests/run-region-preview.cmd`:생산맵렌더러/지역·카메라·DBcodec출력. 실제DB조회아님.

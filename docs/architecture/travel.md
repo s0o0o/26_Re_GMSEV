@@ -4,7 +4,7 @@
 
 ## 요청과 서버 판정
 
-기존 no-op이던 `C2S_P_TELEPORT(12)`를 명시적 `Action + requestId`로 확장했다. 공유 프로토콜은 v3이며 서버·일반 클라·GUI/콘솔 도구를 함께 다시 빌드해야 한다. 옛 2바이트 요청은 길이 검사를 통과하지 않는다. `S2C_P_TRAVEL_RESULT(20)`는 요청 ID와 결과를 반환한다.
+기존 no-op이던 `C2S_P_TELEPORT(12)`를 v3에서 명시적 `Action + requestId`로 확장했다. 현재 공유 프로토콜은 넓은 필드 범위 계약까지 반영한 v4이며 모든 서버·클라·도구를 함께 빌드해야 한다. 옛 2바이트 요청은 거절한다. `S2C_P_TRAVEL_RESULT(20)`는 요청 ID와 결과다.
 
 `processPacket → session.travel.request → transitionRegion` 순서다. EnterField는 SunnyPeak 내부 (10,10), ReturnHome은 공용 Clubhouse 내부 (11,12)로만 이동한다. 클라가 좌표/지역을 임의로 지정하지 않는다. 개인 집 기능은 아니다.
 

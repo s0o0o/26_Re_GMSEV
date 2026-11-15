@@ -2,11 +2,14 @@
 #include <SFML/Graphics.hpp>
 #include "../../shared/world_layout.hpp"
 #include "ui_alignment.hpp"
+#include "field_renderer.hpp"
 
 class ClubhouseRenderer {
     sf::Texture texture_;
     sf::Texture outdoor_;
+    FieldRenderer field_;
 public:
+    const FieldRenderer& fieldRenderer() const { return field_; }
     bool load(const std::string& path) {
         sf::Image source;
         if (!source.loadFromFile(path) || source.getSize().x < 865 || source.getSize().y < 597) return false;
@@ -24,7 +27,7 @@ public:
         field.create(320,288);
         field.copy(source,0,0,{921,1,320,288});
         if (!outdoor_.loadFromImage(field)) return false;
-        outdoor_.setSmooth(false); return true;
+        outdoor_.setSmooth(false); return field_.load(source);
     }
     void draw(sf::RenderTarget& target,world_regions::Id region,int left,int top) const {
         const bool field = region==world_regions::Id::SunnyPeak;
@@ -34,6 +37,7 @@ public:
         room.setScale(50.f/16,50.f/16);
         room.setPosition(-left*50.f,-top*50.f);
         target.draw(room);
+        if(field) field_.draw(target,left,top);
         sf::RectangleShape portal({42,12});
         portal.setFillColor({242,212,155}); portal.setOutlineColor({130,86,54}); portal.setOutlineThickness(2);
         portal.setPosition((10-left)*50.f+4,(field ? 12-top : 14-top)*50.f+28);

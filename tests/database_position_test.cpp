@@ -20,7 +20,7 @@ int main() {
         const auto result=database_position::restoreLegacy(legacy.x,legacy.y);
         assert(result.recovered && result.position.region==Id::Clubhouse && result.legacy.x==clubhouse::spawnX && result.legacy.y==clubhouse::spawnY);
     }
-    for(auto position : {world_regions::Position{Id::Invalid,0,0},{Id::Clubhouse,5,10},{Id::SunnyPeak,20,10}}) {
+    for(auto position : {world_regions::Position{Id::Invalid,0,0},{Id::Clubhouse,5,10},{Id::SunnyPeak,world_regions::fieldWidth,10}}) {
         world_regions::LegacyPosition untouched{777,888};
         assert(!database_position::encodeLegacy(position,untouched) && untouched.x==777 && untouched.y==888);
         const int before=writes; assert(!update_user_position(123,position,5,10,1,0,20,1) && writes==before);

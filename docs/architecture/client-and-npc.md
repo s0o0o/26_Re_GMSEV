@@ -1,13 +1,13 @@
 # 클라이언트 화면과 NPC/Lua
 
-갱신: 2026-11-16, #53. [구조 입구](README.md).
+갱신: 2026-11-16, #54. [구조 입구](README.md).
 
 ## 일반 클라이언트
 
 [client.cpp](../../TP_2023192003_CLIENT/client_sample/client.cpp)의 main이 SFML 창·입력·로그인 단계·게임 화면을 운영한다. SFML TcpSocket의 논블로킹 송수신을 사용하며 서버와 달리 IOCP를 사용하지 않는다.
 
 - beginLoginConnection/pumpLogin: 제한시간안에로그인요청을부분송신하고응답을누적수신한다. 실패하면커마로복귀하여선택을유지한재시도를지원한다.
-- process_data: TCP바이트를길이별로조립하고is_valid_server_packet으로v3길이/지역/위치를검증한다.
+- process_data: TCP바이트를길이별로조립하고is_valid_server_packet으로v4길이/지역/위치를검증한다.
 - ProcessPacket: 본인초기정보/이동,객체ENTER/LEAVE,지도,전투/채팅응답을화면상태에반영한다. 클라는전투결과의최종판정자가아니다.
 - OBJECT.position은region/local단일원본. moveAvatar가본인지역변경때players/map/combat/near목록을지운다. 다른지역타인의ENTER/MOVE/MAP은적용하지않는다. 같은local좌표의다른지역도구별된다.
 - client_main: local카메라/region명시배경→캐릭터/주민→전투표시/라벨/HUD렌더. [clubhouse_renderer.hpp](../../TP_2023192003_CLIENT/client_sample/clubhouse_renderer.hpp)의legacy overload는옛진단fixture용이며native클라는쓰지않는다.
@@ -42,3 +42,7 @@ API_get_x/API_get_y는 이제 지역 내부 좌표다. 같다는 이유로 지�
 ## #53 거점 이동 UI
 
 handleTravelInput → ClientState.begin → send_packet/PacketOutbox → 서버 MOVE/결과 순서다. travel_panel.hpp가 버튼/대기/오류를 표시한다. 키 반복·채팅·timeout·종료·캐시 정리는 [귀환 구조](travel.md)에 정리했다. 주민 idle/산책 정책이나 스프라이트는 변경하지 않았다.
+
+## #54 가시 필드·화면 밖 제외
+
+ClubhouseRenderer의 FieldRenderer는 shared 청크 지형을 읽어 가시 타일만 그린다. client_main의 플레이어/NPC draw는 같은 지역과 한 칸 여유의 화면 범위를 통과해야 한다. 카메라는 Position의 지역 크기로 끝을 clamp한다. [청크 구조와 예산](field-chunks.md)을 참조한다. 기존 NPC idle/산책은 유지하며 새 대량 NPC를 추가한 것은 아니다.
