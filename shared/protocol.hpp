@@ -6,10 +6,12 @@
 #include <type_traits>
 #include "appearance.hpp"
 #include "combat_rules.hpp"
+#include "world_regions.hpp"
 
 using ObjectId = std::int32_t;
 
 constexpr std::uint16_t GAME_PORT = 3000;
+constexpr std::uint8_t PROTOCOL_VERSION = 2;
 
 constexpr std::size_t MAX_CHAT_LENGTH = 30;
 constexpr std::size_t MAX_ID_LENGTH = 48;
@@ -56,6 +58,8 @@ struct sc_packet_avatar_info {
 	std::uint8_t type;
 	ObjectId id;
 	std::int16_t x, y;
+    std::uint8_t region = static_cast<std::uint8_t>(world_regions::Id::Clubhouse);
+    std::uint8_t version = PROTOCOL_VERSION;
 	std::int16_t max_hp;
 	std::int16_t hp;
 	std::int16_t level;
@@ -77,6 +81,7 @@ struct sc_packet_move {
 	std::uint8_t type;
 	ObjectId id;
 	std::int16_t x, y;
+    std::uint8_t region = static_cast<std::uint8_t>(world_regions::Id::Clubhouse);
 	std::uint32_t move_time;
 };
 
@@ -87,6 +92,7 @@ struct sc_packet_enter {
 	char name[MAX_ID_LENGTH];
 	std::int32_t monType;
 	std::int16_t x, y;
+    std::uint8_t region = static_cast<std::uint8_t>(world_regions::Id::Clubhouse);
     std::int16_t hp, max_hp;
 	std::uint8_t fur_color;
 	std::uint8_t eye_style, scarf_style;
@@ -161,12 +167,14 @@ struct sc_packet_mapInfo {
 	std::uint8_t size;
 	std::uint8_t type;
 	std::int16_t left_x, top_y;
+    std::uint8_t region = static_cast<std::uint8_t>(world_regions::Id::Clubhouse);
 	std::uint8_t tiles[4][SCREEN_WIDTH];
 };
 
 struct cs_packet_login {
 	std::uint8_t size;
 	std::uint8_t type;
+    std::uint8_t version = PROTOCOL_VERSION;
 	char name[MAX_ID_LENGTH];
 	std::int32_t inputId;
 	std::uint8_t fur_color;
@@ -204,6 +212,28 @@ struct cs_packet_teleport {
 };
 
 #pragma pack(pop)
+
+namespace packet_position {
+template<class Packet> inline bool write(Packet& packet,world_regions::Position position) {
+    if(!world_regions::valid(position)) return false;
+    packet.region=static_cast<std::uint8_t>(position.region);
+    packet.x=static_cast<std::int16_t>(position.x); packet.y=static_cast<std::int16_t>(position.y);
+    return true;
+}
+template<class Packet> inline bool valid(const Packet& packet) {
+    return world_regions::valid({static_cast<world_regions::Id>(packet.region),packet.x,packet.y});
+}
+template<class Packet> inline bool restoreLegacy(Packet& packet) {
+    world_regions::LegacyPosition legacy;
+    if(!world_regions::encode({static_cast<world_regions::Id>(packet.region),packet.x,packet.y},legacy)) return false;
+    packet.x=static_cast<std::int16_t>(legacy.x); packet.y=static_cast<std::int16_t>(legacy.y); return true;
+}
+inline bool validMap(const sc_packet_mapInfo& packet) {
+    const auto descriptor=world_regions::describe(static_cast<world_regions::Id>(packet.region));
+    return descriptor.id!=world_regions::Id::Invalid && packet.left_x>=0 && packet.top_y>=0
+        && packet.left_x+static_cast<int>(SCREEN_WIDTH)<=descriptor.width && packet.top_y+4<=descriptor.height;
+}
+}
 
 template <typename Packet>
 constexpr bool valid_packet_layout()
@@ -250,9 +280,11 @@ inline bool is_valid_server_packet(const std::uint8_t* packet, std::size_t size)
 	}
 
 	switch (packet[1]) {
-	case S2C_P_AVATAR_INFO: return size == sizeof(sc_packet_avatar_info);
-	case S2C_P_MOVE: return size == sizeof(sc_packet_move);
-	case S2C_P_ENTER: return size == sizeof(sc_packet_enter);
+	case S2C_P_AVATAR_INFO: return size == sizeof(sc_packet_avatar_info)
+        && reinterpret_cast<const sc_packet_avatar_info*>(packet)->version==PROTOCOL_VERSION
+        && packet_position::valid(*reinterpret_cast<const sc_packet_avatar_info*>(packet));
+	case S2C_P_MOVE: return size == sizeof(sc_packet_move) && packet_position::valid(*reinterpret_cast<const sc_packet_move*>(packet));
+	case S2C_P_ENTER: return size == sizeof(sc_packet_enter) && packet_position::valid(*reinterpret_cast<const sc_packet_enter*>(packet));
 	case S2C_P_LEAVE: return size == sizeof(sc_packet_leave);
 	case S2C_P_CHAT: return size == sizeof(sc_packet_chat);
 	case S2C_P_STAT_CHANGE: return size == sizeof(sc_packet_stat_change);
@@ -260,7 +292,7 @@ inline bool is_valid_server_packet(const std::uint8_t* packet, std::size_t size)
 	case S2C_P_AVATAR_LOGIN_OK: return size == sizeof(sc_packet_avatar_login_ok);
 	case S2C_P_ATTACK_PtoN: return size == sizeof(sc_packet_attack_success);
 	case S2C_P_MONSTER_DIE: return size == sizeof(sc_packet_monster_die);
-	case S2C_P_MAPINFO: return size == sizeof(sc_packet_mapInfo);
+	case S2C_P_MAPINFO: return size == sizeof(sc_packet_mapInfo) && packet_position::validMap(*reinterpret_cast<const sc_packet_mapInfo*>(packet));
     case S2C_P_ATTACK_FEEDBACK: return size == sizeof(sc_packet_attack_feedback) && validAttackFeedback(packet[2]);
 	case S2C_P_MONSTER_NEAR: {
 		const std::size_t base_size = offsetof(sc_packet_monster_near, monsters);

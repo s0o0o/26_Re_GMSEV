@@ -55,7 +55,7 @@ int main() {
     g_myid=1; avatar._seedNum=22;
     sc_packet_enter enemy{};
     enemy.size=sizeof(enemy); enemy.type=S2C_P_ENTER; enemy.id=MAX_USER+1;
-    enemy.monType=1; enemy.x=42; enemy.y=8; enemy.hp=3; enemy.max_hp=5;
+    enemy.monType=1; enemy.region=2; enemy.x=10; enemy.y=8; enemy.hp=3; enemy.max_hp=5;
     std::strcpy(enemy.name,"HAM");
     process_data(reinterpret_cast<char*>(&enemy),sizeof(enemy));
     assert(combatHud().hp(enemy.id) == 3);
@@ -90,7 +90,7 @@ int main() {
     process_data(reinterpret_cast<char*>(&lateList),lateList.size);
     assert(nearMonCnt == 0);
     sc_packet_move stale{};
-    stale.size=sizeof(stale); stale.type=S2C_P_MOVE; stale.id=enemy.id; stale.x=42; stale.y=8;
+    stale.size=sizeof(stale); stale.type=S2C_P_MOVE; stale.id=enemy.id; stale.region=2; stale.x=10; stale.y=8;
     process_data(reinterpret_cast<char*>(&stale),sizeof(stale));
     assert(players.count(enemy.id) == 0);
     id_input = 321;
@@ -179,7 +179,7 @@ int main() {
         connectPeer(peer);
         sc_packet_avatar_info info{};
         info.size = sizeof(info); info.type = S2C_P_AVATAR_INFO;
-        info.id = 1; info.x = 10; info.y = 20; info.character_kind = 1;
+        info.id = 1; info.x = 10; info.y = 12; info.character_kind = 1;
         sc_packet_avatar_login_ok ok{};
         ok.size = sizeof(ok); ok.type = S2C_P_AVATAR_LOGIN_OK; ok.id = 1;
         std::vector<char> reply(sizeof(info)+sizeof(ok));
@@ -195,15 +195,20 @@ int main() {
         assert(peer.send(reply.data()+offset,reply.size()-offset) == sf::Socket::Done);
         waitForReply();
         assert(loginFlow.stage() == GAMESTATE::GameScreen);
-        assert(g_myid == 1 && g_left_x == world_layout::cameraX(10) && g_top_y == world_layout::cameraY(20));
+        assert(g_myid == 1 && g_left_x == world_layout::cameraX(10) && g_top_y == world_layout::cameraY(12));
         sc_packet_move move{};
         move.size=sizeof(move); move.type=S2C_P_MOVE; move.id=1;
-        move.x=42; move.y=10;
+        move.region=2; move.x=10; move.y=10;
         process_data(reinterpret_cast<char*>(&move),sizeof(move));
         assert(avatar.m_x == 42 && avatar.m_y == 10 && g_left_x == world_layout::cameraX(42));
-        move.x=10; move.y=14;
+        move.region=1; move.x=10; move.y=14;
         process_data(reinterpret_cast<char*>(&move),sizeof(move));
         assert(avatar.m_x == 10 && avatar.m_y == 14 && g_left_x == world_layout::cameraX(10));
+        const auto original=move;
+        move.region=255;
+        ProcessPacket(reinterpret_cast<char*>(&move));
+        assert(avatar.m_x==10 && avatar.m_y==14); // Invalid wire cannot mutate rendered position.
+        move=original;
         sc_packet_mapInfo map{};
         map.size=sizeof(map); map.type=S2C_P_MAPINFO;
         map.left_x=world_layout::cameraX(10); map.top_y=world_layout::cameraY(14);
@@ -211,6 +216,20 @@ int main() {
         process_data(reinterpret_cast<char*>(&map),sizeof(map));
         assert(g_left_x == world_layout::cameraX(10) && g_top_y == world_layout::cameraY(14));
         assert(clientMapData[0][0] == 4);
+        const auto snapshot=avatar.m_x;
+        map.region=255; map.tiles[0][0]=8;
+        ProcessPacket(reinterpret_cast<char*>(&map));
+        assert(avatar.m_x==snapshot && clientMapData[0][0]==4);
+    }
+    {
+        sf::TcpSocket peer;
+        connectPeer(peer);
+        sc_packet_avatar_info wrongVersion{};
+        wrongVersion.size=sizeof(wrongVersion); wrongVersion.type=S2C_P_AVATAR_INFO;
+        wrongVersion.version=1;
+        assert(peer.send(&wrongVersion,sizeof(wrongVersion))==sf::Socket::Done);
+        waitForReply();
+        assert(loginFlow.stage()==GAMESTATE::CustomizeScreen && loginStatus.find("protocol mismatch")!=std::string::npos);
     }
     {
         sf::TcpSocket peer;

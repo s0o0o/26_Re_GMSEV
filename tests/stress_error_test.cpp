@@ -28,11 +28,21 @@ int main() {
     assert(HandleFailedCompletion(FALSE, 0, -1, &recv));
     g_clients[0].socketOpen = true;
     sc_packet_avatar_info info{};
+    info.size = sizeof(info);
     info.type = S2C_P_AVATAR_INFO;
     info.id = 2;
+    info.region=2; info.x=10; info.y=10;
     ProcessPacket(0, reinterpret_cast<unsigned char*>(&info));
     ProcessPacket(0, reinterpret_cast<unsigned char*>(&info));
     assert(active_clients == 1);
+    assert(g_clients[0].x==42 && g_clients[0].y==10);
+    sc_packet_move fieldMove{}; fieldMove.size=sizeof(fieldMove); fieldMove.type=S2C_P_MOVE;
+    fieldMove.id=2; fieldMove.region=2; fieldMove.x=11; fieldMove.y=10;
+    ProcessPacket(0,reinterpret_cast<unsigned char*>(&fieldMove));
+    assert(g_clients[0].x==43 && fieldMove.x==11); // Copy adapter preserves original local frame.
+    fieldMove.region=255;
+    ProcessPacket(0,reinterpret_cast<unsigned char*>(&fieldMove));
+    assert(active_clients==0 && g_clients[0].x==43);
     DisconnectClient(0);
     DisconnectClient(0);
     assert(active_clients == 0);

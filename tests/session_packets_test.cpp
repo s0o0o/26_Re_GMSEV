@@ -101,4 +101,23 @@ int main() {
         assert(packet.top_y == chunk * 4);
         if (chunk == 0) assert(packet.tiles[0][0] == 6);
     }
+    sent.clear();
+    receiver.object._x=42; receiver.object._y=10;
+    receiver.sendSessionLoginPacket();
+    std::memcpy(&avatar,sent.back().data(),sizeof(avatar));
+    assert(avatar.version==PROTOCOL_VERSION && avatar.region==2 && avatar.x==10 && avatar.y==10);
+    clients.get(123)->object._x=42; clients.get(123)->object._y=10;
+    receiver.sendMovePacket(123,9876);
+    std::memcpy(&move,sent.back().data(),sizeof(move));
+    assert(move.region==2 && move.x==10 && move.y==10 && move.move_time==9876);
+    receiver.sendAddPlayerPacket(123);
+    std::memcpy(&entered,sent.back().data(),sizeof(entered)); assert(entered.region==2 && entered.x==10);
+    receiver.sendMapInfo(0,42,10);
+    sc_packet_mapInfo fieldMap{}; std::memcpy(&fieldMap,sent.back().data(),sizeof(fieldMap));
+    assert(fieldMap.region==2 && fieldMap.left_x<world_regions::fieldWidth);
+    assert(is_valid_server_packet(reinterpret_cast<const std::uint8_t*>(sent.back().data()),sent.back().size()));
+    const auto count=sent.size();
+    clients.get(123)->object._x=31; receiver.sendMovePacket(123); receiver.sendMapInfo(0,31,10);
+    receiver.object._x=31; receiver.sendSessionLoginPacket();
+    assert(sent.size()==count);
 }

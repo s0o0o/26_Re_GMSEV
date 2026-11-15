@@ -3,6 +3,7 @@
 #include <winsock2.h>
 #include <chrono>
 #include <iostream>
+#include "../shared/protocol.hpp"
 #pragma comment(lib,"ws2_32.lib")
 int main() {
     WSADATA data{}; if(WSAStartup(MAKEWORD(2,2),&data)) return 1;
@@ -25,5 +26,5 @@ int main() {
         Sleep(10);
     }
     if(peer!=INVALID_SOCKET) closesocket(peer);closesocket(listener);WSACleanup();
-    std::cout<<"SILENT_FIXTURE_END received="<<bytes<<" sent=0"<<std::endl;return bytes==58 ? 0 : 3;
+    std::cout<<"SILENT_FIXTURE_END received="<<bytes<<" sent=0"<<std::endl;return bytes==sizeof(cs_packet_login) ? 0 : 3;
 }

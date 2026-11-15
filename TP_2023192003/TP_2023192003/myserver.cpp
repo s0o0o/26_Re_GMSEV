@@ -476,7 +476,7 @@ void processPacket(const std::shared_ptr<GAMESESSION>& session, char* packetFrom
         const auto loginStarted = GetTickCount64();
         load_trace::event("login_received",sessionId,session->connectionId);
         std::cout << "[LOGIN] Received session=" << sessionId << " bytes=" << static_cast<unsigned>(p->size) << std::endl;
-		if (!validCharacterKind(p->character_kind) || !validFurColor(p->fur_color) || !validEyeStyle(p->eye_style) || !validScarfStyle(p->scarf_style) || p->inputId < 0 || !login_input::nickname(p->name, sizeof(p->name))) {
+		if (p->version != PROTOCOL_VERSION || !validCharacterKind(p->character_kind) || !validFurColor(p->fur_color) || !validEyeStyle(p->eye_style) || !validScarfStyle(p->scarf_style) || p->inputId < 0 || !login_input::nickname(p->name, sizeof(p->name))) {
             sc_packet_login_fail fail{};
             fail.size = sizeof(fail);
             fail.type = S2C_P_LOGIN_FAIL;

@@ -1,0 +1,12 @@
+{
+  "date": "2026-11-15",
+  "base_commit": "1515f2c",
+  "issue": 49,
+  "stage": "2B-2A wire only; canonical state migration remains",
+  "protocol_version": 2,
+  "regression_programs_passed": 38,
+  "builds": ["server x64 Debug", "server x64 Release", "client x64 Debug", "client x64 Release", "GUI stress x64 Debug", "GUI stress x64 Release", "console stress W4"],
+  "real_db_run": {"directory": "load-20261115-191240-a252bf55", "account_range": [900001000, 900001299], "new_accounts": 0, "preserved_accounts": 600, "trace": true, "mode": "mixed", "hold_seconds": 15, "passed": true, "accepted": 300, "peak": 300, "active_at_end": 300, "moved_clients": 300, "hold_completed": true, "client_errors": 0, "drain_eof": 300, "drain_errors": 0, "drain_timeouts": 0, "drain_ms": 557, "elapsed_ms": 21074, "disconnect_saved_success": 300, "disconnect_saved_failure": 0, "send_errors": 0, "login_queue_max_ms": 24, "login_ready_max_ms": 906, "moves_queued": 5520, "own_move_replies": 5476, "unanswered_at_measurement_end": 44},
+  "preview": {"path": "build/tests/region-wire-v2-preview.png", "kind": "production renderer and real wire/DB codec test output, not OS game capture"},
+  "not_verified": ["v2 120-second or long soak", "ordinary executable OS UI this turn", "durable DB readback", "all move response latencies", "historical GUI stress crash", "canonical local game state migration"]
+}

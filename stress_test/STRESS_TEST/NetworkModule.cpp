@@ -146,8 +146,13 @@ void SendPacket(int cl, void* packet)
 	// std::cout << "Send Packet [" << ptype << "] To Client : " << cl << std::endl;
 }
 
+#include "../../shared/legacy_packet_adapter.hpp"
 void ProcessPacket(int ci, unsigned char packet[])
 {
+    LegacyPacketAdapter positionAdapter;
+    auto* decoded=positionAdapter.decode(packet,packet[0]);
+    if(!decoded) { DisconnectClient(ci); return; }
+    packet=decoded;
 	switch (packet[1]) {
 	case S2C_P_MOVE: {
 		sc_packet_move* move_packet = reinterpret_cast<sc_packet_move*>(packet);

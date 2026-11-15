@@ -65,6 +65,7 @@
     <ClInclude Include="..\..\shared\clubhouse_map.hpp" />
     <ClInclude Include="..\..\shared\world_layout.hpp" />
     <ClInclude Include="..\..\shared\world_regions.hpp" />
+    <ClInclude Include="..\..\shared\legacy_packet_adapter.hpp" />
     <ClInclude Include="..\..\shared\field_content.hpp" />
     <ClInclude Include="..\..\shared\protocol.hpp">
       <Filter>헤더 파일</Filter>
