@@ -878,6 +878,14 @@ void workerThread(HANDLE iocp) {
             sessionOperation.reset(overEx); // Frees success, cancellation and ignored completions once.
             completionOwner=overEx->owner;
             if(!completionOwner) continue;
+            if(releaseSendCompletionWithoutLock(*overEx,key,ret!=FALSE,numBytes)) {
+                if(load_trace::enabled()) {
+                    static std::atomic<std::uint64_t> sampledFastSends{0};
+                    const auto count=sampledFastSends.fetch_add(1,std::memory_order_relaxed)+1;
+                    if(count%4096==0) load_trace::event("send_fast_sample",-1,0,count);
+                }
+                continue; // sessionOperation releases the operation and original owner, exactly once.
+            }
             const auto sessionWait=load_trace::now();
             if(overEx->_compType==OP_LOGIN_OK) load_trace::event("login_dequeued",completionOwner->object._id,completionOwner->connectionId,overEx->traceQueuedAt ? sessionWait-overEx->traceQueuedAt : 0);
             completionGuard=std::unique_lock<std::recursive_mutex>(completionOwner->completionMutex);

@@ -33,6 +33,7 @@
 ## 명세 목록
 
 - [템플릿](specs/_template.md)
+- [송신 완료 경합 완화](specs/send-completion-fast-path.md): 정상/이미종료중SEND의수명해제와부분송신차단.
 - [월드 캐릭터 크기·픽셀](specs/world-character-scale.md): 커마 표시 보존, native 월드 아틀라스와 정수2배.
 - [부하 처리량·실제 동접 장면](specs/load-throughput-scene.md): 실행기 ramp/이동 응답과 실제DB 생산 클라 코드 scene.
 - [혼합 부하·종료 오류 계측](specs/mixed-load-diagnostics.md): opt-in 시각/연결 trace와 수신 drain 비교.

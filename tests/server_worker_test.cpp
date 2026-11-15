@@ -773,6 +773,32 @@ int main() {
 #endif
 #else
     workers.emplace_back(workerThread,g_hiocp);
+    {
+        // One actual worker must pass SEND while another thread holds the original owner's lock.
+        auto blocked=std::make_shared<GAMESESSION>(); blocked->object._id=9; blocked->_state=ST_ALLOC;
+        auto probe=std::make_shared<GAMESESSION>(); probe->object._id=8; probe->_state=ST_ALLOC;
+        std::unique_lock<std::recursive_mutex> held(blocked->completionMutex);
+        auto completed=new OVER_EXP; completed->_compType=OP_SEND; completed->_wasBuf.len=6; completed->owner=blocked;
+        std::weak_ptr<GAMESESSION> original=blocked;
+        assert(PostQueuedCompletionStatus(g_hiocp,6,9,&completed->_over));
+        auto marker=new OVER_EXP; marker->_compType=OP_LOGIN_FAIL; marker->owner=probe;
+        assert(PostQueuedCompletionStatus(g_hiocp,1,8,&marker->_over));
+        const auto firstProbe=waitSnapshot(probe->connectionId,"probe",[](const Snapshot&) {return true;});
+        assert(!blocked->disconnectStarted && !probe->disconnectStarted);
+        blocked->disconnectStarted=true;
+        auto canceled=new OVER_EXP; canceled->_compType=OP_SEND; canceled->_wasBuf.len=6; canceled->owner=blocked;
+        assert(PostQueuedCompletionStatus(g_hiocp,0,9,&canceled->_over));
+        auto secondMarker=new OVER_EXP; secondMarker->_compType=OP_LOGIN_FAIL; secondMarker->owner=probe;
+        assert(PostQueuedCompletionStatus(g_hiocp,1,8,&secondMarker->_over));
+        waitSnapshot(probe->connectionId,"probe",[&](const Snapshot& s){return s.serial>firstProbe.serial;});
+        assert(blocked->_state==ST_ALLOC); // SEND did not take over an already-owned disconnect.
+        held.unlock(); blocked.reset(); assert(original.expired());
+        auto partial=std::make_shared<GAMESESSION>(); partial->object._id=7; partial->_state=ST_ALLOC;
+        auto truncated=new OVER_EXP; truncated->_compType=OP_SEND; truncated->_wasBuf.len=6; truncated->owner=partial;
+        assert(PostQueuedCompletionStatus(g_hiocp,3,7,&truncated->_over));
+        waitSnapshot(partial->connectionId,"disconnect",[](const Snapshot& s){return s.state==ST_FREE;});
+        assert(partial->disconnectStarted && partial->transportFailed);
+    }
     auto watcher=connectPeer(address,0); assert(watcher.accepted.id == 0); login(watcher,10,false);
     std::uint64_t last=watcher.accepted.connection;
     // Unauthenticated MOVE + LOGIN in one TCP write must not produce a MOVE response first.
