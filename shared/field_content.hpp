@@ -9,4 +9,8 @@ constexpr bool monsterCanStand(int x,int y) {
     return world_layout::outdoors(x) && world_layout::walkable(x,y)
         && !(x == 42 && y >= 10); // Arrival / exit corridor stays clear.
 }
+constexpr bool monsterCanStand(world_regions::Position p) {
+    return p.region==world_regions::Id::SunnyPeak && world_layout::walkable(p) && !(p.x==10 && p.y>=10);
+}
+constexpr world_regions::Position position(Point p) { return world_regions::decode(p.x,p.y); }
 }

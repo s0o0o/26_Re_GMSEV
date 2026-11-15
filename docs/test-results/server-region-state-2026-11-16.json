@@ -1,0 +1,13 @@
+{
+  "date": "2026-11-16",
+  "issue": 51,
+  "base_commit": "af732ff",
+  "canonical_state": "GameObjectState.position region/local; native client already region/local",
+  "wire_version_unchanged": 2,
+  "regression_programs_passed": 39,
+  "builds": ["server Debug", "server Release", "client Debug", "client Release", "GUI stress Debug", "GUI stress Release", "console W4"],
+  "extra_checks": ["Lua API local coordinate assertion and worker rerun", "production client loopback", "production map renderer with canonical server state", "startup-check no DB/network", "fresh document reader seven questions and clarification"],
+  "real_db_run": {"directory": "load-20261116-022346-35e5109e", "mode": "mixed", "trace": true, "hold_seconds": 15, "account_range": [900001000,900001299], "new_accounts": 0, "preserved_accounts_total": 600, "passed": true, "accepted": 300, "peak": 300, "active_at_end": 300, "moved_clients": 300, "hold_completed": true, "client_errors": 0, "drain_eof": 300, "drain_errors": 0, "drain_timeouts": 0, "drain_ms": 474, "elapsed_ms": 20780, "disconnect_saved_success": 300, "disconnect_saved_failure": 0, "send_errors": 0, "login_queue_max_ms": 1, "login_ready_max_ms": 320, "moves_queued": 5377, "own_move_replies": 5319, "unanswered_at_measurement_end": 58},
+  "preview": {"path": "build/tests/server-region-state-preview.png", "kind": "production canonical GameObjectState/wire/renderer/DB codec test output, not actual DB game capture"},
+  "not_verified": ["GUI stress canonical coordinates and historical crash", "long soak and other map/combat load", "durable DB readback", "all move reply latency", "ordinary executable OS input this turn", "new account creation load"]
+}

@@ -1,3 +1,4 @@
+#include "legacy_position_fixture.hpp"
 #include "../TP_2023192003/TP_2023192003/session_registry.hpp"
 #include <cassert>
 #include <atomic>
@@ -26,15 +27,15 @@ int main() {
     }
     assert(!WorldStateLock::heldByCurrentThread());
     auto subject=std::make_shared<GAMESESSION>(); subject->object._id=1; subject->object._hp=100;
-    subject->object._y=17;
+    setTestLegacyY(subject->object,17);
     clients.set(1,subject);
     std::atomic<bool> start{false};
     std::thread writer([&] {
         while(!start.load()) std::this_thread::yield();
         for(int i=0;i<5000;++i) {
             WorldStateLock lock;
-            subject->object._x=static_cast<short>(i%18); std::this_thread::yield();
-            subject->object._y=static_cast<short>(17-i%18);
+            setTestLegacyX(subject->object,static_cast<short>(i%18)); std::this_thread::yield();
+            setTestLegacyY(subject->object,static_cast<short>(17-i%18));
             subject->object._hp=static_cast<short>(i%101); std::this_thread::yield();
             subject->object._seedNum=static_cast<short>(100-i%101);
         }
@@ -45,7 +46,7 @@ int main() {
         for(int i=0;i<2000;++i) {
             receiver.sendMovePacket(1); subject->sendStatChange(4);
             auto snapshot=subject->snapshotObject();
-            assert(snapshot._x+snapshot._y==17 && snapshot._hp+snapshot._seedNum == 100);
+            assert(testLegacy(snapshot).x+testLegacy(snapshot).y==17 && snapshot._hp+snapshot._seedNum == 100);
         }
     };
     std::thread a(read),b(read); start=true;

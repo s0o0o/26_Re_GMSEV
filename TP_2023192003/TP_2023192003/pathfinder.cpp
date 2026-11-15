@@ -26,8 +26,8 @@ struct NodeComp {
 	}
 };
 
-bool isValid(int x, int y) {
-	return playerCanMove(x,y);
+bool isValid(world_regions::Id region,int x, int y) {
+	return playerCanMove({region,x,y});
 }
 
 int heuristic(int x1, int y1, int x2, int y2) {	// 绒府胶平
@@ -36,8 +36,17 @@ int heuristic(int x1, int y1, int x2, int y2) {	// 绒府胶平
 
 } // namespace
 
-std::vector<std::pair<int, int>> findPathAStar(int startX, int startY, int goalX, int goalY) {
-	if (!isValid(startX, startY) || !isValid(goalX, goalY) || !world_regions::same(startX,startY,goalX,goalY)) return {};
+std::vector<std::pair<int,int>> findPathAStar(int startX,int startY,int goalX,int goalY) {
+    const auto start=world_regions::decode(startX,startY),goal=world_regions::decode(goalX,goalY);
+    auto path=findPathAStar(start,goal);
+    for(auto& point : path) point.first+=world_regions::describe(start.region).originX;
+    return path;
+}
+std::vector<std::pair<int,int>> findPathAStar(world_regions::Position start,world_regions::Position goal) {
+    if(!world_regions::same(start,goal)) return {};
+    const auto region=start.region;
+    const int startX=start.x,startY=start.y,goalX=goal.x,goalY=goal.y;
+	if (!isValid(region,startX,startY) || !isValid(region,goalX,goalY)) return {};
 	std::vector<std::unique_ptr<Node>> nodes;
 	std::priority_queue<Node*, std::vector<Node*>, NodeComp> openList;
 	std::unordered_set<long long> closedSet;
@@ -45,8 +54,8 @@ std::vector<std::pair<int, int>> findPathAStar(int startX, int startY, int goalX
 	auto hash = [](int x, int y) -> long long { return ((long long)y << 32) | x; };
 
 	nodes.push_back(std::make_unique<Node>(startX, startY, 0, heuristic(startX, startY, goalX, goalY), nullptr));
-	Node* start = nodes.back().get();
-	openList.push(start);
+	Node* startNode = nodes.back().get();
+	openList.push(startNode);
 
 	while (!openList.empty()) {
 		Node* current = openList.top();
@@ -71,7 +80,7 @@ std::vector<std::pair<int, int>> findPathAStar(int startX, int startY, int goalX
 			int nx = current->x + dx[dir];
 			int ny = current->y + dy[dir];
 
-			if (!isValid(nx, ny)) continue;
+			if (!isValid(region,nx,ny)) continue;
 			if (closedSet.count(hash(nx, ny))) continue;
 
 			int gCost = current->gCost + 1;

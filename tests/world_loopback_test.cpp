@@ -1,3 +1,4 @@
+#include "legacy_position_fixture.hpp"
 #include "../TP_2023192003/TP_2023192003/world_events.hpp"
 #include "../TP_2023192003/TP_2023192003/monster_lifecycle.hpp"
 #include <cassert>
@@ -30,7 +31,7 @@ int main() {
         peers[i]=socket(AF_INET,SOCK_STREAM,IPPROTO_TCP); assert(peers[i] != INVALID_SOCKET);
         assert(connect(peers[i],reinterpret_cast<sockaddr*>(&address),length) == 0);
         auto s=std::make_shared<GAMESESSION>(); s->object._id=i; s->_state=ST_INGAME;
-        s->object._x=36; s->object._y=6;
+        setTestLegacyX(s->object,36); setTestLegacyY(s->object,6);
         s->_socket=accept(listener,nullptr,nullptr); assert(s->_socket != INVALID_SOCKET);
         assert(CreateIoCompletionPort(reinterpret_cast<HANDLE>(s->_socket),port,i,0));
         clients.set(i,s);
@@ -47,7 +48,7 @@ int main() {
         }
     };
     auto monster=std::make_shared<GAMESESSION>(); monster->object._id=MAX_USER;
-    monster->object._x=36; monster->object._y=6;
+    setTestLegacyX(monster->object,36); setTestLegacyY(monster->object,6);
     clients.set(MAX_USER,monster);
     const std::unordered_set<int> audience{0,1};
     monster->object._hp=0; markMonsterDead(monster->monster,1000);

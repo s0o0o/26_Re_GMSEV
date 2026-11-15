@@ -41,4 +41,14 @@ constexpr int cameraX(world_regions::Position position) {
 constexpr int cameraY(world_regions::Position position) {
     return world_regions::valid(position) ? clamp(position.y-8,world_regions::describe(position.region).height-16) : 0;
 }
+constexpr bool walkable(world_regions::Position p) {
+    return world_regions::valid(p) && (p.region==world_regions::Id::SunnyPeak ? fieldWalkable(p.x,p.y) : clubhouse::walkable(p.x,p.y));
+}
+inline bool portal(world_regions::Position& p) {
+    if(!world_regions::valid(p)) return false;
+    if(p.region==world_regions::Id::Clubhouse && p.x==10 && p.y==14) p={world_regions::Id::SunnyPeak,10,10};
+    else if(p.region==world_regions::Id::SunnyPeak && p.x==10 && p.y==12) p={world_regions::Id::Clubhouse,10,12};
+    else return false;
+    return true;
+}
 }

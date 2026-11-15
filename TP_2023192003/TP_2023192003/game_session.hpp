@@ -51,10 +51,11 @@ public:
     void sendAttackFeedback(AttackFeedback reason);
 	void sendMonsterNearPacket(nearMonsterInfo*, int);
 	void sendMapInfo(int, int, int);
+    void sendMapInfo(int,world_regions::Position);
 	void sendStatChange(int);
 
 	// sector
-    // Legacy old-coordinate arguments remain for callers; the index owns canonical membership.
+    // Old coordinate arguments are ignored; the index derives membership from position.
 	void updateSector(short, short);
 	std::unordered_set<int> getNearBySessions();
 };

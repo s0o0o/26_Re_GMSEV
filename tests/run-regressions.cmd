@@ -118,7 +118,11 @@ cl /nologo /EHsc /std:c++17 tests\region_wire_test.cpp /Fo:build\tests\ /Fe:buil
 if not "%errorlevel%"=="0" goto failed
 build\tests\region_wire_test.exe
 if not "%errorlevel%"=="0" goto failed
-echo All 38 regression programs passed. Run tests\run-display.cmd and tests\run-town-preview.cmd separately for GPU/window checks.
+cl /nologo /EHsc /std:c++17 tests\server_region_state_test.cpp TP_2023192003\TP_2023192003\world_map.cpp TP_2023192003\TP_2023192003\pathfinder.cpp /Fo:build\tests\ /Fe:build\tests\server_region_state_test.exe
+if not "%errorlevel%"=="0" goto failed
+build\tests\server_region_state_test.exe
+if not "%errorlevel%"=="0" goto failed
+echo All 39 regression programs passed. Run tests\run-display.cmd and tests\run-town-preview.cmd separately for GPU/window checks.
 popd
 exit /b 0
 :failed
