@@ -31,7 +31,7 @@ bool config(int argc,char** argv,Config& c) {
     }
     return number(argv[1],c.count) && number(argv[2],c.start) && number(argv[3],c.hold)
         && number(argv[4],c.deadline) && number(argv[5],c.port) && c.count>=1 && c.count<=300
-        && c.start<=INT_MAX-c.count+1 && c.hold>=2 && c.hold<=30 && c.deadline>=2 && c.deadline<=60 && c.port>=1 && c.port<=65535;
+        && c.start<=INT_MAX-c.count+1 && c.hold>=2 && c.hold<=300 && c.deadline>=2 && c.deadline<=60 && c.port>=1 && c.port<=65535;
 }
 struct Peer {
     SOCKET socket=INVALID_SOCKET; bool connecting=true,info=false,ok=false,logged=false;
@@ -206,7 +206,7 @@ int run(const Config& c) {
 #ifndef GMSEV_BOUNDED_LOAD_TEST
 int main(int argc,char** argv) {
     bounded_load::Config c;
-    if(!bounded_load::config(argc,argv,c)) { std::cerr<<"Usage: bounded_load <1..300 clients> <first numeric account ID> <2..30 hold sec> <2..60 login deadline sec> <localhost port> [mixed|separate drain|immediate]\nWARNING: real servers may create/update these accounts.\n"; return 2; }
+    if(!bounded_load::config(argc,argv,c)) { std::cerr<<"Usage: bounded_load <1..300 clients> <first numeric account ID> <2..300 hold sec> <2..60 login deadline sec> <localhost port> [mixed|separate drain|immediate]\nWARNING: real servers may create/update these accounts.\n"; return 2; }
     return bounded_load::run(c);
 }
 #endif

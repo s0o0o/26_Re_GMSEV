@@ -64,6 +64,9 @@ int main() {
     assert(number("2147483647",n) && n==INT_MAX);
     Config c; char a0[]="load",a1[]="300",a2[]="900000000",a3[]="2",a4[]="15",a5[]="3000";
     char* argv[]={a0,a1,a2,a3,a4,a5}; assert(config(6,argv,c));
+    for(const auto hold : {"2","30","120","300"}) { argv[3]=const_cast<char*>(hold); assert(config(6,argv,c)); }
+    for(const auto hold : {"1","301","-1","2147483648"}) { argv[3]=const_cast<char*>(hold); assert(!config(6,argv,c)); }
+    argv[3]=a3;
     argv[1]=a2; assert(!config(6,argv,c)); argv[1]=a1; argv[2]=a2;
     Peer p; Stats s; p.input={2,255}; assert(!parse(p,s));
     // Two complete packets in one receive; wrong login-OK identity is rejected.
