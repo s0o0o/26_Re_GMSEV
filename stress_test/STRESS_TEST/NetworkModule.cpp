@@ -16,6 +16,7 @@
 #include <cstdlib>
 #include "NetworkModule.h"
 #include "load_test_config.hpp"
+#include "gui_load_options.hpp"
 
 using namespace std;
 using namespace chrono;
@@ -47,9 +48,8 @@ struct OverlappedEx {
 
 struct CLIENT {
 	int id;
-	int x;
-	int y;
-	atomic_bool connected;
+    world_regions::Position position{world_regions::Id::Clubhouse,0,0};
+	atomic_bool connected; bool receivedInfo=false, moved=false;
 	atomic_bool socketOpen{false};
 
 	SOCKET client_socket;
@@ -67,8 +67,15 @@ atomic_int client_to_close;
 atomic_int active_clients;
 atomic_int accepted_logins{0}, rejected_logins{0}, closed_sockets{0}, transport_errors{0};
 int attempt_limit = DEFAULT_LOAD_TEST_ATTEMPTS;
+int account_start=0;
+std::recursive_mutex stateMutex;
+std::atomic<bool> running{true},runFinished{false},runPassed{false};
+std::atomic<int> pendingIo{0},moved_clients{0};
+bool networkInitialized=false;
+bool NetworkRunFinished() { return runFinished.load(); }
 
 LoadTestStats GetLoadTestStats() {
+    std::lock_guard<std::recursive_mutex> state(stateMutex);
     return {num_connections.load(), attempt_limit, accepted_logins.load(),
         rejected_logins.load(), closed_sockets.load(), transport_errors.load()};
 }
@@ -101,13 +108,17 @@ void error_display(const char* msg, int err_no)
 
 	MessageBox(hWnd, lpMsgBuf, L"ERROR", 0);
 	LocalFree(lpMsgBuf);
-	// while (true);
+	// DisconnectClient(client_id); delete over;
 }
 
 void DisconnectClient(int ci)
 {
+    std::lock_guard<std::recursive_mutex> state(stateMutex);
     if (ci < 0 || ci >= MAX_CLIENTS) return;
     if (g_clients[ci].connected.exchange(false)) --active_clients;
+    const int id=g_clients[ci].id;
+    if(id>=0 && id<MAX_CLIENTS && client_map[id]==ci) client_map[id]=-1;
+    g_clients[ci].receivedInfo=false;
     if (g_clients[ci].socketOpen.exchange(false)) { ++closed_sockets; closesocket(g_clients[ci].client_socket); }
 }
 
@@ -116,7 +127,7 @@ bool HandleFailedCompletion(BOOL ok, DWORD bytes, int ci, OverlappedEx* over)
 {
     if (!over) return true;
     if (ci < 0 || ci >= MAX_CLIENTS || !ok || bytes == 0) {
-        if (!ok) ++transport_errors;
+        if (!ok && running) ++transport_errors;
         DisconnectClient(ci);
         if (over->event_type == OP_SEND || over->event_type == OP_DO_MOVE) delete over;
         return true;
@@ -125,6 +136,8 @@ bool HandleFailedCompletion(BOOL ok, DWORD bytes, int ci, OverlappedEx* over)
 }
 void SendPacket(int cl, void* packet)
 {
+    std::lock_guard<std::recursive_mutex> state(stateMutex);
+    if(!running || cl<0 || cl>=MAX_CLIENTS || !g_clients[cl].socketOpen) return;
 	int psize = reinterpret_cast<unsigned char*>(packet)[0];
 	int ptype = reinterpret_cast<unsigned char*>(packet)[1];
 	OverlappedEx* over = new OverlappedEx;
@@ -133,12 +146,12 @@ void SendPacket(int cl, void* packet)
 	ZeroMemory(&over->over, sizeof(over->over));
 	over->wsabuf.buf = reinterpret_cast<CHAR*>(over->IOCP_buf);
 	over->wsabuf.len = psize;
-	int ret = WSASend(g_clients[cl].client_socket, &over->wsabuf, 1, NULL, 0,
+	++pendingIo; int ret = WSASend(g_clients[cl].client_socket, &over->wsabuf, 1, NULL, 0,
 		&over->over, NULL);
 	if (0 != ret) {
 		int err_no = WSAGetLastError();
 		if (WSA_IO_PENDING != err_no) {
-            delete over;
+            delete over; --pendingIo;
             ++transport_errors;
             DisconnectClient(cl);
         }
@@ -146,23 +159,19 @@ void SendPacket(int cl, void* packet)
 	// std::cout << "Send Packet [" << ptype << "] To Client : " << cl << std::endl;
 }
 
-#include "../../shared/legacy_packet_adapter.hpp"
+// Native region/local state, no legacy packet adapter.
 void ProcessPacket(int ci, unsigned char packet[])
 {
-    LegacyPacketAdapter positionAdapter;
-    auto* decoded=positionAdapter.decode(packet,packet[0]);
-    if(!decoded) { DisconnectClient(ci); return; }
-    packet=decoded;
+    std::lock_guard<std::recursive_mutex> state(stateMutex); if(!is_valid_server_packet(packet,packet[0])) { DisconnectClient(ci); return; }
 	switch (packet[1]) {
 	case S2C_P_MOVE: {
 		sc_packet_move* move_packet = reinterpret_cast<sc_packet_move*>(packet);
 		if (move_packet->id >= 0 && move_packet->id < MAX_CLIENTS) {
 			int my_id = client_map[move_packet->id];
-			if (-1 != my_id) {
-				g_clients[my_id].x = move_packet->x;
-				g_clients[my_id].y = move_packet->y;
+			if (ci == my_id && g_clients[ci].id==move_packet->id) {
+				g_clients[my_id].position={static_cast<world_regions::Id>(move_packet->region),move_packet->x,move_packet->y};
 			}
-			if (ci == my_id) {
+			if (ci == my_id) { if(!g_clients[ci].moved && move_packet->move_time) { g_clients[ci].moved=true; ++moved_clients; }
 				if (0 != move_packet->move_time) {
 					const auto now = static_cast<std::uint32_t>(duration_cast<milliseconds>(high_resolution_clock::now().time_since_epoch()).count());
                     const auto d_ms = static_cast<std::int64_t>(static_cast<std::uint32_t>(now - move_packet->move_time));
@@ -182,7 +191,12 @@ void ProcessPacket(int ci, unsigned char packet[])
     case S2C_P_ATTACK_PtoN: break;
 	case S2C_P_ENTER: break;
 	case S2C_P_LEAVE: break;
-	case S2C_P_AVATAR_LOGIN_OK: break;
+	case S2C_P_AVATAR_LOGIN_OK: {
+        const auto* ok=reinterpret_cast<const sc_packet_avatar_login_ok*>(packet);
+        if(!g_clients[ci].socketOpen || !g_clients[ci].receivedInfo || ok->id!=g_clients[ci].id) { DisconnectClient(ci); break; }
+        if(!g_clients[ci].connected.exchange(true)) { ++active_clients; ++accepted_logins; }
+        break;
+    }
 	case S2C_P_MAPINFO: break;
 	case S2C_P_MONSTER_NEAR: break;
 	case S2C_P_CHAT: break;
@@ -193,13 +207,12 @@ void ProcessPacket(int ci, unsigned char packet[])
 
 		sc_packet_avatar_info* login_packet = reinterpret_cast<sc_packet_avatar_info*>(packet);
 		if (login_packet->id < 0 || login_packet->id >= MAX_CLIENTS) { DisconnectClient(ci); break; }
-        if (!g_clients[ci].socketOpen) break;
-        if (!g_clients[ci].connected.exchange(true)) { ++active_clients; ++accepted_logins; }
+        if (!g_clients[ci].socketOpen) break; if(client_map[login_packet->id]!=-1 && client_map[login_packet->id]!=ci) { DisconnectClient(ci); break; }
+        g_clients[ci].receivedInfo=true;
 		int my_id = ci;
 		client_map[login_packet->id] = my_id;
 		g_clients[my_id].id = login_packet->id;
-		g_clients[my_id].x = login_packet->x;
-		g_clients[my_id].y = login_packet->y;
+		g_clients[my_id].position={static_cast<world_regions::Id>(login_packet->region),login_packet->x,login_packet->y};
 	}
 	break;
 	default: std::cout << "[LOAD] Unsupported packet type " << int(packet[1]) << std::endl; DisconnectClient(ci); break;
@@ -216,6 +229,9 @@ void Worker_Thread()
 			reinterpret_cast<LPWSAOVERLAPPED*>(&over), INFINITE);
 		// std::cout << "GQCS :";
 		int client_id = static_cast<int>(ci);
+        if(!over && !running) return;
+        std::lock_guard<std::recursive_mutex> state(stateMutex);
+        if(over && (over->event_type==OP_RECV || over->event_type==OP_SEND)) --pendingIo;
         if (HandleFailedCompletion(ret, io_size, client_id, over)) continue;
 		if (OP_RECV == over->event_type) {
 			//std::cout << "RECV from Client :" << ci;
@@ -252,21 +268,21 @@ void Worker_Thread()
 					io_size = 0;
 				}
 			}
-			if (invalidPacket || !g_clients[ci].socketOpen) {
+			if (invalidPacket || !running || !g_clients[ci].socketOpen) {
 				DisconnectClient(client_id);
 				continue;
 			}
 			g_clients[ci].curr_packet_size = psize;
 			g_clients[ci].prev_packet_data = pr_size;
 			DWORD recv_flag = 0;
-			int ret = WSARecv(g_clients[ci].client_socket,
+			++pendingIo; int ret = WSARecv(g_clients[ci].client_socket,
 				&g_clients[ci].recv_over.wsabuf, 1,
 				NULL, &recv_flag, &g_clients[ci].recv_over.over, NULL);
 			if (SOCKET_ERROR == ret) {
 				int err_no = WSAGetLastError();
 				if (err_no != WSA_IO_PENDING)
 				{
-					//error_display("RECV ERROR", err_no);
+					--pendingIo; // Immediate receive submission failure has no completion.
 					DisconnectClient(client_id);
 				}
 			}
@@ -284,7 +300,7 @@ void Worker_Thread()
 		}
 		else {
 			std::cout << "Unknown GQCS event!\n";
-			while (true);
+			DisconnectClient(client_id); delete over;
 		}
 	}
 }
@@ -295,6 +311,8 @@ constexpr int ACCEPT_DELY = 50;
 
 void Adjust_Number_Of_Client()
 {
+    std::lock_guard<std::recursive_mutex> state(stateMutex);
+    if(!running) return;
 	static int delay_multiplier = 1;
 	static int max_limit = MAXINT;
 	static bool increasing = true;
@@ -361,17 +379,17 @@ void Adjust_Number_Of_Client()
 	sprintf_s(l_packet.name, "%d", temp);
 	l_packet.size = sizeof(l_packet);
 	l_packet.type = C2S_P_LOGIN;
-	l_packet.inputId = ci;
+	l_packet.inputId = account_start+ci;
 	SendPacket(ci, &l_packet);
 
 
-	int ret = WSARecv(g_clients[ci].client_socket, &g_clients[ci].recv_over.wsabuf, 1,
+	++pendingIo; int ret = WSARecv(g_clients[ci].client_socket, &g_clients[ci].recv_over.wsabuf, 1,
 		NULL, &recv_flag, &g_clients[ci].recv_over.over, NULL);
 	if (SOCKET_ERROR == ret) {
 		int err_no = WSAGetLastError();
 		if (err_no != WSA_IO_PENDING)
 		{
-			DisconnectClient(ci);
+			--pendingIo; DisconnectClient(ci);
 			goto fail_to_connect;
 		}
 	}
@@ -381,9 +399,19 @@ fail_to_connect:
 
 void Test_Thread()
 {
-	while (true) {
+    const auto began=high_resolution_clock::now(); auto hold=high_resolution_clock::time_point{};
+    while (running) {
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
 		Adjust_Number_Of_Client();
+        std::lock_guard<std::recursive_mutex> state(stateMutex);
+        const auto now=high_resolution_clock::now();
+        if(active_clients==attempt_limit && accepted_logins==attempt_limit && hold==high_resolution_clock::time_point{}) {
+            hold=now; std::cout<<"[GUI] HOLD active="<<active_clients<<" seconds=15"<<std::endl;
+        }
+        if((hold!=high_resolution_clock::time_point{} && now-hold>=15s) || now-began>=60s) {
+            runPassed=active_clients==attempt_limit && accepted_logins==attempt_limit && rejected_logins==0 && transport_errors==0 && moved_clients==attempt_limit && hold!=high_resolution_clock::time_point{} && now-hold>=15s;
+            runFinished=true; return;
+        }
 
 		for (int i = 0; i < num_connections; ++i) {
 			if (false == g_clients[i].connected) continue;
@@ -412,6 +440,12 @@ void InitializeNetwork()
         attempt_limit = parseLoadTestAttempts(configuredLimit);
     }
     std::free(configuredLimit);
+    char* confirmation=nullptr; char* configuredStart=nullptr;
+    _dupenv_s(&confirmation,&length,"GMSEV_GUI_CONFIRM"); _dupenv_s(&configuredStart,&length,"GMSEV_GUI_ACCOUNT_START");
+    const bool approved=approvedGuiRange(confirmation,configuredStart,attempt_limit,account_start);
+    std::free(confirmation); std::free(configuredStart);
+    if(!approved) { running=false; runFinished=true; std::cerr<<"[GUI] Dedicated approved account range/confirmation required; no connections."<<std::endl; return; }
+    running=true; runFinished=false; runPassed=false; pendingIo=0;
     std::cout << "[LOAD] Attempt limit: " << attempt_limit << std::endl;
 	for (auto& cl : g_clients) {
 		cl.connected = false;
@@ -423,7 +457,7 @@ void InitializeNetwork()
 	last_connect_time = high_resolution_clock::now();
 
 	WSADATA	wsadata;
-	WSAStartup(MAKEWORD(2, 2), &wsadata);
+	WSAStartup(MAKEWORD(2, 2), &wsadata); networkInitialized=true;
 
 	g_hiocp = CreateIoCompletionPort(INVALID_HANDLE_VALUE, 0, NULL, 0);
 
@@ -433,15 +467,23 @@ void InitializeNetwork()
 	test_thread = thread{ Test_Thread };
 }
 
-void ShutdownNetwork()
+bool ShutdownNetwork()
 {
-	test_thread.join();
-	for (auto pth : worker_threads) {
-		pth->join();
-		delete pth;
-	}
+    std::cout<<"GUI_SHUTDOWN ms="<<GetTickCount64()<<std::endl; running=false;
+    if(test_thread.joinable()) test_thread.join();
+    { std::lock_guard<std::recursive_mutex> state(stateMutex);
+      for(int i=0;i<num_connections;++i) DisconnectClient(i); }
+    const auto until=high_resolution_clock::now()+10s;
+    while(pendingIo!=0 && high_resolution_clock::now()<until) std::this_thread::sleep_for(10ms);
+    const bool drained=pendingIo==0;
+    for(std::size_t i=0;i<worker_threads.size();++i) PostQueuedCompletionStatus(g_hiocp,0,0,nullptr);
+    for(auto worker : worker_threads) { worker->join(); delete worker; } worker_threads.clear();
+    if(drained && g_hiocp) { CloseHandle(g_hiocp); g_hiocp=nullptr; }
+    if(drained && networkInitialized) { WSACleanup(); networkInitialized=false; }
+    const bool passed=runPassed && drained && transport_errors==0 && rejected_logins==0;
+    std::cout<<"GUI_RESULT passed="<<passed<<" attempts="<<num_connections<<" accepted="<<accepted_logins<<" moved="<<moved_clients<<" closed="<<closed_sockets<<" errors="<<transport_errors<<" pending="<<pendingIo<<" drained="<<drained<<std::endl;
+    return passed;
 }
-
 void Do_Network()
 {
 	return;
@@ -449,11 +491,12 @@ void Do_Network()
 
 void GetPointCloud(int* size, float** points)
 {
+    std::lock_guard<std::recursive_mutex> state(stateMutex);
 	int index = 0;
 	for (int i = 0; i < num_connections; ++i)
 		if (true == g_clients[i].connected) {
-			point_cloud[index * 2] = static_cast<float>(g_clients[i].x);
-			point_cloud[index * 2 + 1] = static_cast<float>(g_clients[i].y);
+			point_cloud[index * 2] = static_cast<float>(g_clients[i].position.x);
+			point_cloud[index * 2 + 1] = static_cast<float>(g_clients[i].position.y);
 			index++;
 		}
 

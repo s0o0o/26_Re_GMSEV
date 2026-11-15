@@ -126,6 +126,7 @@ int InitGL(GLvoid)										// All Setup For OpenGL Goes Here
 
 int DrawGLScene(GLvoid)									// Here's Where We Do All The Drawing
 {
+    static bool sceneReported=false; if(!sceneReported) { printf("[GUI] SCENE_DRAWN\n"); fflush(stdout); sceneReported=true; }
 	int size = 0;
 	float* points = nullptr;
 	GetPointCloud(&size, &points);
@@ -456,10 +457,12 @@ int WINAPI WinMain(HINSTANCE	hInstance,			// Instance
 		return 0;									// Quit If Window Was Not Created
 	}
 
-	InitializeNetwork();
+	printf("[GUI] WINDOW_CREATED OpenGL=1\n"); fflush(stdout);
+    InitializeNetwork();
 
 	while (!done)									// Loop That Runs While done=FALSE
 	{
+        if(NetworkRunFinished()) { done=TRUE; continue; }
 		if (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE))	// Is There A Message Waiting?
 		{
 			if (msg.message == WM_QUIT)				// Have We Received A Quit Message?
@@ -475,13 +478,14 @@ int WINAPI WinMain(HINSTANCE	hInstance,			// Instance
 		else										// If There Are No Messages
 		{
 			// Draw The Scene.  Watch For ESC Key And Quit Messages From DrawGLScene()
-			if ((active && !DrawGLScene()) || keys[VK_ESCAPE])	// Active?  Was There A Quit Received?
+			if (((active || !NetworkRunFinished()) && !DrawGLScene()) || keys[VK_ESCAPE])	// Active?  Was There A Quit Received?
 			{
 				done = TRUE;							// ESC or DrawGLScene Signalled A Quit
 			}
 			else									// Not Time To Quit, Update Screen
 			{
-				SwapBuffers(hDC);					// Swap Buffers (Double Buffering)
+				SwapBuffers(hDC);
+                static bool frameReported=false; if(!frameReported) { printf("[GUI] FRAME_RENDERED\n"); fflush(stdout); frameReported=true; }					// Swap Buffers (Double Buffering)
 			}
 
 			if (keys[VK_F1])						// Is F1 Being Pressed?
@@ -499,11 +503,12 @@ int WINAPI WinMain(HINSTANCE	hInstance,			// Instance
 	}
 
 	// Shutdown
+    const bool passed=ShutdownNetwork();
 	KillGLWindow();									// Kill The Window
-	return ((int)msg.wParam);							// Exit The Program
+	return passed ? 0 : 2;							// Exit The Program
 }
 
 int main()
 {
-	WinMain(0, 0, 0, 0);
+	return WinMain(0, 0, 0, 0);
 }
