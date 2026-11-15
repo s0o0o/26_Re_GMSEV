@@ -30,6 +30,7 @@ $summary=[ordered]@{
     login_received_to_ready_max_ms=$(if($loginTimes.Count){[long]($loginTimes | Measure-Object -Maximum).Maximum}else{0})
     stage_maxima=$stages
     send_error_count=$send.Count
+    send_fast_sample_lower_bound=$( $samples=@($events | Where-Object event -eq 'send_fast_sample'); if($samples.Count){[long]($samples | Measure-Object value -Maximum).Maximum}else{0} )
     send_errors_before_shutdown=@($send | Where-Object ms -lt $shutdown).Count
     send_errors_at_or_after_shutdown=@($send | Where-Object ms -ge $shutdown).Count
     recv_eof=@($events | Where-Object event -eq 'recv_eof').Count

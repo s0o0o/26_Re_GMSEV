@@ -12,6 +12,25 @@ struct Completion {
 };
 int main() {
     WSADATA data{}; assert(WSAStartup(MAKEWORD(2,2),&data) == 0);
+    {
+        auto owner=std::make_shared<GAMESESSION>(); owner->object._id=3;
+        OVER_EXP send; send.owner=owner; send._compType=OP_SEND; send._wasBuf.len=6;
+        assert(releaseSendCompletionWithoutLock(send,3,true,6));
+        assert(!releaseSendCompletionWithoutLock(send,4,true,6));
+        assert(!releaseSendCompletionWithoutLock(send,3,false,6));
+        for(DWORD bytes : {0u,1u,5u,7u}) {
+            assert(!releaseSendCompletionWithoutLock(send,3,true,bytes));
+            assert(classifySessionCompletion(send,3,true,bytes)==SessionCompletion::Disconnect);
+        }
+        owner->transportFailed=true; assert(!releaseSendCompletionWithoutLock(send,3,true,6));
+        owner->transportFailed=false; owner->disconnectStarted=true;
+        assert(releaseSendCompletionWithoutLock(send,3,true,6));
+        assert(releaseSendCompletionWithoutLock(send,3,false,0));
+        assert(releaseSendCompletionWithoutLock(send,3,true,1));
+        owner->disconnectStarted=false; send._compType=OP_RECV;
+        assert(!releaseSendCompletionWithoutLock(send,3,true,6));
+        send._compType=OP_SEND; send.owner.reset(); assert(!releaseSendCompletionWithoutLock(send,3,true,6));
+    }
     SOCKET listener=socket(AF_INET,SOCK_STREAM,IPPROTO_TCP); assert(listener != INVALID_SOCKET);
     sockaddr_in address{}; address.sin_family=AF_INET; address.sin_addr.s_addr=htonl(INADDR_LOOPBACK);
     assert(bind(listener,reinterpret_cast<sockaddr*>(&address),sizeof(address)) == 0);

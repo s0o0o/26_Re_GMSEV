@@ -1,0 +1,13 @@
+{
+  "date":"2026-11-15","issue":46,"parent_issue":41,"baseline_commit":"a2a195a",
+  "account_range":[900001000,900001299],"new_accounts":0,"accounts_preserved_total":600,
+  "limits":{"clients":300,"login_seconds":45,"hold_seconds":15,"drain_seconds":5},
+  "runs":[
+    {"directory":"load-20261115-174836-742146c9","phase":"before","trace":true,"passed":false,"accepted":294,"login_timeouts":1,"drain_eof":0,"drain_timeouts":299,"elapsed_ms":54488,"queued_moves":13616,"own_replies":9221,"unanswered_at_measurement_end":4395,"login_queue_max_ms":10797},
+    {"directory":"load-20261115-175108-90a31cb3","phase":"first attempt, active successful send only","trace":true,"passed":false,"accepted":300,"hold_completed":true,"drain_eof":0,"drain_timeouts":300,"elapsed_ms":32593,"queued_moves":7509,"own_replies":6153,"unanswered_at_measurement_end":1356},
+    {"directory":"load-20261115-175536-791a33a6","phase":"final","trace":true,"passed":true,"accepted":300,"active_at_end":300,"hold_completed":true,"drain_eof":300,"drain_timeouts":0,"drain_ms":545,"elapsed_ms":22451,"queued_moves":5902,"own_replies":5828,"unanswered_at_measurement_end":74,"login_queue_max_ms":119,"login_received_to_ready_max_ms":962,"send_error_lines":0,"disconnect_save_success_returns":300,"send_fast_sample_lower_bound":1818624},
+    {"directory":"load-20261115-175622-a4f37d55","phase":"final","trace":false,"passed":true,"accepted":300,"active_at_end":300,"hold_completed":true,"drain_eof":300,"drain_timeouts":0,"drain_ms":637,"elapsed_ms":21581,"queued_moves":5642,"own_replies":5573,"unanswered_at_measurement_end":69,"send_error_lines":0},
+    {"directory":"load-20261115-175724-dc62c1b5","phase":"final repeat","trace":true,"passed":true,"accepted":300,"active_at_end":300,"hold_completed":true,"drain_eof":300,"drain_timeouts":0,"drain_ms":376,"elapsed_ms":21046,"queued_moves":5546,"own_replies":5542,"unanswered_at_measurement_end":4,"login_queue_max_ms":71,"login_received_to_ready_max_ms":944,"send_error_lines":0,"disconnect_save_success_returns":300,"send_fast_sample_lower_bound":1716224}
+  ],
+  "limitations":"Existing accounts only. No fresh account creation, long soak, complete server IOCP drain, durable DB readback, max capacity or historical GUI crash proof. Failed intermediate experiment retained. Ambient OS scheduling not controlled. Trace sample is a lower bound of fast released SEND completions, not exclusively successful transmitted packets."
+}
