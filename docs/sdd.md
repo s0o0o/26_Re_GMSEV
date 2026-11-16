@@ -33,6 +33,8 @@
 
 ## 명세 목록
 
+- [접속 중 탐험 기록](specs/field-discovery.md): 서버확정위치/5비트방문·중복/세션경계·지도체크리스트.
+
 - [필드 지도](specs/field-map.md): 공통 실제지형/위치/표식 지도와 입력·상태 경계.
 
 - [필드 탐험 자율 큐](specs/field-exploration-queue.md), [장식·랜드마크](specs/field-landmarks.md):3단계 연속 실행과 비충돌 렌더/공통ID·위치 계약.

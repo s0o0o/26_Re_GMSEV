@@ -1,6 +1,7 @@
 #pragma once
 #include "ui_alignment.hpp"
 #include "../../shared/field_landmarks.hpp"
+#include "../../shared/field_discovery.hpp"
 #include <string>
 class FieldMapPanel {
     bool open_=false,mDown_=false,ready_=false;
@@ -63,11 +64,11 @@ public:
         if(freshM || clicked) {open_=true;return true;}
         return false;
     }
-    void drawEntry(sf::RenderTarget& target,const sf::Font& font,bool disabled) const {
+    void drawEntry(sf::RenderTarget& target,const sf::Font& font,bool disabled,const field_discovery::Record& record={}) const {
         box(target,entry,disabled?sf::Color(221,213,191):sf::Color(255,248,228));
-        text(target,font,L"[M] \uD544\uB4DC \uC9C0\uB3C4",entry,22);
+        text(target,font,sf::String(L"[M] \uC9C0\uB3C4 ")+std::to_string(record.count())+"/5",entry,22);
     }
-    void draw(sf::RenderTarget& target,const sf::Font& font,world_regions::Position p) {
+    void draw(sf::RenderTarget& target,const sf::Font& font,world_regions::Position p,const field_discovery::Record& record={}) {
         if(!open_) return;
         sf::RectangleShape dim({900,800});dim.setFillColor({25,24,19,155});target.draw(dim);
         box(target,{70,90,760,600},{255,248,228});
@@ -76,9 +77,11 @@ public:
             sf::Sprite map(terrain_);map.setPosition(mapArea.left,mapArea.top);map.setScale(mapArea.width/256,mapArea.height/256);target.draw(map);
         }
         for(const auto& landmark:field_landmarks::all) {
-            const auto pt=mapPoint({world_regions::Id::SunnyPeak,landmark.x,landmark.y});marker(target,pt,{242,212,155},7);
+            const auto pt=mapPoint({world_regions::Id::SunnyPeak,landmark.x,landmark.y});
+            marker(target,pt,record.visited(landmark.id)?sf::Color(146,190,113):sf::Color(242,212,155),7);
             text(target,font,std::to_string(landmark.id),{pt.x-10,pt.y-10,20,20},14);
-            text(target,font,std::to_string(landmark.id)+"  "+landmark.name,{555,270+(landmark.id-1)*52.f,250,36},19);
+            text(target,font,std::to_string(landmark.id)+"  "+landmark.name,{555,260+(landmark.id-1)*52.f,250,28},19);
+            text(target,font,record.visited(landmark.id)?L"\uBC29\uBB38 \uC644\uB8CC":L"\uC544\uC9C1 \uBBF8\uBC29\uBB38",{555,288+(landmark.id-1)*52.f,250,20},15);
         }
         marker(target,mapPoint({world_regions::Id::SunnyPeak,10,12}),{191,140,77},6);
         if(world_regions::valid(p) && p.region==world_regions::Id::SunnyPeak) {
@@ -89,6 +92,9 @@ public:
         }
         text(target,font,L"\uD30C\uB780 \uD14C\uB450\uB9AC: \uB0B4 \uC704\uCE58",{555,165,250,30},19);
         text(target,font,L"\uAC08\uC0C9 \uC810: \uAC70\uC810 \uCD9C\uAD6C",{555,205,250,30},19);
+        text(target,font,sf::String(L"\uD0D0\uD5D8 ")+std::to_string(record.count())+" / 5",{555,540,250,30},22);
+        text(target,font,L"\uC811\uC18D \uC911 \uAE30\uB85D",{555,580,250,20},15);
+        text(target,font,L"\uC7AC\uC811\uC18D \uC2DC \uCD08\uAE30\uD654",{555,603,250,20},15);
         text(target,font,L"\uB2EB\uC740 \uB4A4 R: \uAC70\uC810 \uADC0\uD658",{105,635,440,28},18);
         box(target,closeButton,{242,212,155});text(target,font,L"\uB2EB\uAE30 (M / Esc)",closeButton,21);
     }

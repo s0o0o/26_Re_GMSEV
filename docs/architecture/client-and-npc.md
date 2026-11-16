@@ -1,5 +1,7 @@
 # 클라이언트 화면과 NPC/Lua
 
+접속 중 탐험 #60: `field_discovery.hpp::Record`는 active+5비트 상태만 가지며 서버확정 본인 AVATAR_INFO/ENTER/MOVE 처리 뒤 observe한다. AVATAR_INFO가 세션기록을활성화하고 중복정보는기록을지우지않는다. 단순moveAvatar/키입력·타플레이어이동에서는기록하지않는다. 유효SunnyPeak walkable타일·지점Chebyshev거리2이내를방문으로본다. 거점전환은유지,gameConnectionLost/beginLoginConnection은reset. 지도는같은Record의count/visited를표시하며서버·DB·패킷·보상은변경하지않는다. 메모리기록의한계를화면에명시한다.
+
 필드 지도 #59: `field_map_panel.hpp`와 `handleFieldMapInput`은 옷장/귀환/채팅/이동 입력보다 먼저 처리한다. 열려 있으면 게임 입력을 소비하며 네트워크 수신/월드 갱신은 계속된다(서버 일시정지 아님). disconnect/새 로그인/거점 전환에서 닫는다. M/클릭은 위치를 보내지 않는다. 실제 terrain의256×256 지도 texture를 처음 열 때1회 생성하고 현재 위치/5개공통ID/거점출구만 매 프레임 표시한다. 지도용 작은 texture는 넓은 월드 렌더 texture와 별개다. 기존 글꼴·패널·letterbox 좌표를 유지한다.
 
 갱신: 2026-11-17, #57. [구조 입구](README.md).

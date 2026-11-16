@@ -28,6 +28,7 @@ using namespace std;
 #include "wardrobe_panel.hpp"
 #include "field_map_panel.hpp"
 FieldMapPanel& fieldMapPanel() { static FieldMapPanel value; return value; }
+field_discovery::Record fieldDiscovery;
 WardrobePanel& wardrobePanel() { static WardrobePanel panel; return panel; }
 bool wardrobeBackdropNeeded=false;
 wardrobe::ClientState wardrobeState;
@@ -50,7 +51,7 @@ HamsterCustomizer& hamsterCustomizer() {
 sf::TcpSocket s_socket;
 void gameConnectionLost() {
     extern bool isChatMode; isChatMode=false;
-    fieldMapPanel().reset(); wardrobeState.disconnect(); travelState.disconnect(); gameOutbox.clear(); s_socket.disconnect();
+    fieldDiscovery.reset(); fieldMapPanel().reset(); wardrobeState.disconnect(); travelState.disconnect(); gameOutbox.clear(); s_socket.disconnect();
 }
 bool flushGamePackets() {
     const bool okay=gameOutbox.pump([](const std::uint8_t* data,std::size_t size,std::size_t& sent) {
@@ -481,7 +482,9 @@ void ProcessPacket(char* ptr)
 		avatar._seedNum = packet->seedNum;
 		seedNumText.setString(to_string(avatar._seedNum));
 
-		moveAvatar({static_cast<world_regions::Id>(packet->region),packet->x,packet->y});
+		fieldDiscovery.start();
+        moveAvatar({static_cast<world_regions::Id>(packet->region),packet->x,packet->y});
+        fieldDiscovery.observe(avatar.position);
 		g_left_x = world_layout::cameraX(avatar.position);
 		g_top_y = world_layout::cameraY(avatar.position);
 		avatar.show();
@@ -497,6 +500,7 @@ void ProcessPacket(char* ptr)
 		if (id == g_myid) {
 			// moveAvatar owns region transition cleanup.
             moveAvatar({static_cast<world_regions::Id>(my_packet->region),my_packet->x,my_packet->y});
+            fieldDiscovery.observe(avatar.position);
 			g_left_x = world_layout::cameraX(avatar.position);
 			g_top_y = world_layout::cameraY(avatar.position);
 			avatar.show();
@@ -534,6 +538,7 @@ void ProcessPacket(char* ptr)
 		if (other_id == g_myid) {
 			// moveAvatar owns region transition cleanup.
             moveAvatar({static_cast<world_regions::Id>(my_packet->region),my_packet->x,my_packet->y});
+            fieldDiscovery.observe(avatar.position);
 			g_left_x = world_layout::cameraX(avatar.position);
 			g_top_y = world_layout::cameraY(avatar.position);
 		}
@@ -900,8 +905,8 @@ void client_main()
 	text.setString(buf);
 	g_window->draw(text);
     drawWardrobeUi(*g_window);
-    if(fieldMapPanel().visible()) fieldMapPanel().draw(*g_window,gameFont(),avatar.position);
-    else if(avatar.position.region==world_regions::Id::SunnyPeak) fieldMapPanel().drawEntry(*g_window,gameFont(),isChatMode || travelState.pending() || travelState.status==world_travel::ClientStatus::Disconnected);
+    if(fieldMapPanel().visible()) fieldMapPanel().draw(*g_window,gameFont(),avatar.position,fieldDiscovery);
+    else if(avatar.position.region==world_regions::Id::SunnyPeak) fieldMapPanel().drawEntry(*g_window,gameFont(),isChatMode || travelState.pending() || travelState.status==world_travel::ClientStatus::Disconnected,fieldDiscovery);
 }
 
 void send_packet(void* packet)
@@ -995,7 +1000,7 @@ void drawCustomizationScreen(sf::RenderTarget& window) {
 }
 
 void beginLoginConnection(unsigned short port = GAME_PORT) {
-    fieldMapPanel().reset(); wardrobeState={}; travelState={}; gameOutbox.clear(); travelPanel.pressed=false; travelPanel.rDown=false;
+    fieldDiscovery.reset(); fieldMapPanel().reset(); wardrobeState={}; travelState={}; gameOutbox.clear(); travelPanel.pressed=false; travelPanel.rDown=false;
     s_socket.disconnect();
     in_packet_size = saved_packet_size = 0;
     s_socket.setBlocking(true);
