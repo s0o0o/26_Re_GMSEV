@@ -138,7 +138,15 @@ cl /nologo /EHsc /std:c++17 tests\field_discovery_test.cpp /Fo:build\tests\ /Fe:
 if not "%errorlevel%"=="0" goto failed
 build\tests\field_discovery_test.exe
 if not "%errorlevel%"=="0" goto failed
-echo All 48 regression programs passed. Run tests\run-field-map.cmd, tests\run-display.cmd, tests\run-field-preview.cmd, tests\run-wardrobe-ui.cmd, tests\run-wardrobe-client.cmd, tests\run-travel-client.cmd and tests\run-town-preview.cmd separately for GPU/window checks.
+for %%T in (town_dialogue exploration_guidance town_walk_quest) do (
+ cl /nologo /EHsc /std:c++17 tests\%%T_test.cpp /Fo:build\tests\ /Fe:build\tests\%%T_test.exe
+ if errorlevel 1 goto failed
+ if not errorlevel 0 goto failed
+ build\tests\%%T_test.exe
+ if errorlevel 1 goto failed
+ if not errorlevel 0 goto failed
+)
+echo All 51 regression programs passed. Run tests\run-town-dialogue.cmd, tests\run-field-map.cmd, tests\run-display.cmd, tests\run-field-preview.cmd, tests\run-wardrobe-ui.cmd, tests\run-wardrobe-client.cmd, tests\run-travel-client.cmd and tests\run-town-preview.cmd separately for GPU/window checks.
 popd
 exit /b 0
 :failed

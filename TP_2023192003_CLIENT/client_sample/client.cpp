@@ -31,6 +31,8 @@ FieldMapPanel& fieldMapPanel() { static FieldMapPanel value; return value; }
 field_discovery::Record fieldDiscovery;
 #include "exploration_guidance_hud.hpp"
 exploration_guidance::State explorationGuide;
+#include "town_walk_quest_hud.hpp"
+town_walk_quest::State townWalkQuest;
 WardrobePanel& wardrobePanel() { static WardrobePanel panel; return panel; }
 bool wardrobeBackdropNeeded=false;
 wardrobe::ClientState wardrobeState;
@@ -55,7 +57,7 @@ HamsterCustomizer& hamsterCustomizer() {
 sf::TcpSocket s_socket;
 void gameConnectionLost() {
     extern bool isChatMode; isChatMode=false;
-    explorationGuide.reset(); townDialoguePanel().reset(); fieldDiscovery.reset(); fieldMapPanel().reset(); wardrobeState.disconnect(); travelState.disconnect(); gameOutbox.clear(); s_socket.disconnect();
+    townWalkQuest.reset(); explorationGuide.reset(); townDialoguePanel().reset(); fieldDiscovery.reset(); fieldMapPanel().reset(); wardrobeState.disconnect(); travelState.disconnect(); gameOutbox.clear(); s_socket.disconnect();
 }
 bool flushGamePackets() {
     const bool okay=gameOutbox.pump([](const std::uint8_t* data,std::size_t size,std::size_t& sent) {
@@ -405,15 +407,25 @@ town_dialogue::Candidates townDialogueCandidates() {
     return result;
 }
 bool handleTownDialogueInput(const sf::Event& event,sf::Vector2f point) {
+    townDialoguePanel().setQuestContext(townWalkQuest,fieldDiscovery);
     const bool consumed=townDialoguePanel().handle(event,point,avatar.position,townDialogueCandidates(),
         isChatMode || wardrobeState.visible() || fieldMapPanel().visible() || travelState.pending(),
         travelState.status!=world_travel::ClientStatus::Disconnected);
     if(townDialoguePanel().takeGuideRequest()) {explorationGuide.select(fieldDiscovery);townDialoguePanel().showGuide(explorationGuide);}
+    if(townDialoguePanel().takeQuestRequest()) {
+        const bool boss=townDialoguePanel().visible() && townDialoguePanel().state.type==100 && townDialoguePanel().state.target==town_npcs::baseId;
+        if(townWalkQuest.stage()==town_walk_quest::Stage::Available) {
+            if(townWalkQuest.accept(fieldDiscovery,boss))explorationGuide.select(fieldDiscovery);
+        } else townWalkQuest.report(fieldDiscovery,boss);
+        townDialoguePanel().showQuest(townWalkQuest,fieldDiscovery);
+        townDialoguePanel().setQuestContext(townWalkQuest,fieldDiscovery);
+    }
     return consumed;
 }
 void drawTownDialogueUi(sf::RenderTarget& target) {
     const auto candidates=townDialogueCandidates();
     townDialoguePanel().state.reconcile(avatar.position,candidates,travelState.status!=world_travel::ClientStatus::Disconnected);
+    townDialoguePanel().setQuestContext(townWalkQuest,fieldDiscovery);
     if(townDialoguePanel().visible()) townDialoguePanel().draw(target,gameFont(),townNpcRenderer(),combatClock.getElapsedTime().asSeconds());
     else if(!isChatMode && !wardrobeState.visible() && !fieldMapPanel().visible() && !travelState.pending()
         && travelState.status!=world_travel::ClientStatus::Disconnected) {
@@ -516,6 +528,7 @@ void ProcessPacket(char* ptr)
         moveAvatar({static_cast<world_regions::Id>(packet->region),packet->x,packet->y});
         fieldDiscovery.observe(avatar.position);
             explorationGuide.update(fieldDiscovery);
+            townWalkQuest.update(fieldDiscovery);
 		g_left_x = world_layout::cameraX(avatar.position);
 		g_top_y = world_layout::cameraY(avatar.position);
 		avatar.show();
@@ -533,6 +546,7 @@ void ProcessPacket(char* ptr)
             moveAvatar({static_cast<world_regions::Id>(my_packet->region),my_packet->x,my_packet->y});
             fieldDiscovery.observe(avatar.position);
             explorationGuide.update(fieldDiscovery);
+            townWalkQuest.update(fieldDiscovery);
 			g_left_x = world_layout::cameraX(avatar.position);
 			g_top_y = world_layout::cameraY(avatar.position);
 			avatar.show();
@@ -572,6 +586,7 @@ void ProcessPacket(char* ptr)
             moveAvatar({static_cast<world_regions::Id>(my_packet->region),my_packet->x,my_packet->y});
             fieldDiscovery.observe(avatar.position);
             explorationGuide.update(fieldDiscovery);
+            townWalkQuest.update(fieldDiscovery);
 			g_left_x = world_layout::cameraX(avatar.position);
 			g_top_y = world_layout::cameraY(avatar.position);
 		}
@@ -940,7 +955,10 @@ void client_main()
     drawWardrobeUi(*g_window);
     drawTownDialogueUi(*g_window);
     if(!townDialoguePanel().visible() && !fieldMapPanel().visible() && !wardrobeState.visible() && !isChatMode && !travelState.pending()
-        && !town_dialogue::nearest(avatar.position,townDialogueCandidates())) drawExplorationGuidance(*g_window,gameFont(),explorationGuide,avatar.position);
+        && !town_dialogue::nearest(avatar.position,townDialogueCandidates())) {
+        if(!drawTownWalkQuest(*g_window,gameFont(),townWalkQuest,fieldDiscovery,explorationGuide,avatar.position))
+            drawExplorationGuidance(*g_window,gameFont(),explorationGuide,avatar.position);
+    }
     if(fieldMapPanel().visible()) fieldMapPanel().draw(*g_window,gameFont(),avatar.position,fieldDiscovery,explorationGuide.target());
     else if(avatar.position.region==world_regions::Id::SunnyPeak) fieldMapPanel().drawEntry(*g_window,gameFont(),isChatMode || travelState.pending() || travelState.status==world_travel::ClientStatus::Disconnected,fieldDiscovery);
 }
@@ -1036,7 +1054,7 @@ void drawCustomizationScreen(sf::RenderTarget& window) {
 }
 
 void beginLoginConnection(unsigned short port = GAME_PORT) {
-    explorationGuide.reset(); townDialoguePanel().reset(); fieldDiscovery.reset(); fieldMapPanel().reset(); wardrobeState={}; travelState={}; gameOutbox.clear(); travelPanel.pressed=false; travelPanel.rDown=false;
+    townWalkQuest.reset(); explorationGuide.reset(); townDialoguePanel().reset(); fieldDiscovery.reset(); fieldMapPanel().reset(); wardrobeState={}; travelState={}; gameOutbox.clear(); travelPanel.pressed=false; travelPanel.rDown=false;
     s_socket.disconnect();
     in_packet_size = saved_packet_size = 0;
     s_socket.setBlocking(true);
