@@ -33,6 +33,8 @@
 
 ## 명세 목록
 
+- [필드 지도](specs/field-map.md): 공통 실제지형/위치/표식 지도와 입력·상태 경계.
+
 - [필드 탐험 자율 큐](specs/field-exploration-queue.md), [장식·랜드마크](specs/field-landmarks.md):3단계 연속 실행과 비충돌 렌더/공통ID·위치 계약.
 
 - [스프라이트 프레임·HUD 경계](specs/sprite-frame-integrity.md): 사용 중 주민 crop 완전성·훈스터 원본 경계·이름 슬롯과 렌더 검사.
