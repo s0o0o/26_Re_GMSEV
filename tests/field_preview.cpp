@@ -19,7 +19,7 @@ int main() {
         const auto left=world_layout::cameraX(p),top=world_layout::cameraY(p);
         scene.clear(); clubhouseRenderer().draw(scene,p.region,left,top);
         const auto stats=clubhouseRenderer().fieldRenderer().lastDraw();
-        assert(stats.chunks<=6 && stats.tiles<=18*16);
+        assert(stats.chunks<=6 && stats.tiles<=18*16 && stats.details<=288 && stats.landmarks<=5);
         assert(clubhouseRenderer().fieldRenderer().cacheStats().resident<=12);
         if(!field_terrain::starter(p.x,p.y)) assert(stats.tiles==18*16);
         if(collision) for(int y=0;y<16;++y) for(int x=0;x<18;++x) {
@@ -39,6 +39,10 @@ int main() {
         sf::Sprite sprite(scene.getTexture()); sprite.setPosition((i%2)*900.f,(i/2)*800.f); contact.draw(sprite);
     }
     contact.display(); assert(contact.getTexture().copyToImage().saveToFile((root/"build/tests/field-scenes.png").string()));
+    for(const auto& landmark:field_landmarks::all) {
+        render({world_regions::Id::SunnyPeak,landmark.x,landmark.y},false);
+        assert(scene.getTexture().copyToImage().saveToFile((root/("build/tests/landmark-"+std::to_string(landmark.id)+".png")).string()));
+    }
     render(positions[1],true);
     assert(scene.getTexture().copyToImage().saveToFile((root/"build/tests/field-collision-preview.png").string()));
     for(const auto size : {sf::Vector2u{1280,720},sf::Vector2u{800,900}}) {
