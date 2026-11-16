@@ -26,6 +26,8 @@ using namespace std;
 #include "travel_panel.hpp"
 #include "../../shared/wardrobe_client_state.hpp"
 #include "wardrobe_panel.hpp"
+#include "field_map_panel.hpp"
+FieldMapPanel& fieldMapPanel() { static FieldMapPanel value; return value; }
 WardrobePanel& wardrobePanel() { static WardrobePanel panel; return panel; }
 bool wardrobeBackdropNeeded=false;
 wardrobe::ClientState wardrobeState;
@@ -48,7 +50,7 @@ HamsterCustomizer& hamsterCustomizer() {
 sf::TcpSocket s_socket;
 void gameConnectionLost() {
     extern bool isChatMode; isChatMode=false;
-    wardrobeState.disconnect(); travelState.disconnect(); gameOutbox.clear(); s_socket.disconnect();
+    fieldMapPanel().reset(); wardrobeState.disconnect(); travelState.disconnect(); gameOutbox.clear(); s_socket.disconnect();
 }
 bool flushGamePackets() {
     const bool okay=gameOutbox.pump([](const std::uint8_t* data,std::size_t size,std::size_t& sent) {
@@ -397,9 +399,14 @@ void moveAvatar(world_regions::Position next) {
         combatHud().clear(); nearMonCnt=0;
         memset(nearMonsters,0,sizeof(nearMonsters));
     }
-    wardrobeState.regionChanged(next); avatar.move(next);
+    fieldMapPanel().regionChanged(next); wardrobeState.regionChanged(next); avatar.move(next);
     g_left_x=world_layout::cameraX(next); g_top_y=world_layout::cameraY(next);
 }
+bool handleFieldMapInput(const sf::Event& event,sf::Vector2f point) {
+    return fieldMapPanel().handle(event,point,avatar.position,isChatMode || wardrobeState.visible() || travelState.pending(),
+        travelState.status!=world_travel::ClientStatus::Disconnected);
+}
+
 bool handleTravelInput(const sf::Event& event,sf::Vector2f mouse,bool chat) {
     const bool enabled=!travelState.pending() && travelState.status!=world_travel::ClientStatus::Disconnected;
     if(travelPanel.activate(event,mouse,chat,enabled)) {
@@ -893,6 +900,8 @@ void client_main()
 	text.setString(buf);
 	g_window->draw(text);
     drawWardrobeUi(*g_window);
+    if(fieldMapPanel().visible()) fieldMapPanel().draw(*g_window,gameFont(),avatar.position);
+    else if(avatar.position.region==world_regions::Id::SunnyPeak) fieldMapPanel().drawEntry(*g_window,gameFont(),isChatMode || travelState.pending() || travelState.status==world_travel::ClientStatus::Disconnected);
 }
 
 void send_packet(void* packet)
@@ -986,7 +995,7 @@ void drawCustomizationScreen(sf::RenderTarget& window) {
 }
 
 void beginLoginConnection(unsigned short port = GAME_PORT) {
-    wardrobeState={}; travelState={}; gameOutbox.clear(); travelPanel.pressed=false; travelPanel.rDown=false;
+    fieldMapPanel().reset(); wardrobeState={}; travelState={}; gameOutbox.clear(); travelPanel.pressed=false; travelPanel.rDown=false;
     s_socket.disconnect();
     in_packet_size = saved_packet_size = 0;
     s_socket.setBlocking(true);
@@ -1122,7 +1131,9 @@ int main()
                 sf::Vector2i pixel=sf::Mouse::getPosition(window);
                 if(event.type==sf::Event::MouseButtonPressed || event.type==sf::Event::MouseButtonReleased)
                     pixel={event.mouseButton.x,event.mouseButton.y};
+                if(handleFieldMapInput(event,window.mapPixelToCoords(pixel))) continue;
                 if(handleWardrobeInput(event,window,window.mapPixelToCoords(pixel))) continue;
+
                 if(handleTravelInput(event,window.mapPixelToCoords(pixel),isChatMode)) continue;
 
 				if (event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::Tab) {
