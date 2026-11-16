@@ -77,10 +77,12 @@ int main() {
             const auto fit=display_layout::fit(size.x,size.y);sf::View v(sf::FloatRect(0,0,900,800));
             v.setViewport({fit.left/size.x,fit.top/size.y,fit.width/size.x,fit.height/size.y});out.setView(v);
             clubhouseRenderer().draw(out,avatar.position.region,g_left_x,g_top_y);
+            townDialoguePanel().setQuestContext(townWalkQuest,fieldDiscovery);
             if(townDialoguePanel().visible())townDialoguePanel().draw(out,gameFont(),townNpcRenderer(),0);
             else if(fieldMapPanel().visible())fieldMapPanel().draw(out,gameFont(),avatar.position,fieldDiscovery,explorationGuide.target());
-            else drawExplorationGuidance(out,gameFont(),explorationGuide,avatar.position);
-            out.display();assert(out.getTexture().copyToImage().saveToFile((root/("build/tests/guide-"+name+"-"+std::to_string(size.x)+"x"+std::to_string(size.y)+".png")).string()));
+            else if(!drawTownWalkQuest(out,gameFont(),townWalkQuest,fieldDiscovery,explorationGuide,avatar.position))drawExplorationGuidance(out,gameFont(),explorationGuide,avatar.position);
+            const auto prefix=name.rfind("quest-",0)==0 ? "" : "guide-";
+            out.display();assert(out.getTexture().copyToImage().saveToFile((root/("build/tests/"+std::string(prefix)+name+"-"+std::to_string(size.x)+"x"+std::to_string(size.y)+".png")).string()));
         }
     };
     capture("dialogue");key(sf::Keyboard::Escape);moveAvatar({world_regions::Id::Clubhouse,2,16});capture("hub");
@@ -93,6 +95,31 @@ int main() {
     assert(explorationGuide.active() && !explorationGuide.target());capture("complete");
     gameConnectionLost();assert(!explorationGuide.active() && !explorationGuide.target());
     fieldDiscovery.start();explorationGuide.select(fieldDiscovery);beginLoginConnection(0);assert(!explorationGuide.active());
+    using town_walk_quest::Stage;
+    auto resetQuestFixture=[&]() {
+        townDialoguePanel().reset();fieldDiscovery.reset();fieldDiscovery.start();townWalkQuest.reset();explorationGuide.reset();travelState={};wardrobeState={};
+        players.clear();moveAvatar({world_regions::Id::Clubhouse,12,10});enter(town_npcs::residents[0]);assert(players.count(town_npcs::baseId)==1);
+    };
+    auto own=[&](int region,int x,int y) {sc_packet_move p{};p.size=sizeof(p);p.type=S2C_P_MOVE;p.id=1;p.region=static_cast<std::uint8_t>(region);p.x=x;p.y=y;ProcessPacket(reinterpret_cast<char*>(&p));};
+    resetQuestFixture();fieldDiscovery.observe({world_regions::Id::SunnyPeak,32,32});fieldDiscovery.observe({world_regions::Id::SunnyPeak,90,96});
+    key(sf::Keyboard::E);release(sf::Keyboard::E);key(sf::Keyboard::Q);assert(townWalkQuest.stage()==Stage::Ready);
+    key(sf::Keyboard::Q);assert(townWalkQuest.stage()==Stage::Ready); // Held key cannot accept AND report.
+    release(sf::Keyboard::Q);key(sf::Keyboard::Q);assert(townWalkQuest.stage()==Stage::Reported);release(sf::Keyboard::Q);
+    key(sf::Keyboard::Q);assert(townWalkQuest.stage()==Stage::Reported);release(sf::Keyboard::Q);key(sf::Keyboard::Escape);
+    townWalkQuest.reset();players.clear();enter(town_npcs::residents[1]);moveAvatar({world_regions::Id::Clubhouse,12,16});
+    key(sf::Keyboard::E);release(sf::Keyboard::E);key(sf::Keyboard::Q);assert(townWalkQuest.stage()==Stage::Available);release(sf::Keyboard::Q);key(sf::Keyboard::Escape);
+    resetQuestFixture();const int seedsBefore=avatar._seedNum;
+    key(sf::Keyboard::E);release(sf::Keyboard::E);capture("quest-offer");
+    click(TownDialoguePanel::questButton);assert(townWalkQuest.stage()==Stage::Active);capture("quest-active");key(sf::Keyboard::Escape);
+    own(2,32,32);assert(townWalkQuest.progress(fieldDiscovery)==1 && townWalkQuest.stage()==Stage::Active);capture("quest-progress");
+    own(1,12,10);enter(town_npcs::residents[0]);key(sf::Keyboard::E);release(sf::Keyboard::E);key(sf::Keyboard::Q);
+    assert(townWalkQuest.stage()==Stage::Active);release(sf::Keyboard::Q);key(sf::Keyboard::Escape);
+    own(2,90,96);assert(townWalkQuest.stage()==Stage::Ready);capture("quest-return");
+    own(1,12,10);enter(town_npcs::residents[0]);key(sf::Keyboard::E);release(sf::Keyboard::E);capture("quest-ready");
+    key(sf::Keyboard::Q);assert(townWalkQuest.stage()==Stage::Reported && avatar._seedNum==seedsBefore);release(sf::Keyboard::Q);capture("quest-reported");
+    key(sf::Keyboard::Q);assert(townWalkQuest.stage()==Stage::Reported);release(sf::Keyboard::Q);
+    gameConnectionLost();assert(townWalkQuest.stage()==Stage::Available && !fieldDiscovery.active());
+    fieldDiscovery.start();townWalkQuest.accept(fieldDiscovery,true);beginLoginConnection(0);assert(townWalkQuest.stage()==Stage::Available);
     window.close();g_window=nullptr;std::filesystem::current_path(root);
     std::puts("Town dialogue production E/repeat/pages/click/chat/modals/live MOVE+LEAVE/region/disconnect/3 NPCs x 3 sizes PASS");
 }

@@ -33,6 +33,8 @@
 
 ## 명세 목록
 
+- [Boss 산책 의뢰](specs/town-walk-quest.md): 접속중수락/방문/근접보고·Q반복/세션경계·보상없음.
+
 - [주민 탐험 안내](specs/exploration-guidance.md): 대화요청/미방문목표·지도링/좌표방향거리·세션경계.
 
 - [주민·탐험 연결 큐](specs/resident-adventure-queue.md), [근접 주민 대화](specs/town-dialogue.md):순차3작업과현재관측위치·입력/대화수명계약.
