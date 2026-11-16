@@ -33,6 +33,8 @@
 
 ## 명세 목록
 
+- [스프라이트 프레임·HUD 경계](specs/sprite-frame-integrity.md): 사용 중 주민 crop 완전성·훈스터 원본 경계·이름 슬롯과 렌더 검사.
+
 - [클럽하우스 옷장](specs/clubhouse-wardrobe.md): draft/서버 검증·동기화·승인된 DB 저장/복원과 실제 부하 비교 한계.
 
 - [넓은 필드 청크·충돌](specs/field-chunks.md): 256×256 지형/충돌, 제한 LRU·가시 표시·경로 예산과 v4 범위 계약.

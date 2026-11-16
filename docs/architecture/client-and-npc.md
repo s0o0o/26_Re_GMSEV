@@ -1,6 +1,10 @@
 # 클라이언트 화면과 NPC/Lua
 
-갱신: 2026-11-16, #54. [구조 입구](README.md).
+갱신: 2026-11-17, #57. [구조 입구](README.md).
+
+주민 원본 rect는 town_npc_renderer.hpp의 명시 셀을 사용한다. Boss 정면 수염/귀, Pashmina 정면/뒤, Snoozer 수면 프레임 잘림을 수정했고 `tests/run-sprite-frames.cmd`가24경우의 셀 픽셀 완전성과 인접 프레임 혼입0을 검사한다. 원본PNG·idle/산책·2배·발기준은 그대로다. 플레이어8프레임/90외형은 기존 원본일치 검사로 유지한다. 훈스터는50×50 단일원본 전체를 쓰고52×52의 텍스처 밖 참조를 제거했다.
+
+프로필 nameText는 `profile_layout.hpp::placeName`으로 NAME/SEED 사이 전용 nameSlot에 glyph bounds를 맞춘다. 전체 이름 데이터는 보존하며 화면 배치만 축소·중앙 정렬한다. 이전 문서의 SPEED 겹침은 실제 raster의 SEED 라벨 겹침을 잘못 부른 것이므로 [#57 명세](../specs/sprite-frame-integrity.md)에서 정정한다.
 
 ## 일반 클라이언트
 
