@@ -132,7 +132,13 @@ cl /nologo /EHsc /std:c++17 tests\appearance_row_test.cpp /Fo:build\tests\ /Fe:b
 if not "%errorlevel%"=="0" goto failed
 build\tests\appearance_row_test.exe
 if not "%errorlevel%"=="0" goto failed
-echo All 46 regression programs passed. Run tests\run-display.cmd, tests\run-field-preview.cmd, tests\run-wardrobe-ui.cmd, tests\run-wardrobe-client.cmd, tests\run-travel-client.cmd and tests\run-town-preview.cmd separately for GPU/window checks.
+call tests\run-field-landmarks.cmd
+if not "%errorlevel%"=="0" goto failed
+cl /nologo /EHsc /std:c++17 tests\field_discovery_test.cpp /Fo:build\tests\ /Fe:build\tests\field_discovery_test.exe
+if not "%errorlevel%"=="0" goto failed
+build\tests\field_discovery_test.exe
+if not "%errorlevel%"=="0" goto failed
+echo All 48 regression programs passed. Run tests\run-field-map.cmd, tests\run-display.cmd, tests\run-field-preview.cmd, tests\run-wardrobe-ui.cmd, tests\run-wardrobe-client.cmd, tests\run-travel-client.cmd and tests\run-town-preview.cmd separately for GPU/window checks.
 popd
 exit /b 0
 :failed

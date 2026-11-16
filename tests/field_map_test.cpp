@@ -5,7 +5,8 @@
 #include <filesystem>
 int main() {
     const auto root=std::filesystem::current_path();std::filesystem::current_path(root/"TP_2023192003_CLIENT/client_sample");
-    assert(gameFont().loadFromFile("neodgm.ttf"));assert(clubhouseRenderer().loadOutdoor("assets/maps/sunny-peak-sheet.png"));
+    assert(gameFont().loadFromFile("neodgm.ttf"));assert(hamsterCustomizer().load("assets/characters"));
+    assert(clubhouseRenderer().loadOutdoor("assets/maps/sunny-peak-sheet.png"));
     sf::RenderWindow window(sf::VideoMode(900,800),"Field map regression",sf::Style::None);window.setVisible(false);g_window=&window;
     WindowDisplay::resize(window);travelState={};wardrobeState={};moveAvatar({world_regions::Id::SunnyPeak,90,96});
     sf::Event e{};
@@ -45,6 +46,45 @@ int main() {
     travelPanel.draw(entry,gameFont(),avatar.position.region,travelState);
     fieldMapPanel().drawEntry(entry,gameFont(),false);entry.display();
     assert(entry.getTexture().copyToImage().saveToFile((root/"build/tests/field-map-entry.png").string()));
-    fieldMapPanel().reset();window.close();g_window=nullptr;std::filesystem::current_path(root);
+    fieldMapPanel().reset();fieldDiscovery.reset();
+    moveAvatar({world_regions::Id::SunnyPeak,32,32});assert(!fieldDiscovery.count()); // Local placement is not a server observation.
+    sc_packet_move before{};before.size=sizeof(before);before.type=S2C_P_MOVE;before.id=g_myid;
+    before.region=2;before.x=32;before.y=32;ProcessPacket(reinterpret_cast<char*>(&before));assert(!fieldDiscovery.count());
+    sc_packet_avatar_info info{};info.size=sizeof(info);info.type=S2C_P_AVATAR_INFO;info.id=1;info.region=2;
+    info.x=32;info.y=32;info.hp=info.max_hp=10;ProcessPacket(reinterpret_cast<char*>(&info));
+    assert(fieldDiscovery.active() && fieldDiscovery.visited(1) && fieldDiscovery.count()==1);
+    ProcessPacket(reinterpret_cast<char*>(&info));assert(fieldDiscovery.count()==1);
+    sc_packet_move move{};move.size=sizeof(move);move.type=S2C_P_MOVE;move.id=2;move.region=2;move.x=90;move.y=96;
+    ProcessPacket(reinterpret_cast<char*>(&move));assert(fieldDiscovery.count()==1); // Someone else's movement.
+    move.id=1;ProcessPacket(reinterpret_cast<char*>(&move));assert(fieldDiscovery.visited(2) && fieldDiscovery.count()==2);
+    move.region=1;move.x=4;move.y=4;ProcessPacket(reinterpret_cast<char*>(&move));assert(fieldDiscovery.count()==2);
+    move.region=2;move.x=90;move.y=96;ProcessPacket(reinterpret_cast<char*>(&move));assert(fieldDiscovery.count()==2);
+    for(int stage=0;stage<3;++stage) {
+        field_discovery::Record sample;sample.start();
+        if(stage>0) sample=fieldDiscovery;
+        if(stage==2) for(const auto& p:field_landmarks::all) sample.observe({world_regions::Id::SunnyPeak,p.x,p.y});
+        assert(sample.count()==(stage==0 ? 0u : stage==1 ? 2u : 5u));
+        key(sf::Keyboard::M);release();
+        sf::RenderTexture states;assert(states.create(900,800));states.clear();
+        clubhouseRenderer().draw(states,avatar.position.region,g_left_x,g_top_y);
+        fieldMapPanel().draw(states,gameFont(),avatar.position,sample);states.display();
+        assert(states.getTexture().copyToImage().saveToFile((root/("build/tests/discovery-state-"+std::to_string(stage)+".png")).string()));
+        for(const auto size:{sf::Vector2u{1280,720},sf::Vector2u{800,900}}) {
+            sf::RenderTexture resized;assert(resized.create(size.x,size.y));resized.clear({32,24,24});
+            const auto fit=display_layout::fit(size.x,size.y);sf::View v(sf::FloatRect(0,0,900,800));
+            v.setViewport({fit.left/size.x,fit.top/size.y,fit.width/size.x,fit.height/size.y});resized.setView(v);
+            clubhouseRenderer().draw(resized,avatar.position.region,g_left_x,g_top_y);
+            fieldMapPanel().draw(resized,gameFont(),avatar.position,sample);resized.display();
+            assert(resized.getTexture().copyToImage().saveToFile((root/("build/tests/discovery-state-"+std::to_string(stage)+"-"+std::to_string(size.x)+"x"+std::to_string(size.y)+".png")).string()));
+        }
+        key(sf::Keyboard::Escape);
+    }
+    gameConnectionLost();assert(!fieldDiscovery.active() && !fieldDiscovery.count());
+    // A new avatar on a new connection starts from zero, then records only its arrival.
+    info.x=240;info.y=224;ProcessPacket(reinterpret_cast<char*>(&info));assert(fieldDiscovery.count()==1 && fieldDiscovery.visited(5));
+    sc_packet_enter arrival{};arrival.size=sizeof(arrival);arrival.type=S2C_P_ENTER;arrival.id=1;arrival.region=2;arrival.x=192;arrival.y=192;
+    ProcessPacket(reinterpret_cast<char*>(&arrival));assert(fieldDiscovery.count()==2 && fieldDiscovery.visited(4));
+    beginLoginConnection(0);assert(!fieldDiscovery.active() && !fieldDiscovery.count()); // Local bounded failed login, no DB/server launched.
+    gameConnectionLost();fieldMapPanel().reset();window.close();g_window=nullptr;std::filesystem::current_path(root);
     std::puts("Field map production input: M/repeat/chat/pending/wardrobe/modal/region/disconnect/click/resize/markers + terrain renderer PASS");
 }
