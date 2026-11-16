@@ -18,3 +18,17 @@ constexpr std::size_t appearanceIndex(std::uint8_t fur, std::uint8_t eyes, std::
 constexpr std::size_t characterAppearanceIndex(std::uint8_t kind, std::uint8_t fur, std::uint8_t eyes, std::uint8_t scarf) {
     return kind * HAMSTER_APPEARANCES + appearanceIndex(fur,eyes,scarf);
 }
+
+namespace avatar_appearance {
+struct Value {
+    std::uint8_t kind=0,fur=0,eyes=0,scarf=0;
+};
+constexpr bool valid(Value value) {
+    return validCharacterKind(value.kind) && validFurColor(value.fur)
+        && validEyeStyle(value.eyes) && validScarfStyle(value.scarf);
+}
+constexpr bool operator==(Value a,Value b) {
+    return a.kind==b.kind && a.fur==b.fur && a.eyes==b.eyes && a.scarf==b.scarf;
+}
+constexpr bool operator!=(Value a,Value b) { return !(a==b); }
+}

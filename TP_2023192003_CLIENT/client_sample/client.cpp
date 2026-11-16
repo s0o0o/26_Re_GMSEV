@@ -23,6 +23,11 @@ using namespace std;
 #include "clubhouse_renderer.hpp"
 #include "combat_hud.hpp"
 #include "travel_panel.hpp"
+#include "../../shared/wardrobe_client_state.hpp"
+#include "wardrobe_panel.hpp"
+WardrobePanel& wardrobePanel() { static WardrobePanel panel; return panel; }
+bool wardrobeBackdropNeeded=false;
+wardrobe::ClientState wardrobeState;
 #include "../../shared/packet_outbox.hpp"
 world_travel::ClientState travelState;
 PacketOutbox gameOutbox;
@@ -42,7 +47,7 @@ HamsterCustomizer& hamsterCustomizer() {
 sf::TcpSocket s_socket;
 void gameConnectionLost() {
     extern bool isChatMode; isChatMode=false;
-    travelState.disconnect(); gameOutbox.clear(); s_socket.disconnect();
+    wardrobeState.disconnect(); travelState.disconnect(); gameOutbox.clear(); s_socket.disconnect();
 }
 bool flushGamePackets() {
     const bool okay=gameOutbox.pump([](const std::uint8_t* data,std::size_t size,std::size_t& sent) {
@@ -155,6 +160,12 @@ public:
 	int         id=-1;
 	world_regions::Position position{world_regions::Id::Clubhouse,0,0};
     town_motion::State townMotion;
+    avatar_appearance::Value appearance;
+    void setAppearance(avatar_appearance::Value value) {
+        if(!avatar_appearance::valid(value)) return;
+        appearance=value;
+        m_sprite.setTexture(hamsterCustomizer().worldTexture(value.fur,value.eyes,value.scarf,value.kind));
+    }
 	char        name[NAME_SIZE];
 	short		_hp, _maxHp, _level, _exp, _seedNum, _damage; // hp, ÃÖ´ëhp, ·¹º§, °æÇèÄ¡. È¹µæ¾¾¾Ñ°¹¼ö
 
@@ -385,7 +396,7 @@ void moveAvatar(world_regions::Position next) {
         combatHud().clear(); nearMonCnt=0;
         memset(nearMonsters,0,sizeof(nearMonsters));
     }
-    avatar.move(next);
+    wardrobeState.regionChanged(next); avatar.move(next);
     g_left_x=world_layout::cameraX(next); g_top_y=world_layout::cameraY(next);
 }
 bool handleTravelInput(const sf::Event& event,sf::Vector2f mouse,bool chat) {
@@ -398,12 +409,50 @@ bool handleTravelInput(const sf::Event& event,sf::Vector2f mouse,bool chat) {
     return event.type==sf::Event::KeyPressed && event.key.code!=sf::Keyboard::Escape
         && (!enabled || (!chat && event.key.code==sf::Keyboard::R));
 }
+bool handleWardrobeInput(const sf::Event& event,sf::RenderWindow& window,sf::Vector2f point) {
+    const bool wasOpen=wardrobeState.visible();
+    const auto action=wardrobePanel().handle(event,point,wardrobeState,avatar.position,avatar.appearance,
+        isChatMode || travelState.pending() || !wardrobeState.connected);
+    if(action==WardrobePanel::Action::Opened) {
+        static bool iconsReady=false;
+        if(!iconsReady) iconsReady=wardrobePanel().loadIcon("assets/wardrobe/source/accessory-box-icons.png");
+        wardrobeBackdropNeeded=true;
+    }
+    if(action==WardrobePanel::Action::Apply) {
+        cs_packet_appearance packet{};
+        if(wardrobeState.submit(GetTickCount64(),packet)) send_packet(&packet);
+    }
+    return wasOpen || wardrobeState.visible() || action!=WardrobePanel::Action::None;
+}
+void drawWardrobeUi(sf::RenderWindow& window) {
+    const auto mouse=window.mapPixelToCoords(sf::Mouse::getPosition(window));
+    if(wardrobeState.visible()) {
+        // Capture the completed world backbuffer before overlay/swap, never an old post-swap buffer.
+        if(wardrobeBackdropNeeded) { wardrobePanel().capture(window); wardrobeBackdropNeeded=false; }
+        wardrobePanel().draw(window,gameFont(),hamsterCustomizer(),wardrobeState,mouse);
+    } else if(avatar.position.region==world_regions::Id::Clubhouse)
+        wardrobePanel().drawEntry(window,gameFont(),isChatMode || travelState.pending() || !wardrobeState.connected,mouse);
+}
 void ProcessPacket(char* ptr)
 {
     if(!is_valid_server_packet(reinterpret_cast<const std::uint8_t*>(ptr),static_cast<unsigned char>(ptr[0]))) return;
 	static bool first_time = true;
 	switch (ptr[1])
 	{
+    case S2C_P_APPEARANCE_RESULT:
+        wardrobeState.receive(*reinterpret_cast<const sc_packet_appearance_result*>(ptr));
+        break;
+    case S2C_P_APPEARANCE_CHANGE: {
+        const auto& change=*reinterpret_cast<const sc_packet_appearance_change*>(ptr);
+        if(change.region!=static_cast<std::uint8_t>(avatar.position.region)) break;
+        if(change.id==g_myid) avatar.setAppearance(change.appearance);
+        else {
+            auto found=players.find(change.id);
+            if(found!=players.end() && found->second.position.region==avatar.position.region)
+                found->second.setAppearance(change.appearance);
+        }
+        break;
+    }
     case S2C_P_TRAVEL_RESULT:
         travelState.receive(*reinterpret_cast<const sc_packet_travel_result*>(ptr));
         break;
@@ -412,7 +461,7 @@ void ProcessPacket(char* ptr)
 		sc_packet_avatar_info* packet = reinterpret_cast<sc_packet_avatar_info*>(ptr);
 		g_myid = packet->id;
 		avatar.id = g_myid;
-        avatar.get_sprite().setTexture(hamsterCustomizer().worldTexture(packet->fur_color, packet->eye_style, packet->scarf_style, packet->character_kind));
+        avatar.setAppearance({packet->character_kind,packet->fur_color,packet->eye_style,packet->scarf_style});
 
 		avatar._hp = packet->hp;
 		hpText.setString(to_string(avatar._hp));
@@ -447,7 +496,7 @@ void ProcessPacket(char* ptr)
 		else if (id < MAX_USER) {
 			players[id] = OBJECT{ *myHam, userTextureWidth, 0, userTextureHeight, userTextureHeight };
 			players[id]._monType = my_packet->monType;
-            players[id].get_sprite().setTexture(hamsterCustomizer().worldTexture(my_packet->fur_color, my_packet->eye_style, my_packet->scarf_style, my_packet->character_kind));
+            players[id].setAppearance({my_packet->character_kind,my_packet->fur_color,my_packet->eye_style,my_packet->scarf_style});
 			players[id].id = id;
 			players[id].move({static_cast<world_regions::Id>(my_packet->region),my_packet->x,my_packet->y});
 			players[id].set_name(my_packet->name);
@@ -723,7 +772,7 @@ void client_main()
 	char net_buf[BUF_SIZE];
 	size_t   received;
 
-    travelState.tick(GetTickCount64());
+    wardrobeState.tick(GetTickCount64()); travelState.tick(GetTickCount64());
     if(travelState.status!=world_travel::ClientStatus::Disconnected && flushGamePackets()) {
         const auto recv_result=s_socket.receive(net_buf,BUF_SIZE,received);
         if(recv_result==sf::Socket::Error || recv_result==sf::Socket::Disconnected) gameConnectionLost();
@@ -842,6 +891,7 @@ void client_main()
 
 	text.setString(buf);
 	g_window->draw(text);
+    drawWardrobeUi(*g_window);
 }
 
 void send_packet(void* packet)
@@ -935,7 +985,7 @@ void drawCustomizationScreen(sf::RenderTarget& window) {
 }
 
 void beginLoginConnection(unsigned short port = GAME_PORT) {
-    travelState={}; gameOutbox.clear(); travelPanel.pressed=false; travelPanel.rDown=false;
+    wardrobeState={}; travelState={}; gameOutbox.clear(); travelPanel.pressed=false; travelPanel.rDown=false;
     s_socket.disconnect();
     in_packet_size = saved_packet_size = 0;
     s_socket.setBlocking(true);
@@ -1071,6 +1121,7 @@ int main()
                 sf::Vector2i pixel=sf::Mouse::getPosition(window);
                 if(event.type==sf::Event::MouseButtonPressed || event.type==sf::Event::MouseButtonReleased)
                     pixel={event.mouseButton.x,event.mouseButton.y};
+                if(handleWardrobeInput(event,window,window.mapPixelToCoords(pixel))) continue;
                 if(handleTravelInput(event,window.mapPixelToCoords(pixel),isChatMode)) continue;
 
 				if (event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::Tab) {

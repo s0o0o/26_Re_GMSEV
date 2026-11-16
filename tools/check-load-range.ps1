@@ -25,6 +25,7 @@ try {
     } finally { $command.Dispose() }
     Write-Output "Approved test range existing rows: $count"
     if($count -ne $distinct -or $count -gt 300) { throw 'Approved test range contains duplicate rows.' }
+    if($AllowApprovedReuse -and $count -ne 300) { throw 'Reuse requires all 300 existing accounts; missing accounts will not be created.' }
     if(!$AllowApprovedReuse -and $count -ne $ExpectedRows) { throw 'Approved test range row count differs from the expected value.' }
 } catch {
     # Do not disclose DSN/driver error strings or connection settings.

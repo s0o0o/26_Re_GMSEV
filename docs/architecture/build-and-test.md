@@ -1,6 +1,10 @@
 # 빌드·실행·검증 안내
 
-갱신: 2026-11-16, #54. [구조 입구](README.md).
+갱신: 2026-11-16, #55. [구조 입구](README.md).
+
+현재 전체 회귀는46개다. 옷장 `run-wardrobe.cmd`는 실제 IOCP4worker/게임 DB 대역·메모리 외형 Store, `run-wardrobe-client.cmd`/`run-wardrobe-ui.cmd`는 생산 client.cpp 기반 wire/렌더·주입 입력 검사다. 실제 DB는 `appearance-db-admin.ps1`(명시 DDL), `appearance-db-check.ps1`/`test-live-wardrobe.ps1`로 구분한다. 승인계정 외 실행하지 않는다. [명세의 실행 증거](../specs/clubhouse-wardrobe.md)에서 실패/통과/미검증을 확인한다.
+
+`run-approved-load.ps1 -BaselineBeforeWardrobe`는 고정 d426613 서버/v4 도구 산출물로 비교하는 진단 옵션이며 기존 승인계정 재사용을 강제한다. 기본 제품 실행 경로를 바꾸지 않는다. 외형 조회 trace는 opt-in이며 종료 성공이 전체 서버 graceful shutdown을 뜻하지 않는다.
 
 ## 개발 환경과 출력
 

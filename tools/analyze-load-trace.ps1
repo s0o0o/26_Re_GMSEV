@@ -17,7 +17,7 @@ $loginTimes=@(foreach($connection in ($events | Group-Object connection)) {
     $ready=$connection.Group | Where-Object event -eq 'login_ready' | Select-Object -First 1
     if($received -and $ready) { [long]($ready.ms-$received.ms) }
 })
-foreach($name in @('login_db_done','login_commit_wait','login_dequeued','login_session_wait','login_presence_wait','world_wait','world_hold')) {
+foreach($name in @('login_db_done','login_appearance_read','login_commit_wait','login_dequeued','login_session_wait','login_presence_wait','world_wait','world_hold')) {
     $rows=@($events | Where-Object event -eq $name)
     $maximum=0; if($rows.Count) { $maximum=($rows | Measure-Object value -Maximum).Maximum }
     $stages[$name]=[ordered]@{count=$rows.Count;max_ms=[long]$maximum}

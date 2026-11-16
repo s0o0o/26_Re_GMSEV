@@ -1,6 +1,6 @@
 # 프로젝트 구조 안내 — 여기서 시작
 
-갱신: 2026-11-16, #54. 오래전에 작성한 코드를 다시 읽는 개발자를 위한 **현재 구조** 안내다. 작업별 과거 기록은 [refactoring-step 문서](../refactoring-step-50.md), 다음 계획은 [작업 큐](../work-backlog.md), 변경 전 계약은 [SDD](../sdd.md)로 분리한다.
+갱신: 2026-11-16, #55. 오래전에 작성한 코드를 다시 읽는 개발자를 위한 **현재 구조** 안내다. 작업별 과거 기록은 [refactoring-step 문서](../refactoring-step-51.md), 다음 계획은 [작업 큐](../work-backlog.md), 변경 전 계약은 [SDD](../sdd.md)로 분리한다.
 
 ## 읽는 순서
 
@@ -11,6 +11,7 @@
 5. [기존 GUI 스트레스 수명](gui-stress.md): 승인 계정·local 상태·단계 검사·IOCP 종료와 한계.
 6. [거점·필드 귀환 #53](travel.md): v3 요청/서버 전환·native 버튼과 부분 송신 큐.
 7. [넓은 필드·청크·충돌 #54](field-chunks.md): v4 범위 계약·제한 캐시·가시 렌더와 경로 예산.
+8. [옷장·외형 동기화 #55](wardrobe.md): v5 UI/서버 검증·외형 DB 저장/복원. 통합 증거는 이슈 종료 댓글, 부하 실패 한계는 명세에서 확인.
 
 ## 프로그램과 책임
 
@@ -20,7 +21,7 @@
 | 일반 게임 클라 | [client.cpp](../../TP_2023192003_CLIENT/client_sample/client.cpp) | SFML 논블로킹TCP, 입력/패킷반영/렌더링. IOCP 클라가 아님 |
 | 기존 GUI 스트레스 | [NetworkModule.cpp](../../stress_test/STRESS_TEST/NetworkModule.cpp) | IOCP 송수신,region/local·승인계정·시간제한·pending수거/worker종료 |
 | 제한형 콘솔 부하 | [bounded_load.cpp](../../stress_test/STRESS_TEST/bounded_load.cpp) | 논블로킹Winsock, 최대300연결/시간제한/로그인·이동·종료 결과 |
-| 공유 계약 | [protocol.hpp](../../shared/protocol.hpp) | packed v4 패킷/길이·지역검증·귀환 요청. 서버와 모든클라가 같은버전을빌드해야함 |
+| 공유 계약 | [protocol.hpp](../../shared/protocol.hpp) | packed v5 패킷/길이·지역검증·귀환/외형 요청. 서버와 모든클라가 같은버전을빌드해야함 |
 
 ## 핵심 관계
 
@@ -36,10 +37,10 @@ IOCP는 통신 완료 처리 방식이지 게임 패킷 규칙이나 DB 비동�
 
 ## 현재와 미완료를 구분하기
 
-- 구현: v4 region/local 통신·귀환 요청, 일반클라·서버의 Position 단일원본, 지역별섹터, 서버판정포털/버튼/R키 이동, 주민idle/산책, local카메라, 256×256 필드의 청크/충돌·가시 표시 기반.
+- 구현: v5 region/local 통신·귀환/외형 요청, 일반클라·서버의 Position 단일원본, 지역별섹터, 서버판정포털/버튼/R키 이동, 주민idle/산책, local카메라, 256×256 필드의 청크/충돌·가시 표시 기반과 거점 옷장·별도 DB 외형 저장.
 - 호환경계: DB X/Y, field_content의기존자료, 옛int테스트API. map_data dense배열은제거했으며위치를별도전역필드로중복저장하지않고경계에서변환한다.
 - #52: GUIstress 내부local/승인범위/종료수거를정리했다. 과거크래시는현재단계검사의미재현과최초원인확정을구분한다(#10).
-- 미완료: 옷장확장/추가지역/필드 콘텐츠·아트 밀도 개선. DB region열은 도입하지않았다.
+- 미완료: 추가 액세서리 착용 확장/추가지역/필드 콘텐츠·아트 밀도 개선. DB region열은 도입하지않았다. 기존 HUD 긴 이름/SPEED 겹침은 후속 개선 대상이다.
 - 남은부하: #41 신규생성·다른맵/전투·장시간·종료여유계측. 이전300명단기통과가이조건전체를입증하지않는다.
 
 ## 문서 갱신 규칙

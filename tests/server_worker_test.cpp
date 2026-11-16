@@ -57,7 +57,7 @@ Snapshot waitSnapshot(std::uint64_t connection,const char* event,Predicate predi
 }
 int saveCount(int account) { std::lock_guard<std::mutex> lock(mutex); return saves[account]; }
 int loadCount(int account) { std::lock_guard<std::mutex> lock(mutex); return loads[account]; }
-struct Peer { SOCKET socket; Snapshot accepted; std::vector<sc_packet_attack_success> combat; int deaths=0,chats=0; };
+struct Peer { SOCKET socket; Snapshot accepted; std::vector<sc_packet_attack_success> combat; int deaths=0,chats=0; avatar_appearance::Value receivedAppearance; };
 Peer connectPeer(const sockaddr_in& address,std::uint64_t after) {
     SOCKET socket=::socket(AF_INET,SOCK_STREAM,IPPROTO_TCP); assert(socket != INVALID_SOCKET);
     DWORD timeout=2000;
@@ -122,6 +122,7 @@ void finishLogin(Peer& peer) {
     auto first=receive(peer);
     assert(static_cast<std::uint8_t>(first[1]) == S2C_P_AVATAR_INFO);
     auto info=decode<sc_packet_avatar_info>(first);
+    peer.receivedAppearance={info.character_kind,info.fur_color,info.eye_style,info.scarf_style};
     assert(info.id == peer.accepted.id && info.x == spawnX && info.y == spawnY);
     assert(decode<sc_packet_avatar_login_ok>(expect(peer,S2C_P_AVATAR_LOGIN_OK)).id == info.id);
     for(int i=0;i<4;++i) expect(peer,S2C_P_MAPINFO);
@@ -228,6 +229,118 @@ void stopWorkers(std::vector<std::thread>& workers) {
     for(auto& worker : workers) worker.join();
 }
 #ifdef GMSEV_MULTIWORKER_TEST
+void runWardrobe(const sockaddr_in& address,std::vector<std::thread>& workers) {
+    using avatar_appearance::Value; using wardrobe::Result;
+    struct MemoryStore final : appearance_storage::Store {
+        std::map<int,Value> values; std::mutex guard;
+        std::atomic<int> attempts{0},mode{0},readMode{0};
+        appearance_storage::Read read(int account) override {
+            assert(!WorldStateLock::heldByCurrentThread());
+            if(readMode==1) return {appearance_storage::Status::Error,{}};
+            if(readMode==2) throw 1;
+            if(readMode==3) return {appearance_storage::Status::Found,{255,0,0,0}};
+            std::lock_guard<std::mutex> lock(guard);
+            const auto it=values.find(account);
+            return it==values.end() ? appearance_storage::Read{appearance_storage::Status::Missing,{}}
+                : appearance_storage::Read{appearance_storage::Status::Found,it->second};
+        }
+        appearance_storage::Status save(int account,Value value) override {
+            assert(!WorldStateLock::heldByCurrentThread() && account==63001);
+            ++attempts;
+            if(mode==2) throw 1;
+            if(mode==1) return appearance_storage::Status::Error;
+            std::lock_guard<std::mutex> lock(guard); values[account]=value;
+            return appearance_storage::Status::Saved;
+        }
+    } store;
+    auto observer=connectPeer(address,0); login(observer,63000,true);
+    auto peer=connectPeer(address,observer.accepted.connection); login(peer,63001,true);
+    expectEnter(observer,peer.accepted.id);
+    auto subject=peer.accepted.owner.lock(); assert(subject);
+    const Value original{},first{1,4,2,2},second{0,2,1,1};
+    auto request=[&](std::uint32_t sequence,Value value,Result expected,Value confirmed,int changes) {
+        cs_packet_appearance packet{sizeof(packet),C2S_P_APPEARANCE,sequence,value};
+        sendBytes(peer,reinterpret_cast<char*>(&packet),2);
+        sendBytes(peer,reinterpret_cast<char*>(&packet)+2,sizeof(packet)-2);
+        int receivedChanges=0; bool resultReceived=false;
+        for(int n=0;n<128;++n) {
+            const auto bytes=receive(peer); const auto type=static_cast<std::uint8_t>(bytes[1]);
+            if(type==S2C_P_APPEARANCE_CHANGE) {
+                const auto change=decode<sc_packet_appearance_change>(bytes);
+                assert(change.id==peer.accepted.id && change.region==1 && change.appearance==confirmed); ++receivedChanges;
+            }
+            if(type==S2C_P_APPEARANCE_RESULT) {
+                const auto result=decode<sc_packet_appearance_result>(bytes);
+                assert(result.requestId==sequence && result.result==expected && result.appearance==confirmed);
+                resultReceived=true; break;
+            }
+        }
+        assert(resultReceived && receivedChanges==changes);
+        WorldStateLock lock; assert(subject->object.appearance()==confirmed);
+    };
+    auto observerBarrier=[&](int changes,Value expected) {
+        { WorldStateLock lock; observer.accepted.owner.lock()->sendChatPacket(observer.accepted.id,"WARD_MARK"); }
+        int seen=0; bool marker=false;
+        for(int n=0;n<128;++n) {
+            const auto bytes=receive(observer); const auto type=static_cast<std::uint8_t>(bytes[1]);
+            if(type==S2C_P_APPEARANCE_CHANGE) {
+                const auto change=decode<sc_packet_appearance_change>(bytes);
+                assert(change.id==peer.accepted.id && change.appearance==expected); ++seen;
+            }
+            if(type==S2C_P_CHAT && std::strcmp(decode<sc_packet_chat>(bytes).message,"WARD_MARK")==0) { marker=true; break; }
+        }
+        assert(marker && seen==changes);
+    };
+    request(1,first,Result::StorageUnavailable,original,0); observerBarrier(0,original);
+    appearance_storage::active.store(&store,std::memory_order_release);
+    request(2,first,Result::Saved,first,1); observerBarrier(1,first); assert(store.attempts==1);
+    request(2,first,Result::Saved,first,0); observerBarrier(0,first); assert(store.attempts==1);
+    request(2,original,Result::InvalidRequest,first,0);
+    request(1,first,Result::StaleRequest,first,0);
+    request(3,{255,0,0,0},Result::InvalidRequest,first,0); observerBarrier(0,first);
+    auto late=connectPeer(address,peer.accepted.connection); login(late,63002,false);
+    bool lateSaw=false;
+    for(int n=0;n<128 && !lateSaw;++n) {
+        const auto enter=decode<sc_packet_enter>(expect(late,S2C_P_ENTER));
+        if(enter.id==peer.accepted.id) {
+            assert(enter.character_kind==first.kind && enter.fur_color==first.fur && enter.eye_style==first.eyes && enter.scarf_style==first.scarf);
+            lateSaw=true;
+        }
+    }
+    assert(lateSaw);
+    auto travel=[&](std::uint32_t id,world_travel::Action action) {
+        cs_packet_teleport packet{sizeof(packet),C2S_P_TELEPORT,action,id};
+        sendBytes(peer,reinterpret_cast<char*>(&packet),sizeof(packet));
+        assert(decode<sc_packet_travel_result>(expect(peer,S2C_P_TRAVEL_RESULT)).result==world_travel::Result::Success);
+    };
+    travel(1,world_travel::Action::EnterField); expectLeave(observer,peer.accepted.id);
+    request(3,second,Result::NotInClubhouse,first,0); observerBarrier(0,first); assert(store.attempts==1);
+    travel(2,world_travel::Action::ReturnHome); expectEnter(observer,peer.accepted.id);
+    request(3,second,Result::NotInClubhouse,first,0); assert(store.attempts==1);
+    store.mode=1; request(4,second,Result::StorageFailure,first,0); observerBarrier(0,first); assert(store.attempts==2);
+    store.mode=0; request(4,second,Result::StorageFailure,first,0); assert(store.attempts==2);
+    request(5,second,Result::Saved,second,1); observerBarrier(1,second); assert(store.attempts==3);
+    store.mode=2; request(6,first,Result::StorageFailure,second,0); observerBarrier(0,second); assert(store.attempts==4);
+    assert(store.read(63001).value==second); // Memory adapter only, not durable DB/file evidence.
+    movePair(peer,9090); // The exception path reacquired/released the world lock normally.
+    closePeer(peer); subject.reset();
+    auto restored=connectPeer(address,late.accepted.connection); login(restored,63001,true);
+    assert(restored.receivedAppearance==second);
+    closePeer(restored);
+    auto last=restored.accepted.connection;
+    const int savedBeforeFailures=saveCount(63001);
+    for(int mode=1;mode<=3;++mode) {
+        store.readMode=mode;
+        auto rejected=connectPeer(address,last); last=rejected.accepted.connection;
+        auto packet=loginPacket(63001); sendBytes(rejected,reinterpret_cast<char*>(&packet),sizeof(packet));
+        expect(rejected,S2C_P_LOGIN_FAIL); closePeer(rejected);
+        assert(saveCount(63001)==savedBeforeFailures); // Read error/throw/invalid data never becomes Missing/default overwrite.
+    }
+    store.readMode=0;
+    closePeer(late); closePeer(observer); stopWorkers(workers); clients.clear();
+    appearance_storage::active.store(&appearance_storage::unconfigured,std::memory_order_release);
+    std::puts("wardrobe worker: TCP framing/replay/live observers/late ENTER/region/storage unavailable/error/exception/world-unlocked IO PASS (memory adapter, not durable)");
+}
 void runSectorIndex(const sockaddr_in& address,std::vector<std::thread>& workers) {
     auto watcher=connectPeer(address,0); login(watcher,80000,true);
     auto peer=connectPeer(address,watcher.accepted.connection); login(peer,80001,true); expectEnter(watcher,peer.accepted.id);
@@ -884,7 +997,9 @@ int main() {
     std::vector<std::thread> workers;
 #ifdef GMSEV_MULTIWORKER_TEST
     for(int i=0;i<4;++i) workers.emplace_back(workerThread,g_hiocp);
-#ifdef GMSEV_SECTOR_TEST
+#ifdef GMSEV_WARDROBE_TEST
+    runWardrobe(address,workers);
+#elif defined(GMSEV_SECTOR_TEST)
     runSectorIndex(address,workers);
 #elif defined(GMSEV_TOWN_TEST)
     runTown(address,workers);
@@ -1015,7 +1130,9 @@ int main() {
 #endif
     CloseHandle(g_hiocp); WSACleanup();
 #ifdef GMSEV_MULTIWORKER_TEST
-#ifdef GMSEV_SECTOR_TEST
+#ifdef GMSEV_WARDROBE_TEST
+    std::cout << "Wardrobe: live worker checks passed (4 workers, game DB stub, appearance memory adapter)\n";
+#elif defined(GMSEV_SECTOR_TEST)
     std::cout << "Regional sectors: local boundary MOVE, cross-region portal, identical local coordinates isolated, disconnect prunes buckets passed (4 workers, DB stub)\n";
 #elif defined(GMSEV_TOWN_TEST)
     std::cout << "Town residents: autonomous walk, MOVE/visibility/re-entry, no monster AI/attack, field role defense passed (4 workers, DB stub)\n";

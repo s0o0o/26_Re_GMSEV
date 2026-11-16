@@ -14,4 +14,8 @@ struct GameObjectState {
     std::uint8_t _furColor = 0;
     std::uint8_t _eyeStyle = 0, _scarfStyle = 0;
     std::uint8_t _characterKind = 0;
+    avatar_appearance::Value appearance() const { return {_characterKind,_furColor,_eyeStyle,_scarfStyle}; }
+    void setAppearance(avatar_appearance::Value value) {
+        _characterKind=value.kind; _furColor=value.fur; _eyeStyle=value.eyes; _scarfStyle=value.scarf;
+    }
 };

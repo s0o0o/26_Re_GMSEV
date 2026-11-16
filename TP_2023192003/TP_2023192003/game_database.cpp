@@ -2,6 +2,7 @@
 #include "../../shared/clubhouse_map.hpp"
 #include "database_write.hpp"
 #include "database_contract.hpp"
+#include "appearance_odbc.hpp"
 #include <Windows.h>
 #include <sqlext.h>
 #include <iostream>
@@ -16,6 +17,7 @@ namespace {
 std::mutex databaseMutex;
 SQLHENV henv = nullptr;
 SQLHDBC hdbc = nullptr;
+appearance_storage::OdbcStore appearanceStore(hdbc,databaseMutex);
 void HandleDiagnosticRecord(SQLHANDLE hHandle, SQLSMALLINT hType, RETCODE RetCode)
 {
 	SQLSMALLINT iRec = 0;
@@ -149,11 +151,18 @@ bool initializeDB() {
         return false;
     }
 	//std::cout << "[DB] 연결 성공!" << std::endl;
+    if(!appearanceStore.schemaReadyUnlocked()) {
+        std::cerr << "[DB] Appearance schema unavailable/mismatched; run the approved migration explicitly.\n";
+        SQLDisconnect(hdbc); SQLFreeHandle(SQL_HANDLE_DBC,hdbc); SQLFreeHandle(SQL_HANDLE_ENV,henv);
+        hdbc=nullptr; henv=nullptr; return false;
+    }
+    appearance_storage::active.store(&appearanceStore,std::memory_order_release);
 	return true;
 }
 
 void finalizeDB() {
     std::lock_guard<std::mutex> guard(databaseMutex);
+    appearance_storage::active.store(&appearance_storage::unconfigured,std::memory_order_release);
 	SQLDisconnect(hdbc);
 	SQLFreeHandle(SQL_HANDLE_DBC, hdbc);
 	SQLFreeHandle(SQL_HANDLE_ENV, henv);

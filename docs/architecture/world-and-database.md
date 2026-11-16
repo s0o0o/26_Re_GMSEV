@@ -1,6 +1,8 @@
 # 월드·지역 좌표·DB 경계
 
-갱신: 2026-11-16, #54. [구조 입구](README.md).
+갱신: 2026-11-16, #55. [구조 입구](README.md).
+
+외형은 사용자 승인 별도 dbo.PLAYER_APPEARANCE에 저장한다. 위치/능력치 기존 테이블·프로시저와 구분하며 로그인 world 잠금 밖 read/저장 실패·복원 계약은 [옷장](wardrobe.md)에 정리했다. 기존900001299 외형1행 저장/새 서버 복원은 실제 DB 검사이며, 새 계정 생성은 없었다.
 
 ## 위치의 단일 원본
 
@@ -11,7 +13,7 @@
 ```text
 기존 DB (42,10)
   → restoreLegacy → Position(SunnyPeak,10,10)
-  → 서버 이동/시야/AI/섹터 → v4(region=2,x=10,y=10)
+  → 서버 이동/시야/AI/섹터 → v5(region=2,x=10,y=10)
   → 클라 Position + local camera/render
 종료 저장: Position → encodeLegacy → 기존 DB (42,10)
 ```
