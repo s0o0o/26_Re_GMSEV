@@ -68,7 +68,7 @@ public:
         box(target,entry,disabled?sf::Color(221,213,191):sf::Color(255,248,228));
         text(target,font,sf::String(L"[M] \uC9C0\uB3C4 ")+std::to_string(record.count())+"/5",entry,22);
     }
-    void draw(sf::RenderTarget& target,const sf::Font& font,world_regions::Position p,const field_discovery::Record& record={}) {
+    void draw(sf::RenderTarget& target,const sf::Font& font,world_regions::Position p,const field_discovery::Record& record={},int goal=0) {
         if(!open_) return;
         sf::RectangleShape dim({900,800});dim.setFillColor({25,24,19,155});target.draw(dim);
         box(target,{70,90,760,600},{255,248,228});
@@ -78,10 +78,14 @@ public:
         }
         for(const auto& landmark:field_landmarks::all) {
             const auto pt=mapPoint({world_regions::Id::SunnyPeak,landmark.x,landmark.y});
+            if(landmark.id==goal) {
+                sf::RectangleShape ring({34,34});ring.setOrigin(17,17);ring.setPosition(pt);ring.setFillColor(sf::Color::Transparent);
+                ring.setOutlineColor({124,62,20});ring.setOutlineThickness(3);target.draw(ring);
+            }
             marker(target,pt,record.visited(landmark.id)?sf::Color(146,190,113):sf::Color(242,212,155),7);
             text(target,font,std::to_string(landmark.id),{pt.x-10,pt.y-10,20,20},14);
             text(target,font,std::to_string(landmark.id)+"  "+landmark.name,{555,260+(landmark.id-1)*52.f,250,28},19);
-            text(target,font,record.visited(landmark.id)?L"\uBC29\uBB38 \uC644\uB8CC":L"\uC544\uC9C1 \uBBF8\uBC29\uBB38",{555,288+(landmark.id-1)*52.f,250,20},15);
+            text(target,font,landmark.id==goal?L"\ubaa9\ud45c / \ubbf8\ubc29\ubb38":record.visited(landmark.id)?L"\uBC29\uBB38 \uC644\uB8CC":L"\uC544\uC9C1 \uBBF8\uBC29\uBB38",{555,288+(landmark.id-1)*52.f,250,20},15);
         }
         marker(target,mapPoint({world_regions::Id::SunnyPeak,10,12}),{191,140,77},6);
         if(world_regions::valid(p) && p.region==world_regions::Id::SunnyPeak) {

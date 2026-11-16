@@ -8,6 +8,7 @@ int main() {
     assert(gameFont().loadFromFile("neodgm.ttf") && townNpcRenderer().load("assets/npcs/source"));
     assert(hamsterCustomizer().load("assets/characters"));
     assert(clubhouseRenderer().load("assets/maps/clubhouse-sheet.png"));
+    assert(clubhouseRenderer().loadOutdoor("assets/maps/sunny-peak-sheet.png"));
     sf::RenderWindow window(sf::VideoMode(900,800),"Town dialogue regression",sf::Style::None);window.setVisible(false);g_window=&window;
     WindowDisplay::resize(window);travelState={};wardrobeState={};fieldMapPanel().reset();
     auto enter=[&](const town_npcs::Resident& r) {
@@ -63,6 +64,35 @@ int main() {
     }
     key(sf::Keyboard::E);release(sf::Keyboard::E);moveAvatar({world_regions::Id::SunnyPeak,10,10});assert(!townDialoguePanel().visible());
     moveAvatar({world_regions::Id::Clubhouse,14,15});key(sf::Keyboard::E);release(sf::Keyboard::E);gameConnectionLost();assert(!townDialoguePanel().visible());
-    assert(!key(sf::Keyboard::E));window.close();g_window=nullptr;std::filesystem::current_path(root);
+    assert(!key(sf::Keyboard::E));release(sf::Keyboard::E);
+    travelState={};wardrobeState={};players.clear();fieldDiscovery.start();
+    enter(town_npcs::residents[0]);moveAvatar({world_regions::Id::Clubhouse,12,10});
+    assert(key(sf::Keyboard::E));release(sf::Keyboard::E);assert(key(sf::Keyboard::G) && explorationGuide.target()==1);
+    key(sf::Keyboard::G);assert(explorationGuide.target()==1);click(TownDialoguePanel::guideButton);assert(explorationGuide.target()==1);
+    isChatMode=true;key(sf::Keyboard::G);assert(!townDialoguePanel().visible() && explorationGuide.target()==1);isChatMode=false;
+    key(sf::Keyboard::E);release(sf::Keyboard::E);key(sf::Keyboard::G);assert(townDialoguePanel().visible() && explorationGuide.target()==1);
+    auto capture=[&](const std::string& name) {
+        for(const auto size:{sf::Vector2u{900,800},sf::Vector2u{1280,720},sf::Vector2u{800,900}}) {
+            sf::RenderTexture out;assert(out.create(size.x,size.y));out.clear({32,24,24});
+            const auto fit=display_layout::fit(size.x,size.y);sf::View v(sf::FloatRect(0,0,900,800));
+            v.setViewport({fit.left/size.x,fit.top/size.y,fit.width/size.x,fit.height/size.y});out.setView(v);
+            clubhouseRenderer().draw(out,avatar.position.region,g_left_x,g_top_y);
+            if(townDialoguePanel().visible())townDialoguePanel().draw(out,gameFont(),townNpcRenderer(),0);
+            else if(fieldMapPanel().visible())fieldMapPanel().draw(out,gameFont(),avatar.position,fieldDiscovery,explorationGuide.target());
+            else drawExplorationGuidance(out,gameFont(),explorationGuide,avatar.position);
+            out.display();assert(out.getTexture().copyToImage().saveToFile((root/("build/tests/guide-"+name+"-"+std::to_string(size.x)+"x"+std::to_string(size.y)+".png")).string()));
+        }
+    };
+    capture("dialogue");key(sf::Keyboard::Escape);moveAvatar({world_regions::Id::Clubhouse,2,16});capture("hub");
+    sc_packet_avatar_info info{};info.size=sizeof(info);info.type=S2C_P_AVATAR_INFO;info.id=1;info.region=2;info.x=10;info.y=10;info.hp=info.max_hp=10;
+    ProcessPacket(reinterpret_cast<char*>(&info));assert(explorationGuide.target()==1);capture("field");
+    moved.id=1;moved.x=32;moved.y=32;moved.region=2;ProcessPacket(reinterpret_cast<char*>(&moved));assert(explorationGuide.target()==2);
+    e={};e.type=sf::Event::KeyPressed;e.key.code=sf::Keyboard::M;handleFieldMapInput(e,{-1,-1});capture("map");
+    e.type=sf::Event::KeyReleased;handleFieldMapInput(e,{-1,-1});e.type=sf::Event::KeyPressed;e.key.code=sf::Keyboard::Escape;handleFieldMapInput(e,{-1,-1});
+    for(const auto& p:field_landmarks::all){moved.x=p.x;moved.y=p.y;ProcessPacket(reinterpret_cast<char*>(&moved));}
+    assert(explorationGuide.active() && !explorationGuide.target());capture("complete");
+    gameConnectionLost();assert(!explorationGuide.active() && !explorationGuide.target());
+    fieldDiscovery.start();explorationGuide.select(fieldDiscovery);beginLoginConnection(0);assert(!explorationGuide.active());
+    window.close();g_window=nullptr;std::filesystem::current_path(root);
     std::puts("Town dialogue production E/repeat/pages/click/chat/modals/live MOVE+LEAVE/region/disconnect/3 NPCs x 3 sizes PASS");
 }

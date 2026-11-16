@@ -29,6 +29,8 @@ using namespace std;
 #include "field_map_panel.hpp"
 FieldMapPanel& fieldMapPanel() { static FieldMapPanel value; return value; }
 field_discovery::Record fieldDiscovery;
+#include "exploration_guidance_hud.hpp"
+exploration_guidance::State explorationGuide;
 WardrobePanel& wardrobePanel() { static WardrobePanel panel; return panel; }
 bool wardrobeBackdropNeeded=false;
 wardrobe::ClientState wardrobeState;
@@ -53,7 +55,7 @@ HamsterCustomizer& hamsterCustomizer() {
 sf::TcpSocket s_socket;
 void gameConnectionLost() {
     extern bool isChatMode; isChatMode=false;
-    townDialoguePanel().reset(); fieldDiscovery.reset(); fieldMapPanel().reset(); wardrobeState.disconnect(); travelState.disconnect(); gameOutbox.clear(); s_socket.disconnect();
+    explorationGuide.reset(); townDialoguePanel().reset(); fieldDiscovery.reset(); fieldMapPanel().reset(); wardrobeState.disconnect(); travelState.disconnect(); gameOutbox.clear(); s_socket.disconnect();
 }
 bool flushGamePackets() {
     const bool okay=gameOutbox.pump([](const std::uint8_t* data,std::size_t size,std::size_t& sent) {
@@ -403,9 +405,11 @@ town_dialogue::Candidates townDialogueCandidates() {
     return result;
 }
 bool handleTownDialogueInput(const sf::Event& event,sf::Vector2f point) {
-    return townDialoguePanel().handle(event,point,avatar.position,townDialogueCandidates(),
+    const bool consumed=townDialoguePanel().handle(event,point,avatar.position,townDialogueCandidates(),
         isChatMode || wardrobeState.visible() || fieldMapPanel().visible() || travelState.pending(),
         travelState.status!=world_travel::ClientStatus::Disconnected);
+    if(townDialoguePanel().takeGuideRequest()) {explorationGuide.select(fieldDiscovery);townDialoguePanel().showGuide(explorationGuide);}
+    return consumed;
 }
 void drawTownDialogueUi(sf::RenderTarget& target) {
     const auto candidates=townDialogueCandidates();
@@ -511,6 +515,7 @@ void ProcessPacket(char* ptr)
 		fieldDiscovery.start();
         moveAvatar({static_cast<world_regions::Id>(packet->region),packet->x,packet->y});
         fieldDiscovery.observe(avatar.position);
+            explorationGuide.update(fieldDiscovery);
 		g_left_x = world_layout::cameraX(avatar.position);
 		g_top_y = world_layout::cameraY(avatar.position);
 		avatar.show();
@@ -527,6 +532,7 @@ void ProcessPacket(char* ptr)
 			// moveAvatar owns region transition cleanup.
             moveAvatar({static_cast<world_regions::Id>(my_packet->region),my_packet->x,my_packet->y});
             fieldDiscovery.observe(avatar.position);
+            explorationGuide.update(fieldDiscovery);
 			g_left_x = world_layout::cameraX(avatar.position);
 			g_top_y = world_layout::cameraY(avatar.position);
 			avatar.show();
@@ -565,6 +571,7 @@ void ProcessPacket(char* ptr)
 			// moveAvatar owns region transition cleanup.
             moveAvatar({static_cast<world_regions::Id>(my_packet->region),my_packet->x,my_packet->y});
             fieldDiscovery.observe(avatar.position);
+            explorationGuide.update(fieldDiscovery);
 			g_left_x = world_layout::cameraX(avatar.position);
 			g_top_y = world_layout::cameraY(avatar.position);
 		}
@@ -932,7 +939,9 @@ void client_main()
 	g_window->draw(text);
     drawWardrobeUi(*g_window);
     drawTownDialogueUi(*g_window);
-    if(fieldMapPanel().visible()) fieldMapPanel().draw(*g_window,gameFont(),avatar.position,fieldDiscovery);
+    if(!townDialoguePanel().visible() && !fieldMapPanel().visible() && !wardrobeState.visible() && !isChatMode && !travelState.pending()
+        && !town_dialogue::nearest(avatar.position,townDialogueCandidates())) drawExplorationGuidance(*g_window,gameFont(),explorationGuide,avatar.position);
+    if(fieldMapPanel().visible()) fieldMapPanel().draw(*g_window,gameFont(),avatar.position,fieldDiscovery,explorationGuide.target());
     else if(avatar.position.region==world_regions::Id::SunnyPeak) fieldMapPanel().drawEntry(*g_window,gameFont(),isChatMode || travelState.pending() || travelState.status==world_travel::ClientStatus::Disconnected,fieldDiscovery);
 }
 
@@ -1027,7 +1036,7 @@ void drawCustomizationScreen(sf::RenderTarget& window) {
 }
 
 void beginLoginConnection(unsigned short port = GAME_PORT) {
-    townDialoguePanel().reset(); fieldDiscovery.reset(); fieldMapPanel().reset(); wardrobeState={}; travelState={}; gameOutbox.clear(); travelPanel.pressed=false; travelPanel.rDown=false;
+    explorationGuide.reset(); townDialoguePanel().reset(); fieldDiscovery.reset(); fieldMapPanel().reset(); wardrobeState={}; travelState={}; gameOutbox.clear(); travelPanel.pressed=false; travelPanel.rDown=false;
     s_socket.disconnect();
     in_packet_size = saved_packet_size = 0;
     s_socket.setBlocking(true);
