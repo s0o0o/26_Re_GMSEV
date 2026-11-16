@@ -1,5 +1,7 @@
 # 필드 장식·지도·접속 중 탐험
 
+주민안내 #62: `exploration_guidance.hpp::State`가접속중Record에서첫미방문ID를선택한다. E대화의G/버튼요청은현재대상의근접유효성·모달차단을통과해야한다. 방문관찰뒤update로다음미방문목표/전체완료를계산하고거점왕복은유지한다. disconnect/새로그인에서는Record와함께reset한다. 지도는목표ID의외곽선·범례글자를그리며`exploration_guidance_hud.hpp`는필드의방향/Manhattan좌표거리또는거점R안내를표시한다. 최단경로/우회거리라고부르지않으며NPC근접prompt/열린모달/채팅중에는HUD를숨겨겹침을막는다. 안내는고정규칙/로컬문구이며새서버패킷이나LLM요청을실행하지않는다.
+
 2026-11-17 · #58/#59/#60 · [구조 입구](README.md), [3단계 큐](../specs/field-exploration-queue.md).
 
 ## 자료의 단일 원본
