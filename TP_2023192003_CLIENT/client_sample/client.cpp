@@ -1,6 +1,7 @@
 #define _CRT_SECURE_NO_WARNINGS
 #include "window_display.hpp"
 #include "ui_alignment.hpp"
+#include "profile_layout.hpp"
 #include <SFML/Graphics.hpp>
 #include <SFML/Network.hpp>
 #include <iostream>
@@ -509,7 +510,7 @@ void ProcessPacket(char* ptr)
                 const auto rect=TownNpcRenderer::frame(type);
                 players[id]=OBJECT{townNpcRenderer().texture(type),rect.left,rect.top,rect.width,rect.height};
             } else if(type==1) players[id]=OBJECT{*monHamster,monTextureWidth,0,monTextureWidth,monTextureWidth};
-            else if(type==2) players[id]=OBJECT{*hunHamster,0,0,monTextureWidth,monTextureWidth};
+            else if(type==2) players[id]=OBJECT{*hunHamster,0,0,static_cast<int>(hunHamster->getSize().x),static_cast<int>(hunHamster->getSize().y)};
             else break; // Unknown NPC types must not leave an uninitialized object.
             players[id]._monType=static_cast<short>(type);
             if(town_npcs::hostile(type)) combatHud().enter(id,my_packet->hp,my_packet->max_hp);
@@ -725,7 +726,7 @@ void profileFontInit() {
 	nameText.setFont(gameFont());
 	nameText.setFillColor(sf::Color::Black);
 	nameText.setStyle(sf::Text::Regular);
-	nameText.setPosition(0 + 250, WINDOW_HEIGHT - profileHeight - 7);
+	profile_layout::placeName(nameText);
 
 	seedNumText.setFont(gameFont());
 	seedNumText.setFillColor(sf::Color::Black);

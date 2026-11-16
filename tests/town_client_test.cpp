@@ -29,7 +29,8 @@ int main() {
     unknown.id=town_npcs::baseId+99; unknown.monType=999;
     ProcessPacket(reinterpret_cast<char*>(&unknown)); assert(!players.count(unknown.id));
     sf::Image pixels; pixels.create(104,52,sf::Color::White); sf::Texture texture; assert(texture.loadFromImage(pixels));
-    monHamster=&texture; hunHamster=&texture;
+    sf::Image single;single.create(50,50,sf::Color::White);sf::Texture singleTexture;assert(singleTexture.loadFromImage(single));
+    monHamster=&texture; hunHamster=&singleTexture;
     for(const auto& definition : town_npcs::residents) {
         sc_packet_leave leave{}; leave.size=sizeof(leave); leave.type=S2C_P_LEAVE; leave.id=definition.id;
         ProcessPacket(reinterpret_cast<char*>(&leave)); assert(!players.count(leave.id));
@@ -41,6 +42,8 @@ int main() {
         monster.monType=type; monster.hp=monster.max_hp=5; strcpy_s(monster.name,"Field");
         ProcessPacket(reinterpret_cast<char*>(&monster));
         assert(players.at(monster.id)._monType==type && combatHud().hp(monster.id)==5);
+        const auto crop=players.at(monster.id).get_sprite().getTextureRect();
+        assert(crop==(type==1 ? sf::IntRect(52,0,52,52) : sf::IntRect(0,0,50,50)));
     }
     players.clear(); window.close(); g_window=nullptr;
     std::cout<<"Production client: resident ENTER/draw/LEAVE, no HP HUD, unknown type rejection, hostile types retained passed\n";

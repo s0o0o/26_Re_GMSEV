@@ -15,12 +15,12 @@ public:
         case 100:
             if(facing==town_motion::Up) return {150,179,37,39};
             if(facing==town_motion::Left || facing==town_motion::Right) return {200,130,38,38};
-            return {3+phase*50,79,30,39};
+            return {phase*50,79,38,39}; // Keep both ears and whiskers inside the authored cell.
         case 101:
-            if(facing==town_motion::Up) return {80,5,35,33};
+            if(facing==town_motion::Up) return {78,5,35,33};
             if(facing==town_motion::Left || facing==town_motion::Right) return {41,5,35,33};
-            return phase ? sf::IntRect(157,5,35,33) : sf::IntRect(3,5,35,33);
-        case 102: return {57+phase*44,56,43,37};
+            return phase ? sf::IntRect(153,5,35,33) : sf::IntRect(3,5,35,33);
+        case 102: return phase ? sf::IntRect(101,54,46,39) : sf::IntRect(57,54,43,39);
         default: return {};
         }
     }
