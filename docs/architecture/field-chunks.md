@@ -2,6 +2,8 @@
 
 2026-11-16. [명세·실행 결과](../specs/field-chunks.md), [월드·DB 입구](world-and-database.md).
 
+2026-11-17 #58 확장: [랜드마크 명세](../specs/field-landmarks.md). `field_landmarks.hpp`의5개 고정ID/좌표와 결정적 grass detail을 FieldRenderer가 가시 범위에서만 그린다. 구역 지면 색조/원본꽃/표식·그루터기는 비충돌 장식이고 기존 terrain/서버/DB는 그대로다. DrawStats는 details/landmarks를 추가하며 각288/5 이하, 기존 chunks6/tiles288/cache12 상한을 유지한다. 그루터기는 원본 atlas를 메모리에 복사하여 빈 하늘색만 마스킹하고 새 PNG를 쓰지 않는다. 같은ID/좌표는 다음 지도·접속 중 탐험 기록에서 공유한다.
+
 ## 자료와 위치
 
 Clubhouse는 24×18 하나, SunnyPeak는 256×256이다. [field_terrain.hpp](../../shared/field_terrain.hpp)가 풀/흙길/물/절벽/다리를 결정하며 walkable도 같은 자료에서 나온다. 시작20×18은 동쪽 연결 통로 외 기존 충돌과 아트를 보존한다. 고정된 지형이므로 매 실행이나 캐시 퇴거로 바뀌지 않는다. 62,640개 통행 칸이 시작점과 연결되어 있는지 BFS로 검사한다.
