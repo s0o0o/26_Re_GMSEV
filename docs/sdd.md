@@ -33,6 +33,8 @@
 
 ## 명세 목록
 
+- [클럽하우스 옷장](specs/clubhouse-wardrobe.md): draft/서버 검증·동기화·승인된 DB 저장/복원과 실제 부하 비교 한계.
+
 - [넓은 필드 청크·충돌](specs/field-chunks.md): 256×256 지형/충돌, 제한 LRU·가시 표시·경로 예산과 v4 범위 계약.
 - [거점↔필드 귀환](specs/hub-field-travel.md): 서버 권위 목적지·중복 방지·전환 정리·native 버튼/R키와 실패 처리.
 

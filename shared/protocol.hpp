@@ -8,11 +8,12 @@
 #include "combat_rules.hpp"
 #include "world_regions.hpp"
 #include "world_travel.hpp"
+#include "wardrobe_rules.hpp"
 
 using ObjectId = std::int32_t;
 
 constexpr std::uint16_t GAME_PORT = 3000;
-constexpr std::uint8_t PROTOCOL_VERSION = 4;
+constexpr std::uint8_t PROTOCOL_VERSION = 5;
 
 constexpr std::size_t MAX_CHAT_LENGTH = 30;
 constexpr std::size_t MAX_ID_LENGTH = 48;
@@ -47,6 +48,9 @@ constexpr std::uint8_t S2C_P_MONSTER_NEAR = 17;
 constexpr std::uint8_t S2C_P_MAPINFO = 18;
 constexpr std::uint8_t S2C_P_ATTACK_FEEDBACK = 19;
 constexpr std::uint8_t S2C_P_TRAVEL_RESULT = 20;
+constexpr std::uint8_t C2S_P_APPEARANCE = 21;
+constexpr std::uint8_t S2C_P_APPEARANCE_RESULT = 22;
+constexpr std::uint8_t S2C_P_APPEARANCE_CHANGE = 23;
 
 constexpr std::uint8_t MOVE_UP = 1;
 constexpr std::uint8_t MOVE_DOWN = 2;
@@ -221,6 +225,24 @@ struct sc_packet_travel_result {
     world_travel::Result result;
 };
 
+struct cs_packet_appearance {
+    std::uint8_t size,type;
+    std::uint32_t requestId;
+    avatar_appearance::Value appearance;
+};
+struct sc_packet_appearance_result {
+    std::uint8_t size,type;
+    std::uint32_t requestId;
+    wardrobe::Result result;
+    avatar_appearance::Value appearance;
+};
+struct sc_packet_appearance_change {
+    std::uint8_t size,type;
+    ObjectId id;
+    std::uint8_t region;
+    avatar_appearance::Value appearance;
+};
+
 #pragma pack(pop)
 
 namespace packet_position {
@@ -271,10 +293,14 @@ static_assert(valid_packet_layout<cs_packet_attack>(), "invalid packet layout");
 static_assert(valid_packet_layout<cs_packet_chat>(), "invalid packet layout");
 static_assert(valid_packet_layout<cs_packet_teleport>(), "invalid packet layout");
 static_assert(valid_packet_layout<sc_packet_travel_result>(), "invalid packet layout");
+static_assert(valid_packet_layout<cs_packet_appearance>(), "invalid packet layout");
+static_assert(valid_packet_layout<sc_packet_appearance_result>(), "invalid packet layout");
+static_assert(valid_packet_layout<sc_packet_appearance_change>(), "invalid packet layout");
 
 inline bool is_valid_client_packet(std::uint8_t type, std::size_t size) noexcept
 {
 	switch (type) {
+    case C2S_P_APPEARANCE: return size == sizeof(cs_packet_appearance);
 	case C2S_P_LOGIN: return size == sizeof(cs_packet_login);
 	case C2S_P_MOVE: return size == sizeof(cs_packet_move);
 	case C2S_P_ATTACK: return size == sizeof(cs_packet_attack);
@@ -291,6 +317,15 @@ inline bool is_valid_server_packet(const std::uint8_t* packet, std::size_t size)
 	}
 
 	switch (packet[1]) {
+    case S2C_P_APPEARANCE_RESULT: return size == sizeof(sc_packet_appearance_result)
+        && wardrobe::valid(reinterpret_cast<const sc_packet_appearance_result*>(packet)->result)
+        && avatar_appearance::valid(reinterpret_cast<const sc_packet_appearance_result*>(packet)->appearance);
+    case S2C_P_APPEARANCE_CHANGE: {
+        if(size!=sizeof(sc_packet_appearance_change)) return false;
+        const auto& p=*reinterpret_cast<const sc_packet_appearance_change*>(packet);
+        return p.id>=0 && p.id<MAX_USER && avatar_appearance::valid(p.appearance)
+            && world_regions::describe(static_cast<world_regions::Id>(p.region)).id!=world_regions::Id::Invalid;
+    }
     case S2C_P_TRAVEL_RESULT: return size == sizeof(sc_packet_travel_result)
         && world_travel::valid(reinterpret_cast<const sc_packet_travel_result*>(packet)->result);
 	case S2C_P_AVATAR_INFO: return size == sizeof(sc_packet_avatar_info)

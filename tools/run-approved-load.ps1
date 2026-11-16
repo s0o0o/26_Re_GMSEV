@@ -2,13 +2,18 @@ param([switch]$ConfirmAccountWrites,[switch]$ReuseApprovedTestAccounts,
     [ValidateSet('mixed','separate')][string]$LoadMode='separate',
     [ValidateSet('drain','immediate')][string]$CloseMode='drain',[switch]$Trace,
     [ValidateSet(900000000,900001000)][int]$TestAccountStart=900000000,
-    [ValidateRange(2,300)][int]$HoldSeconds=15)
+    [ValidateRange(2,300)][int]$HoldSeconds=15,[switch]$BaselineBeforeWardrobe)
 $ErrorActionPreference='Stop'
 if(!$ConfirmAccountWrites) { throw 'Requires -ConfirmAccountWrites: creates/updates 300 accounts from TestAccountStart. No automatic deletion.' }
 $root=[System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 if(Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue) { throw 'Port 3000 already has a listener; no existing process will be stopped.' }
 $serverExe=Join-Path $root 'TP_2023192003/x64/Release/TP_2023192003.exe'
 $clientExe=Join-Path $root 'build/tests/bounded_load.exe'
+if($BaselineBeforeWardrobe) {
+    if(!$ReuseApprovedTestAccounts) { throw 'Baseline comparison requires existing approved accounts.' }
+    $serverExe=Join-Path $root 'build/tests/baseline-d426613/TP_2023192003/x64/Release/TP_2023192003.exe'
+    $clientExe=Join-Path $root 'build/tests/baseline-load.exe'
+}
 if(!(Test-Path -LiteralPath $serverExe) -or !(Test-Path -LiteralPath $clientExe)) { throw 'Build the Release server and bounded_load first.' }
 & (Join-Path $PSScriptRoot 'check-load-range.ps1') -AllowApprovedReuse:$ReuseApprovedTestAccounts -TestAccountStart $TestAccountStart
 $runDirectory=Join-Path $root ('build/tests/load-'+[DateTime]::Now.ToString('yyyyMMdd-HHmmss')+'-'+[guid]::NewGuid().ToString('N').Substring(0,8))
@@ -28,6 +33,7 @@ try {
     } until($ready -or [DateTime]::UtcNow -gt $readyDeadline)
     if(!$ready) { throw 'Server READY deadline exceeded; load not started.' }
     $client=Start-Process -FilePath $clientExe -ArgumentList @('300',"$TestAccountStart","$HoldSeconds",'45','3000',$LoadMode,$CloseMode) -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $runDirectory 'client.log') -RedirectStandardError (Join-Path $runDirectory 'client-error.log')
+    $null=$client.Handle
     if(!$client.WaitForExit((45+$HoldSeconds+15)*1000)) { throw 'Load client exceeded the outer deadline.' }
     $client.Refresh()
     Get-Content -LiteralPath (Join-Path $runDirectory 'client.log')
@@ -35,7 +41,7 @@ try {
     if($server.HasExited) { throw 'Server exited after load.' }
     & (Join-Path $PSScriptRoot 'check-load-range.ps1') -ExpectedRows 300 -TestAccountStart $TestAccountStart
     Write-Output 'Server remained alive after disconnect wait. This is not a graceful server drain assertion.'
-    if($client.ExitCode -ne 0) { throw 'Load failed; inspect run logs. Test accounts may already exist.' }
+    if($null -eq $client.ExitCode -or $client.ExitCode -ne 0) { throw 'Load failed; inspect run logs. Test accounts may already exist.' }
 } finally {
     if($client -and !$client.HasExited) { Stop-Process -Id $client.Id }
     if($server -and !$server.HasExited) { Stop-Process -Id $server.Id }

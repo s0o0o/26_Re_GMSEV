@@ -197,7 +197,9 @@ void ProcessPacket(int ci, unsigned char packet[])
         if(!g_clients[ci].connected.exchange(true)) { ++active_clients; ++accepted_logins; }
         break;
     }
-	case S2C_P_TRAVEL_RESULT: break;
+	case S2C_P_APPEARANCE_RESULT: break;
+    case S2C_P_APPEARANCE_CHANGE: break;
+    case S2C_P_TRAVEL_RESULT: break;
 	case S2C_P_MAPINFO: break;
 	case S2C_P_MONSTER_NEAR: break;
 	case S2C_P_CHAT: break;

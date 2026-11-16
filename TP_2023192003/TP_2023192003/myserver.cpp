@@ -456,6 +456,7 @@ void disconnect(const std::shared_ptr<GAMESESSION>& session) {
 
 // 받았으면 보낼 준비
 #include "region_transition.hpp"
+#include "wardrobe_server.hpp"
 
 void processPacket(const std::shared_ptr<GAMESESSION>& session, char* packetFromC) {
 	//cout << "날아온 아이디 확인용 :" << sessionId << endl;
@@ -507,6 +508,20 @@ void processPacket(const std::shared_ptr<GAMESESSION>& session, char* packetFrom
             break;
         }
 
+        avatar_appearance::Value loginAppearance{p->character_kind,p->fur_color,p->eye_style,p->scarf_style};
+        const auto appearanceReadStarted=load_trace::now();
+        appearance_storage::Read savedAppearance{appearance_storage::Status::Error,{}};
+        try {
+            auto* store=appearance_storage::active.load(std::memory_order_acquire);
+            if(store) savedAppearance=store->read(dbId);
+        } catch(...) { savedAppearance.status=appearance_storage::Status::Error; }
+        load_trace::event("login_appearance_read",sessionId,session->connectionId,load_trace::now()-appearanceReadStarted);
+        if(savedAppearance.status==appearance_storage::Status::Found && avatar_appearance::valid(savedAppearance.value))
+            loginAppearance=savedAppearance.value;
+        else if(savedAppearance.status!=appearance_storage::Status::Missing && savedAppearance.status!=appearance_storage::Status::Unavailable) {
+            sc_packet_login_fail fail{}; fail.size=sizeof(fail); fail.type=S2C_P_LOGIN_FAIL;
+            session->registerSend(&fail); break;
+        }
         GameObjectState persisted;
         const auto commitWait=load_trace::now();
         {
@@ -516,10 +531,7 @@ void processPacket(const std::shared_ptr<GAMESESSION>& session, char* packetFrom
             const auto restored=database_position::restoreLegacy(dbUserX,dbUserY);
             dbUserX=restored.legacy.x; dbUserY=restored.legacy.y;
             session->_userInputId = dbId;
-            session->object._furColor = p->fur_color;
-            session->object._characterKind = p->character_kind;
-            session->object._eyeStyle = p->eye_style;
-            session->object._scarfStyle = p->scarf_style;
+            session->object.setAppearance(loginAppearance);
             session->object.position=restored.position;
             session->object._hp = dbUserHp;
             session->object._level = dbUserLevel;
@@ -772,6 +784,9 @@ void processPacket(const std::shared_ptr<GAMESESSION>& session, char* packetFrom
 		}
 	}
 	break;
+    case C2S_P_APPEARANCE:
+        processAppearanceRequest(*session,*reinterpret_cast<const cs_packet_appearance*>(packetFromC),stateGuard);
+        break;
 	case C2S_P_TELEPORT:
 	{
         const auto& request=*reinterpret_cast<const cs_packet_teleport*>(packetFromC);
