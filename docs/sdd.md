@@ -33,6 +33,8 @@
 
 ## 명세 목록
 
+- [주민·탐험 연결 큐](specs/resident-adventure-queue.md), [근접 주민 대화](specs/town-dialogue.md):순차3작업과현재관측위치·입력/대화수명계약.
+
 - [접속 중 탐험 기록](specs/field-discovery.md): 서버확정위치/5비트방문·중복/세션경계·지도체크리스트.
 
 - [필드 지도](specs/field-map.md): 공통 실제지형/위치/표식 지도와 입력·상태 경계.
