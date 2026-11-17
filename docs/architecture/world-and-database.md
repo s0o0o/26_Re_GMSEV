@@ -13,7 +13,7 @@
 ```text
 기존 DB (42,10)
   → restoreLegacy → Position(SunnyPeak,10,10)
-  → 서버 이동/시야/AI/섹터 → v5(region=2,x=10,y=10)
+  → 서버 이동/시야/AI/섹터 → v6(region=2,x=10,y=10)
   → 클라 Position + local camera/render
 종료 저장: Position → encodeLegacy → 기존 DB (42,10)
 ```

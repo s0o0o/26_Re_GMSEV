@@ -33,6 +33,8 @@
 
 ## 명세 목록
 
+- [긴 채팅·기록 탐색](specs/chat-history.md): v6/119byte·줄바꿈·스크롤앵커/최신복귀·Windows입력검증한계.
+
 - [지역 채팅·프로필 배치](specs/region-chat.md): UTF-8/지역 송수신·기록/프로필 공간 자동 이동.
 
 - [Boss 산책 의뢰](specs/town-walk-quest.md): 접속중수락/방문/근접보고·Q반복/세션경계·보상없음.

@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <string>
 namespace chat_rules {
-constexpr std::size_t maxBytes=29;
+constexpr std::size_t maxBytes=119;
 inline bool valid(const std::string& s) {
     if(s.empty() || s.size()>maxBytes) return false;
     bool ink=false;

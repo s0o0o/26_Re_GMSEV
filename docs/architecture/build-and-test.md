@@ -1,6 +1,8 @@
 # 빌드·실행·검증 안내
 
-갱신: 2026-11-17, #60. [구조 입구](README.md).
+갱신: 2026-11-18, #65. [구조 입구](README.md).
+
+#65는패킷v6/message120이므로서버·일반클라·stress GUI를함께빌드한다. 전체회귀52개와별도run-chat의SFML문자열history/scroll검사를구분한다. DB없는Windows입력probe의실행절차/IME한계는 [긴채팅명세](../specs/chat-history.md), 현재데이터/렌더/scroll흐름은 [채팅구조](chat.md)를참고한다.
 
 현재 전체 회귀는52개다(#64: UTF-8/길이/rate 규칙 추가). `run-chat.cmd`는 순수채팅규칙과생산클라입력/수신·TCP/프로필배치·다중크기렌더를연결한다. `run-town-walk-quest.cmd`는 순수 의뢰→안내→대화/생산클라 입력·패킷·렌더 검사를 연결한다. 새 실행기는 양수/음수 실패 종료를 모두 거부한다. 별도 `run-field-map.cmd`는생산지도입력/패킷·세션/상태렌더, `run-sprite-frames.cmd`는주민crop/HUD경계를검사한다. [필드 탐험 실행 증거](../specs/field-discovery.md)에서본회귀/별도창검사를구분한다. 옷장 `run-wardrobe.cmd`는 실제 IOCP4worker/게임 DB 대역·메모리 외형 Store와지역채팅경계를검사한다. `run-wardrobe-client.cmd`/`run-wardrobe-ui.cmd`는 생산 client.cpp 기반 wire/렌더·주입 입력 검사다. 실제 DB는 `appearance-db-admin.ps1`(명시 DDL), `appearance-db-check.ps1`/`test-live-wardrobe.ps1`로 구분한다. 승인계정 외 실행하지 않는다. [옷장 명세의 실행 증거](../specs/clubhouse-wardrobe.md)에서 실패/통과/미검증을 확인한다.
 

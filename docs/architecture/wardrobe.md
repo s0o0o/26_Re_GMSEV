@@ -6,7 +6,7 @@
 
 appearance.hpp의 Value는 kind/fur/eyes/scarf 4바이트다. 기존2캐릭터·털색5·눈3·목도리3의90조합과 방향별 텍스처를 유지한다. wardrobe_rules.hpp의 연결별 Journal이 양수 요청ID·값·공용거점·재전송/과거ID를 검사한다.
 
-작업 브랜치의 프로토콜은 v5다. C2S_P_APPEARANCE(21)는 requestId+Value만 받으며 임의의 타인 ID를 받지 않는다. S2C_P_APPEARANCE_CHANGE(23)는 대상ID·region·Value, S2C_P_APPEARANCE_RESULT(22)는 요청ID·결과·현재 확정 외형이다. 서버/모든 클라 도구를 함께 빌드해야 한다. GUI 부하 도구는 새 패킷을 인식해 무시하며 새 외형 UI를 표시하는 도구는 아니다.
+현재 프로토콜은 #65 긴채팅의 v6다(외형 계약은 v5에서 추가). C2S_P_APPEARANCE(21)는 requestId+Value만 받으며 임의의 타인 ID를 받지 않는다. S2C_P_APPEARANCE_CHANGE(23)는 대상ID·region·Value, S2C_P_APPEARANCE_RESULT(22)는 요청ID·결과·현재 확정 외형이다. 서버/모든 클라 도구를 함께 빌드해야 한다. GUI 부하 도구는 새 패킷을 인식해 무시하며 새 외형 UI를 표시하는 도구는 아니다.
 
 ## 서버 검증·I/O·통지
 
