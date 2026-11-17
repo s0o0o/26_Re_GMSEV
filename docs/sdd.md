@@ -33,6 +33,8 @@
 
 ## 명세 목록
 
+- [지역 채팅·프로필 배치](specs/region-chat.md): UTF-8/지역 송수신·기록/프로필 공간 자동 이동.
+
 - [Boss 산책 의뢰](specs/town-walk-quest.md): 접속중수락/방문/근접보고·Q반복/세션경계·보상없음.
 
 - [주민 탐험 안내](specs/exploration-guidance.md): 대화요청/미방문목표·지도링/좌표방향거리·세션경계.

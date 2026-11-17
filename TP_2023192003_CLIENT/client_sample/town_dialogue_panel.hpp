@@ -20,7 +20,7 @@ class TownDialoguePanel {
     }
 public:
     town_dialogue::State state;
-    inline static const sf::FloatRect prompt{315,610,270,38},nextButton{460,600,145,40},closeButton{625,600,145,40},guideButton{245,600,195,40};
+    inline static const sf::FloatRect prompt{395,584,300,38},nextButton{460,600,145,40},closeButton{625,600,145,40},guideButton{245,600,195,40};
     inline static const sf::FloatRect questButton{245,556,525,36};
     bool visible() const {return state.visible();}
     void reset() {state.close();eDown_=enterDown_=guideRequested_=qDown_=questRequested_=questReply_=false;armed_=0;guideReply_.clear();}

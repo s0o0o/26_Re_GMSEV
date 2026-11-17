@@ -257,6 +257,29 @@ void runWardrobe(const sockaddr_in& address,std::vector<std::thread>& workers) {
     auto peer=connectPeer(address,observer.accepted.connection); login(peer,63001,true);
     expectEnter(observer,peer.accepted.id);
     auto subject=peer.accepted.owner.lock(); assert(subject);
+    // Native player chat: actual TCP/IOCP routing and authoritative sender.
+    {
+        cs_packet_chat chat{};chat.size=sizeof(chat);chat.type=C2S_P_CHAT;chat.id=9999;
+        strcpy_s(chat.message,"CHAT-ONE");sendBytes(peer,reinterpret_cast<char*>(&chat),sizeof(chat));
+        const auto own=decode<sc_packet_chat>(expect(peer,S2C_P_CHAT));
+        const auto other=decode<sc_packet_chat>(expect(observer,S2C_P_CHAT));
+        assert(own.id==peer.accepted.id && other.id==peer.accepted.id && std::strcmp(other.message,"CHAT-ONE")==0);
+        {
+            WorldStateLock lock;const auto gate=subject->nextChatAt;assert(gate>0);
+            memset(chat.message,'x',sizeof(chat.message));processPacket(subject,reinterpret_cast<char*>(&chat));assert(subject->nextChatAt==gate);
+            strcpy_s(chat.message,"TOO-FAST");subject->nextChatAt=GetTickCount64()+10000;processPacket(subject,reinterpret_cast<char*>(&chat));
+            auto otherSession=observer.accepted.owner.lock();const auto saved=otherSession->object.location();
+            otherSession->object.position={world_regions::Id::SunnyPeak,10,10};
+            subject->nextChatAt=0;strcpy_s(chat.message,"OTHER-REGION");processPacket(subject,reinterpret_cast<char*>(&chat));
+            otherSession->object.position=saved;subject->nextChatAt=0;
+        }
+        strcpy_s(chat.message,"CHAT-END");sendBytes(peer,reinterpret_cast<char*>(&chat),sizeof(chat));
+        // Neither the rate-rejected nor foreign-region message may precede this marker.
+        const auto next=decode<sc_packet_chat>(expect(observer,S2C_P_CHAT));assert(std::strcmp(next.message,"CHAT-END")==0);
+        assert(std::strcmp(decode<sc_packet_chat>(expect(peer,S2C_P_CHAT)).message,"OTHER-REGION")==0);
+        assert(std::strcmp(decode<sc_packet_chat>(expect(peer,S2C_P_CHAT)).message,"CHAT-END")==0);
+        std::puts("Player chat: TCP/IOCP sender/rate/unterminated/region isolation PASS");
+    }
     const Value original{},first{1,4,2,2},second{0,2,1,1};
     auto request=[&](std::uint32_t sequence,Value value,Result expected,Value confirmed,int changes) {
         cs_packet_appearance packet{sizeof(packet),C2S_P_APPEARANCE,sequence,value};

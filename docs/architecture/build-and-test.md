@@ -2,7 +2,7 @@
 
 갱신: 2026-11-17, #60. [구조 입구](README.md).
 
-현재 전체 회귀는51개다(#63: 주민 대화/탐험 안내/산책 의뢰 순수 규칙3개 추가). `run-town-walk-quest.cmd`는 순수 의뢰→안내→대화/생산클라 입력·패킷·렌더 검사를 연결한다. 새 실행기는 양수/음수 실패 종료를 모두 거부한다. 별도 `run-field-map.cmd`는생산지도입력/패킷·세션/상태렌더, `run-sprite-frames.cmd`는주민crop/HUD경계를검사한다. [필드 탐험 실행 증거](../specs/field-discovery.md)에서본회귀/별도창검사를구분한다. 옷장 `run-wardrobe.cmd`는 실제 IOCP4worker/게임 DB 대역·메모리 외형 Store, `run-wardrobe-client.cmd`/`run-wardrobe-ui.cmd`는 생산 client.cpp 기반 wire/렌더·주입 입력 검사다. 실제 DB는 `appearance-db-admin.ps1`(명시 DDL), `appearance-db-check.ps1`/`test-live-wardrobe.ps1`로 구분한다. 승인계정 외 실행하지 않는다. [옷장 명세의 실행 증거](../specs/clubhouse-wardrobe.md)에서 실패/통과/미검증을 확인한다.
+현재 전체 회귀는52개다(#64: UTF-8/길이/rate 규칙 추가). `run-chat.cmd`는 순수채팅규칙과생산클라입력/수신·TCP/프로필배치·다중크기렌더를연결한다. `run-town-walk-quest.cmd`는 순수 의뢰→안내→대화/생산클라 입력·패킷·렌더 검사를 연결한다. 새 실행기는 양수/음수 실패 종료를 모두 거부한다. 별도 `run-field-map.cmd`는생산지도입력/패킷·세션/상태렌더, `run-sprite-frames.cmd`는주민crop/HUD경계를검사한다. [필드 탐험 실행 증거](../specs/field-discovery.md)에서본회귀/별도창검사를구분한다. 옷장 `run-wardrobe.cmd`는 실제 IOCP4worker/게임 DB 대역·메모리 외형 Store와지역채팅경계를검사한다. `run-wardrobe-client.cmd`/`run-wardrobe-ui.cmd`는 생산 client.cpp 기반 wire/렌더·주입 입력 검사다. 실제 DB는 `appearance-db-admin.ps1`(명시 DDL), `appearance-db-check.ps1`/`test-live-wardrobe.ps1`로 구분한다. 승인계정 외 실행하지 않는다. [옷장 명세의 실행 증거](../specs/clubhouse-wardrobe.md)에서 실패/통과/미검증을 확인한다.
 
 `run-approved-load.ps1 -BaselineBeforeWardrobe`는 고정 d426613 서버/v4 도구 산출물로 비교하는 진단 옵션이며 기존 승인계정 재사용을 강제한다. 기본 제품 실행 경로를 바꾸지 않는다. 외형 조회 trace는 opt-in이며 종료 성공이 전체 서버 graceful shutdown을 뜻하지 않는다.
 
@@ -20,7 +20,7 @@ Debug도Configuration만바꿔빌드한다. 출력은각각`TP_2023192003/x64/Re
 
 ## DB 없는 검사부터
 
-- `tests/run-regressions.cmd`:현재51개프로그램. 청크/충돌·귀환 규칙/실제worker, 단위·loopback+DB대역·모의TCP부하를포함한다. 실제DB300명실행이아니다.
+- `tests/run-regressions.cmd`:현재52개프로그램. 청크/충돌·귀환 규칙/실제worker, 단위·loopback+DB대역·모의TCP부하를포함한다. 실제DB300명실행이아니다.
 - `tests/run-field-chunks.cmd`:모든 필드 칸·연결성·제한 캐시·수집 상태·경로 예산과 실제TCP/IOCP4worker+DB대역 이동 검사.
 - `tests/run-field-preview.cmd`:가시 청크·타일·캐시 예산, 시작/다리/절벽/끝·충돌 진단과 해상도별 생산 렌더러 출력. 실제 OS 입력/DB 화면/FPS 측정이 아니다.
 - `tests/run-travel-client.cmd`:생산클라의 버튼/R키·부분응답·실패/timeout·해상도별 렌더러 출력. 실제 OS 입력/DB 캡처와 구분한다.
