@@ -33,6 +33,8 @@
 
 ## 명세 목록
 
+- [필드 콘텐츠3큐](specs/field-content-queue.md), [탐험지 조사](specs/field-investigation.md): E조사→장소연출→수첩 순차실행.
+
 - [긴 채팅·기록 탐색](specs/chat-history.md): v6/119byte·줄바꿈·스크롤앵커/최신복귀·Windows입력검증한계.
 
 - [지역 채팅·프로필 배치](specs/region-chat.md): UTF-8/지역 송수신·기록/프로필 공간 자동 이동.

@@ -2,6 +2,8 @@
 #include "window_display.hpp"
 #include "ui_alignment.hpp"
 #include "profile_layout.hpp"
+#include "field_investigation_panel.hpp"
+FieldInvestigationPanel& fieldInvestigationPanel(){static FieldInvestigationPanel panel;return panel;}
 #include "chat_panel.hpp"
 ChatPanel& chatPanel() { static ChatPanel panel; return panel; }
 sf::Clock chatFrameClock;
@@ -60,7 +62,7 @@ HamsterCustomizer& hamsterCustomizer() {
 sf::TcpSocket s_socket;
 void gameConnectionLost() {
     extern bool isChatMode; isChatMode=false; chatPanel().reset();
-    townWalkQuest.reset(); explorationGuide.reset(); townDialoguePanel().reset(); fieldDiscovery.reset(); fieldMapPanel().reset(); wardrobeState.disconnect(); travelState.disconnect(); gameOutbox.clear(); s_socket.disconnect();
+    fieldInvestigationPanel().reset(); townWalkQuest.reset(); explorationGuide.reset(); townDialoguePanel().reset(); fieldDiscovery.reset(); fieldMapPanel().reset(); wardrobeState.disconnect(); travelState.disconnect(); gameOutbox.clear(); s_socket.disconnect();
 }
 bool flushGamePackets() {
     const bool okay=gameOutbox.pump([](const std::uint8_t* data,std::size_t size,std::size_t& sent) {
@@ -410,10 +412,15 @@ town_dialogue::Candidates townDialogueCandidates() {
     }
     return result;
 }
+bool handleFieldInvestigationInput(const sf::Event& e,sf::Vector2f mouse){
+    return fieldInvestigationPanel().handle(e,mouse,avatar.position,fieldDiscovery.active(),
+        isChatMode || townDialoguePanel().visible() || fieldMapPanel().visible() || wardrobeState.visible() || travelState.pending(),
+        travelState.status!=world_travel::ClientStatus::Disconnected);
+}
 bool handleTownDialogueInput(const sf::Event& event,sf::Vector2f point) {
     townDialoguePanel().setQuestContext(townWalkQuest,fieldDiscovery);
     const bool consumed=townDialoguePanel().handle(event,point,avatar.position,townDialogueCandidates(),
-        isChatMode || wardrobeState.visible() || fieldMapPanel().visible() || travelState.pending(),
+        fieldInvestigationPanel().visible() || isChatMode || wardrobeState.visible() || fieldMapPanel().visible() || travelState.pending(),
         travelState.status!=world_travel::ClientStatus::Disconnected);
     if(townDialoguePanel().takeGuideRequest()) {explorationGuide.select(fieldDiscovery);townDialoguePanel().showGuide(explorationGuide);}
     if(townDialoguePanel().takeQuestRequest()) {
@@ -445,12 +452,12 @@ void moveAvatar(world_regions::Position next) {
         combatHud().clear(); nearMonCnt=0;
         memset(nearMonsters,0,sizeof(nearMonsters));
     }
-    townDialoguePanel().state.reconcile(next,townDialogueCandidates(),travelState.status!=world_travel::ClientStatus::Disconnected);
+    fieldInvestigationPanel().state.reconcile(next,fieldDiscovery.active()); townDialoguePanel().state.reconcile(next,townDialogueCandidates(),travelState.status!=world_travel::ClientStatus::Disconnected);
     fieldMapPanel().regionChanged(next); wardrobeState.regionChanged(next); avatar.move(next);
     g_left_x=world_layout::cameraX(next); g_top_y=world_layout::cameraY(next);
 }
 bool handleFieldMapInput(const sf::Event& event,sf::Vector2f point) {
-    return fieldMapPanel().handle(event,point,avatar.position,isChatMode || townDialoguePanel().visible() || wardrobeState.visible() || travelState.pending(),
+    return fieldMapPanel().handle(event,point,avatar.position,fieldInvestigationPanel().visible() || isChatMode || townDialoguePanel().visible() || wardrobeState.visible() || travelState.pending(),
         travelState.status!=world_travel::ClientStatus::Disconnected);
 }
 
@@ -467,7 +474,7 @@ bool handleTravelInput(const sf::Event& event,sf::Vector2f mouse,bool chat) {
 bool handleWardrobeInput(const sf::Event& event,sf::RenderWindow& window,sf::Vector2f point) {
     const bool wasOpen=wardrobeState.visible();
     const auto action=wardrobePanel().handle(event,point,wardrobeState,avatar.position,avatar.appearance,
-        isChatMode || townDialoguePanel().visible() || travelState.pending() || !wardrobeState.connected);
+        fieldInvestigationPanel().visible() || isChatMode || townDialoguePanel().visible() || travelState.pending() || !wardrobeState.connected);
     if(action==WardrobePanel::Action::Opened) {
         static bool iconsReady=false;
         if(!iconsReady) iconsReady=wardrobePanel().loadIcon("assets/wardrobe/source/accessory-box-icons.png");
@@ -818,7 +825,7 @@ void initStartScreenInit() {
 }
 
 void drawProfileHud(sf::RenderTarget& out) {
-	if(chatPanel().profileVisible) out.draw(profileSprite); // 프로필그리는거
+	if(chatPanel().profileVisible) out.draw(profileSprite,profile_layout::selfStates()); // 프로필그리는거
 
 	for (int i = 0; i < nearMonCnt; ++i) {
 		if (nearMonsters[i].monType == 1)
@@ -849,16 +856,16 @@ void drawProfileHud(sf::RenderTarget& out) {
 	// 플필폰트
 	if(chatPanel().profileVisible) {
 	profileFontInit();
-	out.draw(nameText);
-	out.draw(seedNumText);
-	out.draw(hpText);
-	out.draw(maxHpText);
-	out.draw(levelText);
+	out.draw(nameText,profile_layout::selfStates());
+	out.draw(seedNumText,profile_layout::selfStates());
+	out.draw(hpText,profile_layout::selfStates());
+	out.draw(maxHpText,profile_layout::selfStates());
+	out.draw(levelText,profile_layout::selfStates());
     }
 }
 bool handleChatInput(const sf::Event& event,sf::Vector2f point) {
     const bool consumed=chatPanel().handle(event,point,
-        townDialoguePanel().visible() || fieldMapPanel().visible() || wardrobeState.visible() || travelState.pending(),
+        fieldInvestigationPanel().visible() || townDialoguePanel().visible() || fieldMapPanel().visible() || wardrobeState.visible() || travelState.pending(),
         travelState.status!=world_travel::ClientStatus::Disconnected,GetTickCount64(),[](const std::string& message) {
             cs_packet_chat packet{};packet.size=sizeof(packet);packet.type=C2S_P_CHAT;packet.id=avatar.id;
             std::memcpy(packet.message,message.data(),message.size());
@@ -868,7 +875,7 @@ bool handleChatInput(const sf::Event& event,sf::Vector2f point) {
     isChatMode=chatPanel().editing;return consumed;
 }
 void drawChat() {
-    chatPanel().place(chatFrameClock.restart().asSeconds(),true,profile_layout::stackTop(chatPanel().profileVisible,nearMonCnt,profileSprite.getGlobalBounds().top));
+    chatPanel().place(chatFrameClock.restart().asSeconds(),true,profile_layout::stackTop(chatPanel().profileVisible,nearMonCnt));
     chatPanel().draw(*g_window,gameFont(),travelState.status!=world_travel::ClientStatus::Disconnected);
 }
 
@@ -970,7 +977,10 @@ void client_main()
 	g_window->draw(text);
     drawWardrobeUi(*g_window);
     drawTownDialogueUi(*g_window);
-    if(!townDialoguePanel().visible() && !fieldMapPanel().visible() && !wardrobeState.visible() && !isChatMode && !travelState.pending()
+    fieldInvestigationPanel().state.reconcile(avatar.position,fieldDiscovery.active() && travelState.status!=world_travel::ClientStatus::Disconnected);
+    if(!isChatMode && !townDialoguePanel().visible() && !fieldMapPanel().visible() && !wardrobeState.visible() && !travelState.pending())
+        fieldInvestigationPanel().draw(*g_window,gameFont(),avatar.position,fieldDiscovery.active());
+    if(!fieldInvestigationPanel().visible() && !townDialoguePanel().visible() && !fieldMapPanel().visible() && !wardrobeState.visible() && !isChatMode && !travelState.pending()
         && !town_dialogue::nearest(avatar.position,townDialogueCandidates())) {
         if(!drawTownWalkQuest(*g_window,gameFont(),townWalkQuest,fieldDiscovery,explorationGuide,avatar.position))
             drawExplorationGuidance(*g_window,gameFont(),explorationGuide,avatar.position);
@@ -1071,7 +1081,7 @@ void drawCustomizationScreen(sf::RenderTarget& window) {
 
 void beginLoginConnection(unsigned short port = GAME_PORT) {
     chatPanel().reset(); isChatMode=false;
-    townWalkQuest.reset(); explorationGuide.reset(); townDialoguePanel().reset(); fieldDiscovery.reset(); fieldMapPanel().reset(); wardrobeState={}; travelState={}; gameOutbox.clear(); travelPanel.pressed=false; travelPanel.rDown=false;
+    fieldInvestigationPanel().reset(); townWalkQuest.reset(); explorationGuide.reset(); townDialoguePanel().reset(); fieldDiscovery.reset(); fieldMapPanel().reset(); wardrobeState={}; travelState={}; gameOutbox.clear(); travelPanel.pressed=false; travelPanel.rDown=false;
     s_socket.disconnect();
     in_packet_size = saved_packet_size = 0;
     s_socket.setBlocking(true);
@@ -1209,6 +1219,7 @@ int main()
                     pixel={event.mouseButton.x,event.mouseButton.y};
                 if(event.type==sf::Event::MouseWheelScrolled)pixel={event.mouseWheelScroll.x,event.mouseWheelScroll.y};
                 if(handleTownDialogueInput(event,window.mapPixelToCoords(pixel))) continue;
+                if(handleFieldInvestigationInput(event,window.mapPixelToCoords(pixel))) continue;
                 if(handleFieldMapInput(event,window.mapPixelToCoords(pixel))) continue;
                 if(handleWardrobeInput(event,window,window.mapPixelToCoords(pixel))) continue;
 

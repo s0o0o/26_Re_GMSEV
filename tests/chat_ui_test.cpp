@@ -28,7 +28,7 @@ int main(){
     for(int i=0;i<70;++i)chatPanel().receive(L"친구",u8"꽃길에서 만나!");assert(chatPanel().lines().size()==64);
     key(sf::Keyboard::P);assert(!chatPanel().profileVisible);key(sf::Keyboard::P);assert(!chatPanel().profileVisible);key(sf::Keyboard::P,true);
     chatPanel().place(1,false);const auto before=chatPanel().bounds().top;key(sf::Keyboard::P);key(sf::Keyboard::P,true);chatPanel().place(.02f,true);assert(chatPanel().bounds().top<before);
-    for(int i=0;i<40;++i)chatPanel().place(.016f,true);assert(chatPanel().bounds().top+chatPanel().bounds().height<=652.1f);
+    for(int i=0;i<40;++i)chatPanel().place(.016f,true);assert(chatPanel().bounds().top+chatPanel().bounds().height<=profile_layout::selfTop()-11.9f);
     for(int mode=0;mode<4;++mode)for(auto size:{sf::Vector2u{900,800},sf::Vector2u{1280,720},sf::Vector2u{800,900}}){
         const bool shown=mode!=0;sc_packet_monster_near nearPacket{};nearPacket.size=sizeof(nearPacket);nearPacket.type=S2C_P_MONSTER_NEAR;nearPacket.monCount=mode<2?0:(mode==2?1:5);
         nearPacket.size=static_cast<std::uint8_t>(offsetof(sc_packet_monster_near,monsters)+sizeof(nearMonsterInfo)*nearPacket.monCount);

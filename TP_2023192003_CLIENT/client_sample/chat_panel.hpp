@@ -5,6 +5,7 @@
 #include <cmath>
 #include "../../shared/chat_rules.hpp"
 #include "ui_alignment.hpp"
+#include "profile_layout.hpp"
 class ChatPanel {
     bool tabDown_=false,enterDown_=false,pDown_=false,placed_=false;
     float y_=0;
@@ -36,8 +37,8 @@ public:
     const auto& lines()const{return lines_;}
     const auto& draft()const{return draft_;}
     sf::FloatRect bounds()const{return {15,y_,360,174};}
-    float targetY(bool profile,float profileTop=664)const{return (profile?profileTop-12.f:785.f)-174.f;}
-    void place(float dt,bool profile,float profileTop=664) {
+    float targetY(bool profile,float profileTop=profile_layout::selfTop())const{return (profile?profileTop-12.f:785.f)-174.f;}
+    void place(float dt,bool profile,float profileTop=profile_layout::selfTop()) {
         const float target=targetY(profile,profileTop);
         if(!placed_){y_=target;placed_=true;}
         else {y_+=(target-y_)*(1.f-std::exp(-std::min(dt,.1f)*28.f));if(std::abs(y_-target)<.1f)y_=target;}

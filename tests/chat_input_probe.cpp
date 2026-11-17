@@ -24,6 +24,6 @@ int main(){
         }
         if(!window.isOpen())break;window.clear({82,108,72});
         sf::Text help(L"DB 없는 입력 검증\nTab: 입력 / Enter: 로컬 표시\n휠 · PageUp / PageDown · End\nP: 프로필 표시 / 숨김\n실제 게임 서버로 전송하지 않음",font,21);help.setPosition(410,80);help.setFillColor({255,248,228});window.draw(help);
-        if(panel.profileVisible)window.draw(sprite);panel.draw(window,font,true);window.display();
+        if(panel.profileVisible)window.draw(sprite,profile_layout::selfStates());panel.draw(window,font,true);window.display();
     }
 }
