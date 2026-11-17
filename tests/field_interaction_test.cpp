@@ -1,0 +1,3 @@
+#include "../shared/field_investigation.hpp"
+#include <cassert>
+int main(){using namespace field_investigation;State s;world_regions::Position p{world_regions::Id::SunnyPeak,32,32};assert(!s.begin(p,true,0));assert(s.open(p,true) && s.begin(p,true,0));assert(!s.begin(p,true,1));assert(!s.tick(899,p,true) && !s.completed(1));assert(s.tick(900,p,true) && s.completed(1));assert(!s.tick(1000,p,true) && !s.begin(p,true,1000));assert(s.begin(p,true,1500));s.close();assert(!s.tick(3000,p,true) && s.completed(1));s.reset();s.open(p,true);s.begin(p,true,0);s.tick(900,{world_regions::Id::Clubhouse,12,10},true);assert(!s.completed(1) && !s.running());s.open(p,true);s.begin(p,true,1500);s.tick(3000,p,false);assert(!s.completed(1));}

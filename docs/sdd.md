@@ -33,6 +33,8 @@
 
 ## 명세 목록
 
+- [장소 상호작용](specs/field-interaction.md):0.9초연출·취소/쿨다운/접속중완료bit.
+
 - [필드 콘텐츠3큐](specs/field-content-queue.md), [탐험지 조사](specs/field-investigation.md): E조사→장소연출→수첩 순차실행.
 
 - [긴 채팅·기록 탐색](specs/chat-history.md): v6/119byte·줄바꿈·스크롤앵커/최신복귀·Windows입력검증한계.

@@ -2,6 +2,12 @@
 setlocal
 pushd "%~dp0.."
 if not exist build\tests mkdir build\tests
+cl /nologo /EHsc /std:c++17 tests\field_interaction_test.cpp /Fo:build\tests\ /Fe:build\tests\field_interaction_test.exe
+if errorlevel 1 goto failed
+if not errorlevel 0 goto failed
+build\tests\field_interaction_test.exe
+if errorlevel 1 goto failed
+if not errorlevel 0 goto failed
 cl /nologo /EHsc /std:c++17 tests\field_investigation_test.cpp /Fo:build\tests\ /Fe:build\tests\field_investigation_test.exe
 if errorlevel 1 goto failed
 if not errorlevel 0 goto failed
