@@ -58,3 +58,7 @@ handleTravelInput → ClientState.begin → send_packet/PacketOutbox → 서버 
 ## #54 가시 필드·화면 밖 제외
 
 ClubhouseRenderer의 FieldRenderer는 shared 청크 지형을 읽어 가시 타일만 그린다. client_main의 플레이어/NPC draw는 같은 지역과 한 칸 여유의 화면 범위를 통과해야 한다. 카메라는 Position의 지역 크기로 끝을 clamp한다. [청크 구조와 예산](field-chunks.md)을 참조한다. 기존 NPC idle/산책은 유지하며 새 대량 NPC를 추가한 것은 아니다.
+
+## #66–68 필드 콘텐츠
+
+생산 입력은 수첩 J → 주민 대화 → 필드 조사 E/F → 지도/옷장/귀환/채팅 순으로 소비한다. 수첩과 조사는 서로 배타적이며 서버 월드/NPC idle은 계속 갱신한다. [필드 콘텐츠](field-content.md)에 근접 판정·취소·접속 수명·읽기 전용 수첩 및 프로필90%/채팅 stack 경계를 정리했다. 새 NPC나 Lua 정책/서버 권위를 추가한 작업은 아니다.
