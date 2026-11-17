@@ -2,6 +2,10 @@
 
 2026-11-18 #66 · [구조 입구](README.md) · [3큐](../specs/field-content-queue.md) · [조사 계약](../specs/field-investigation.md)
 
+#67 [상호작용 계약](../specs/field-interaction.md): State.begin은유효조사target/active·미진행/1.5초시작간격을검사한다. tick은0.9초뒤에도같은유효target이면completed5bit를기록하고그외close/cancel은진행만취소한다. 완료bit는접속수명/reset에연동되고보상/서버패킷/DB변경없다.
+
+F/행동버튼은같은조사패널의fresh key/press-release경로다. draw직전tick에서채팅/주민/지도/옷장/귀환차단을재검사하고moveAvatar는즉시reconcile한다. LostFocus는진행취소,서버월드는계속갱신한다. draw(now)는시간비율에따른기하mark의위치·색/진행문구를생산한다. 5행동은서로다른무음관찰연출이며실제환경음재생이아니다.
+
 `field_landmarks::all`의5ID/좌표가단일원본이다. `field_investigation::eligible`은SunnyPeak/valid/walkable/Manhattan2와중간통로를검사하고 `nearest`가동률시앞ID를선택한다. State.open은활성접속에서만target을열고별도5bit inspected에기록한다. 방문Record와구분되며영구저장·서버보상아니다.
 
 생산client의handleFieldInvestigationInput은주민대화다음/지도·옷장·귀환·채팅/이동앞이다. 현재avatar.position은수신자기INFO/ENTER/MOVE의확정위치이며fieldDiscovery.active도필요하다. panel은E반복을거부하고클릭/닫기/Esc·입력소비/모달차단을맡는다. moveAvatar/draw마다reconcile로이탈·지역변화를정리하고disconnect/새로그인은State.reset한다. 거점왕복은조사bit보존.
@@ -10,4 +14,4 @@
 
 #66 추가사용자요청의내프로필90%는 `profile_layout::selfStates`에서좌15/하785앵커의렌더변환으로프레임·초상화·동적글자를함께줄인다. 원본텍스처/명목NAME 슬롯/이름데이터는보존한다. `selfTop()`은676.1로바뀌며몬스터stack/채팅목표y는같은실제경계를쓴다. 채팅12px간격은유지한다.
 
-검사: 순수field_investigation은전체53회귀에포함,run-field-content는생산client.cpp E/서버패킷/모달/세크기5장소렌더·프로필변환을검사한다. PNG는fixture생산렌더러출력이며전체게임수동OS/실제DB/성능증거아님. 실행결과는명세/이슈에기록한다.
+검사: 순수field_investigation은전체54회귀에포함,run-field-content는생산client.cpp E/서버패킷/모달/세크기5장소렌더·프로필변환을검사한다. PNG는fixture생산렌더러출력이며전체게임수동OS/실제DB/성능증거아님. 실행결과는명세/이슈에기록한다.

@@ -415,7 +415,7 @@ town_dialogue::Candidates townDialogueCandidates() {
 bool handleFieldInvestigationInput(const sf::Event& e,sf::Vector2f mouse){
     return fieldInvestigationPanel().handle(e,mouse,avatar.position,fieldDiscovery.active(),
         isChatMode || townDialoguePanel().visible() || fieldMapPanel().visible() || wardrobeState.visible() || travelState.pending(),
-        travelState.status!=world_travel::ClientStatus::Disconnected);
+        travelState.status!=world_travel::ClientStatus::Disconnected,GetTickCount64());
 }
 bool handleTownDialogueInput(const sf::Event& event,sf::Vector2f point) {
     townDialoguePanel().setQuestContext(townWalkQuest,fieldDiscovery);
@@ -977,9 +977,9 @@ void client_main()
 	g_window->draw(text);
     drawWardrobeUi(*g_window);
     drawTownDialogueUi(*g_window);
-    fieldInvestigationPanel().state.reconcile(avatar.position,fieldDiscovery.active() && travelState.status!=world_travel::ClientStatus::Disconnected);
+    fieldInvestigationPanel().state.tick(GetTickCount64(),avatar.position,fieldDiscovery.active() && travelState.status!=world_travel::ClientStatus::Disconnected && !isChatMode && !townDialoguePanel().visible() && !fieldMapPanel().visible() && !wardrobeState.visible() && !travelState.pending());
     if(!isChatMode && !townDialoguePanel().visible() && !fieldMapPanel().visible() && !wardrobeState.visible() && !travelState.pending())
-        fieldInvestigationPanel().draw(*g_window,gameFont(),avatar.position,fieldDiscovery.active());
+        fieldInvestigationPanel().draw(*g_window,gameFont(),avatar.position,fieldDiscovery.active(),GetTickCount64());
     if(!fieldInvestigationPanel().visible() && !townDialoguePanel().visible() && !fieldMapPanel().visible() && !wardrobeState.visible() && !isChatMode && !travelState.pending()
         && !town_dialogue::nearest(avatar.position,townDialogueCandidates())) {
         if(!drawTownWalkQuest(*g_window,gameFont(),townWalkQuest,fieldDiscovery,explorationGuide,avatar.position))
