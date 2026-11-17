@@ -19,7 +19,7 @@
 [client.cpp](../../TP_2023192003_CLIENT/client_sample/client.cpp)의 main이 SFML 창·입력·로그인 단계·게임 화면을 운영한다. SFML TcpSocket의 논블로킹 송수신을 사용하며 서버와 달리 IOCP를 사용하지 않는다.
 
 - beginLoginConnection/pumpLogin: 제한시간안에로그인요청을부분송신하고응답을누적수신한다. 실패하면커마로복귀하여선택을유지한재시도를지원한다.
-- process_data: TCP바이트를길이별로조립하고is_valid_server_packet으로v5길이/지역/위치/외형을검증한다. [옷장 흐름](wardrobe.md)은 독립 draft·서버 확정 통지·실패 처리를 담당한다.
+- process_data: TCP바이트를길이별로조립하고is_valid_server_packet으로v6길이/지역/위치/외형을검증한다. [옷장 흐름](wardrobe.md)은 독립 draft·서버 확정 통지·실패 처리를 담당한다.
 - ProcessPacket: 본인초기정보/이동,객체ENTER/LEAVE,지도,전투/채팅응답을화면상태에반영한다. 클라는전투결과의최종판정자가아니다.
 - OBJECT.position은region/local단일원본. moveAvatar가본인지역변경때players/map/combat/near목록을지운다. 다른지역타인의ENTER/MOVE/MAP은적용하지않는다. 같은local좌표의다른지역도구별된다.
 - client_main: local카메라/region명시배경→캐릭터/주민→전투표시/라벨/HUD렌더. [clubhouse_renderer.hpp](../../TP_2023192003_CLIENT/client_sample/clubhouse_renderer.hpp)의legacy overload는옛진단fixture용이며native클라는쓰지않는다.

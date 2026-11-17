@@ -267,7 +267,7 @@ public:
 	void set_chat(int id, const char str[]) {
 		m_chat.setFont(gameFont());
 		string sss = to_string(id) + " : " + str;
-		m_chat.setString(fromUtf8(str)); m_chat.setCharacterSize(16); m_chat.setOutlineThickness(2); m_chat.setOutlineColor({255,248,228});
+		const auto full=fromUtf8(str); const auto preview=ChatPanel::wrap(full,20); m_chat.setString(preview.size()>1 ? preview.front()+L"..." : full); m_chat.setCharacterSize(16); m_chat.setOutlineThickness(2); m_chat.setOutlineColor({255,248,228});
 		m_chat.setFillColor({72,46,37});
 		m_chat.setStyle(sf::Text::Regular);
 		m_mess_end_time = chrono::system_clock::now() + chrono::seconds(3);
@@ -1207,6 +1207,7 @@ int main()
                 sf::Vector2i pixel=sf::Mouse::getPosition(window);
                 if(event.type==sf::Event::MouseButtonPressed || event.type==sf::Event::MouseButtonReleased)
                     pixel={event.mouseButton.x,event.mouseButton.y};
+                if(event.type==sf::Event::MouseWheelScrolled)pixel={event.mouseWheelScroll.x,event.mouseWheelScroll.y};
                 if(handleTownDialogueInput(event,window.mapPixelToCoords(pixel))) continue;
                 if(handleFieldMapInput(event,window.mapPixelToCoords(pixel))) continue;
                 if(handleWardrobeInput(event,window,window.mapPixelToCoords(pixel))) continue;

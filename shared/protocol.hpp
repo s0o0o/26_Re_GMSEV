@@ -13,9 +13,9 @@
 using ObjectId = std::int32_t;
 
 constexpr std::uint16_t GAME_PORT = 3000;
-constexpr std::uint8_t PROTOCOL_VERSION = 5;
+constexpr std::uint8_t PROTOCOL_VERSION = 6;
 
-constexpr std::size_t MAX_CHAT_LENGTH = 30;
+constexpr std::size_t MAX_CHAT_LENGTH = 120;
 constexpr std::size_t MAX_ID_LENGTH = 48;
 constexpr std::size_t NAME_SIZE = MAX_ID_LENGTH;
 constexpr std::size_t MAX_NICKNAME_CODEPOINTS = 12;

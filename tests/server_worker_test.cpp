@@ -278,6 +278,11 @@ void runWardrobe(const sockaddr_in& address,std::vector<std::thread>& workers) {
         const auto next=decode<sc_packet_chat>(expect(observer,S2C_P_CHAT));assert(std::strcmp(next.message,"CHAT-END")==0);
         assert(std::strcmp(decode<sc_packet_chat>(expect(peer,S2C_P_CHAT)).message,"OTHER-REGION")==0);
         assert(std::strcmp(decode<sc_packet_chat>(expect(peer,S2C_P_CHAT)).message,"CHAT-END")==0);
+        {WorldStateLock lock;subject->nextChatAt=0;}
+        std::string longChat(119,'L');strcpy_s(chat.message,longChat.c_str());
+        sendBytes(peer,reinterpret_cast<char*>(&chat),1);sendBytes(peer,reinterpret_cast<char*>(&chat)+1,sizeof(chat)-1);
+        assert(std::string(decode<sc_packet_chat>(expect(peer,S2C_P_CHAT)).message)==longChat);
+        assert(std::string(decode<sc_packet_chat>(expect(observer,S2C_P_CHAT)).message)==longChat);
         std::puts("Player chat: TCP/IOCP sender/rate/unterminated/region isolation PASS");
     }
     const Value original{},first{1,4,2,2},second{0,2,1,1};
@@ -1103,7 +1108,7 @@ int main() {
     }
     {
         auto subject=connectPeer(address,last); last=subject.accepted.connection;
-        auto oldVersion=loginPacket(403); oldVersion.version=1;
+        auto oldVersion=loginPacket(403); oldVersion.version=5;
         sendBytes(subject,reinterpret_cast<char*>(&oldVersion),sizeof(oldVersion));
         assert(static_cast<std::uint8_t>(receive(subject)[1])==S2C_P_LOGIN_FAIL);
         assert(loadCount(403)==0 && saveCount(403)==0);

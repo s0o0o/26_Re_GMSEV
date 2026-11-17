@@ -22,7 +22,7 @@ main → AcceptEx 요청 → 완료큐 → workerThread(OP_ACCEPT)
 | 같은 파일 | processPacket | 로그인/이동/공격/채팅요청처리 |
 | [game_session.cpp](../../TP_2023192003/TP_2023192003/game_session.cpp) | registerRecv/registerSend/closeTransport | 비동기요청과소켓종료 |
 | [iocp_operation.hpp](../../TP_2023192003/TP_2023192003/iocp_operation.hpp) | OVER_EXP/COMP_TYPE | OVERLAPPED·버퍼·작업종류·원래연결owner |
-| [session_packets.cpp](../../TP_2023192003/TP_2023192003/session_packets.cpp) | sendSessionLoginPacket/sendMovePacket/sendAddPlayerPacket/sendMapInfo | 상태를wire v5로직렬화 |
+| [session_packets.cpp](../../TP_2023192003/TP_2023192003/session_packets.cpp) | sendSessionLoginPacket/sendMovePacket/sendAddPlayerPacket/sendMapInfo | 상태를wire v6로직렬화 |
 | [session_completion.hpp](../../TP_2023192003/TP_2023192003/session_completion.hpp) | classifySessionCompletion/releaseSendCompletionWithoutLock | 실패/옛연결/정상송신완료분류 |
 | [session_registry.hpp](../../TP_2023192003/TP_2023192003/session_registry.hpp) | SessionRegistry | ID별연결등록/조회/스냅샷 |
 
@@ -62,7 +62,7 @@ myserver.cpp의 disconnect는 중복 호출을 막고 월드 시야·섹터에�
 
 ## 동기화와 병목
 
-#64 지역 채팅은 기존 world gate 안에서 UTF-8/29byte/연결별500ms와같은지역ingame수신자를검사한다. 클라이언트제공id가아닌sessionId를사용한다. 패킷v5/크기는유지하며DB호출없음. [채팅 흐름](chat.md).
+#64/#65 지역 채팅은 기존 world gate 안에서 UTF-8/119byte/연결별500ms와같은지역ingame수신자를검사한다. 클라이언트제공id가아닌sessionId를사용한다. 패킷v6/message120으로확장했고DB호출없음. [채팅 흐름](chat.md).
 
 - transportMutex: 소켓제출/종료와송수신요청상태.
 - completionMutex: 같은연결의완료처리직렬화. 정상전체SEND/이미종료중SEND는부가게임작업없이해제하는빠른경로가있다.
@@ -73,4 +73,4 @@ IOCP가 잠금 경합·느린 DB·잘못된 세션 수명을 자동으로 해결
 
 ## #53 귀환 요청과 native 부분 송신
 
-귀환은 v3에서 추가했고 현재 공유 패킷은 옷장 계약 v5다. C2S_P_TELEPORT(12)는 action/requestId, S2C_P_TRAVEL_RESULT(20)는 판정 결과다. 외형 요청21/결과22/변경23과 로그인 외형 조회·오류 처리는 [옷장](wardrobe.md), 귀환은 [전환 흐름](travel.md), 지형은 [청크/범위 계약](field-chunks.md)을 참조한다. 이는 OS 송신 완료와 다른 앱 응답이다. native PacketOutbox의 부분 송신 재시도는 서버 IOCP의 부분 송신 오류 정책을 바꾸지 않는다.
+귀환은 v3에서 추가했고 현재 공유 패킷은 옷장 계약 v6다. C2S_P_TELEPORT(12)는 action/requestId, S2C_P_TRAVEL_RESULT(20)는 판정 결과다. 외형 요청21/결과22/변경23과 로그인 외형 조회·오류 처리는 [옷장](wardrobe.md), 귀환은 [전환 흐름](travel.md), 지형은 [청크/범위 계약](field-chunks.md)을 참조한다. 이는 OS 송신 완료와 다른 앱 응답이다. native PacketOutbox의 부분 송신 재시도는 서버 IOCP의 부분 송신 오류 정책을 바꾸지 않는다.
