@@ -33,6 +33,8 @@
 
 ## 명세 목록
 
+- [탐험 수첩](specs/field-journal.md): 방문/조사/체험 읽기 전용 요약·다음 장소/좌표 거리·J 입력 경계.
+
 - [장소 상호작용](specs/field-interaction.md):0.9초연출·취소/쿨다운/접속중완료bit.
 
 - [필드 콘텐츠3큐](specs/field-content-queue.md), [탐험지 조사](specs/field-investigation.md): E조사→장소연출→수첩 순차실행.
