@@ -1,5 +1,17 @@
 # AI 활용 기록
 
+## 2026-11-17 — #64 지역 채팅·프로필 공간 배치
+
+사용자는 채팅 추가와 왼쪽 프로필보다 공간상 위로 이동하는 배치를 승인했다. 주 에이전트가 기존 ASCII/고정좌표·전역broadcast/미등록players 삽입을 확인하고 이슈/사전명세·최신main feature브랜치에서 UTF-8/지역/rate/기록창·프로필 stack을 구현했다. 기존30byte 패킷을 유지하기 위해29 UTF-8 byte 제한을 표시했고 새DB/계정/부하·보상은 제외했다. 기존 프로필은 항상 표시여서 P표시/숨김을 추가했고 몬스터0~5개도 같은하단stack으로 모아 전체top을 따르게했다. 이 통합범위는명세/이슈에갱신한다. 주민대사/필드활동확장은이번채팅작업과분리해후속으로남긴다.
+
+Impeccable 기존UI확장·실제렌더검사 지침으로cream/brown/neodgm와원본이미지를보존했다. 초기새UTF-8 CPP를MSVC949로읽어빌드실패, 새파일만BOM보강후통과했다. 기존client.cpp/myserver.cpp는CP949 roundtrip검사후보존패치했고한글재인코딩을하지않았다. 최초6이미지직접열람후메시지좌측정렬·지역/29B안내·오류한글표기와다중프로필통합을보강했다.
+
+52회귀/별도7명령/서버·클라Debug/Release4빌드exit0. 실제TCP/IOCP4worker+DB대역으로sender/지역분리/rate/NUL을검사했다. 최종12PNG직접열람중좌측글자잘림을확인해완료보류. `chat_finish_review`에원요구/명세·코드·12PNG/기존참조·실행과한계를전달해독립검토를맡겼다. 검토결과·수정채택/최종증거는후속기록한다. 실제DB·부하·일반exe수동OS·Windows IME조합은미검증이다.
+
+독립검토는채팅origin/몬스터raster내부글자경계/빈내프로필데이터/오류·최대입력·통합HUD증거4항목을지적했고모두채택했다. placeLine의glyph원점을좌측으로고치고최대이름+29byte의globalbounds assertion,몬스터숫자필드bounded alignment를추가했다. 프로필데이터는AVATAR_INFO/MONSTER_NEAR 수신으로채웠고로그인명문자열도설정했다. fixture추가중drawPrompt인자와Windows near매크로이름충돌로빌드실패했고인자/변수이름을고쳤다. 재열람에서가변MONSTER_NEAR size가고정sizeof여서거부된경우와숨긴창말풍선readback검은이미지를발견해증거를보내지않았다. size/수신개수assert를고치고OBJECT생산draw에선택RenderTarget을추가해같은경로의RenderTexture출력으로교체했다. 전체최종묶음재실행과동일검토자verdict를진행한다.
+
+최종후속: 21장전부직접확인/말풍선배우의단일48프레임초기화도보강했다. 같은독립검토자가21장전부열람후4항목모두resolved/ship 판정. 최종52회귀/추가7명령/제품4빌드exit0,마지막fixture수정후채팅·worker재검사exit0. 구조13문서115링크/원본21hash/CP949roundtrip/diff통과. 새정체성/이미지/DESIGN변경없이기존cream/brown/neodgm를유지했고임시패치스크립트는적용후제거했다. 다음은실제Windows IME·수동다중클라사용성검증과채팅길이/스크롤확장검토,주민대사·필드콘텐츠는별도후속이다. 이슈 #64에커밋/원격main·branch-d/종료증거를기록한다.
+
 ## 2026-11-17 — #63 주민 큐3/3
 
 #62 main cff947e 원격확인·정리·종료뒤주에이전트가마지막의뢰에자동착수했다. Boss대화의명시적수락→같은접속Record의1/2번방문→근접보고4상태와보상없음·접속중한계를구현했다. 이미방문한기록인정·누른채Q의연속수락/보고방지·타주민/미완료보고거부·끊김/새로그인초기화를검사한다. Impeccable 기존UI국소확장을적용했고NPCidle/산책/원본은유지했다.

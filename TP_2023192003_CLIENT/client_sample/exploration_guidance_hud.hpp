@@ -10,7 +10,7 @@ inline void drawExplorationGuidance(sf::RenderTarget& target,const sf::Font& fon
         else if(guide.distance(p)>=0)value+=sf::String(guide.direction(p))+L" | \uc88c\ud45c \uac70\ub9ac "+std::to_string(guide.distance(p));
         else return;
     } else value=L"\ud0d0\ud5d8 \uc9c0\uc810 5\uacf3\uc744 \ubaa8\ub450 \ub458\ub7ec\ubd24\uc5b4\uc694!";
-    sf::RectangleShape panel({580,26});panel.setPosition(160,632);panel.setFillColor({255,248,228});
+    sf::RectangleShape panel({490,26});panel.setPosition(395,632);panel.setFillColor({255,248,228});
     panel.setOutlineColor({130,86,54});panel.setOutlineThickness(2);target.draw(panel);
     sf::Text text(value,font,17);text.setFillColor({72,46,37});centerText(text,panel.getGlobalBounds());target.draw(text);
 }

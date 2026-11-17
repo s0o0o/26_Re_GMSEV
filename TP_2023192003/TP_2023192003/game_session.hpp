@@ -32,6 +32,7 @@ public:
     MonsterState monster;
     world_travel::Journal travel;
     wardrobe::Journal wardrobe;
+    std::uint64_t nextChatAt=0; // WorldStateLock protects per-connection rate limit.
 
     GAMESESSION() = default;
     GameObjectState snapshotObject() const { WorldStateLock lock; return object; }

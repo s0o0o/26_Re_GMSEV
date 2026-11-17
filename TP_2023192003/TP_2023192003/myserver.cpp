@@ -457,6 +457,7 @@ void disconnect(const std::shared_ptr<GAMESESSION>& session) {
 // 받았으면 보낼 준비
 #include "region_transition.hpp"
 #include "wardrobe_server.hpp"
+#include "../../shared/chat_rules.hpp"
 
 void processPacket(const std::shared_ptr<GAMESESSION>& session, char* packetFromC) {
 	//cout << "날아온 아이디 확인용 :" << sessionId << endl;
@@ -769,21 +770,18 @@ void processPacket(const std::shared_ptr<GAMESESSION>& session, char* packetFrom
 		else cout << "업뎃실패. " << endl;
 	}
 	break;
-	case C2S_P_CHAT:
-	{
-		cout << " 채팅 받음" << endl;
-		cs_packet_chat* p = reinterpret_cast<cs_packet_chat*>(packetFromC);
-
-		char* messs = p->message;
-		cout << p->id << "로부터 온 도착 메시지 :" << p->message << endl;
-
-		for (auto& [id, client] : clients.snapshot()) {
-			if (client && client->_state == ST_INGAME) {
-				client->sendChatPacket(sessionId, messs);
-			}
-		}
-	}
-	break;
+    case C2S_P_CHAT: {
+        const auto& p=*reinterpret_cast<const cs_packet_chat*>(packetFromC);
+        std::string message;
+        if(!chat_rules::decode(p.message,message) || !chat_rules::admit(GetTickCount64(),session->nextChatAt))break;
+        for(const auto& entry:clients.snapshot()) {
+            const auto& client=entry.second;
+            if(client && entry.first<MAX_USER && client->_state==ST_INGAME && !client->disconnectStarted
+                && client->object.location().region==session->object.location().region)
+                client->sendChatPacket(sessionId,message.c_str());
+        }
+        break;
+    }
     case C2S_P_APPEARANCE:
         processAppearanceRequest(*session,*reinterpret_cast<const cs_packet_appearance*>(packetFromC),stateGuard);
         break;

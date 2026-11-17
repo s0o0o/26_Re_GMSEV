@@ -62,6 +62,8 @@ myserver.cpp의 disconnect는 중복 호출을 막고 월드 시야·섹터에�
 
 ## 동기화와 병목
 
+#64 지역 채팅은 기존 world gate 안에서 UTF-8/29byte/연결별500ms와같은지역ingame수신자를검사한다. 클라이언트제공id가아닌sessionId를사용한다. 패킷v5/크기는유지하며DB호출없음. [채팅 흐름](chat.md).
+
 - transportMutex: 소켓제출/종료와송수신요청상태.
 - completionMutex: 같은연결의완료처리직렬화. 정상전체SEND/이미종료중SEND는부가게임작업없이해제하는빠른경로가있다.
 - WorldStateLock: 위치·시야·전투주변의월드일관성. 순서는연결완료→world→NPC/view/sector/transport.

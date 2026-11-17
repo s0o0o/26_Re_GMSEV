@@ -2,6 +2,9 @@
 #include "window_display.hpp"
 #include "ui_alignment.hpp"
 #include "profile_layout.hpp"
+#include "chat_panel.hpp"
+ChatPanel& chatPanel() { static ChatPanel panel; return panel; }
+sf::Clock chatFrameClock;
 #include <SFML/Graphics.hpp>
 #include <SFML/Network.hpp>
 #include <iostream>
@@ -56,7 +59,7 @@ HamsterCustomizer& hamsterCustomizer() {
 
 sf::TcpSocket s_socket;
 void gameConnectionLost() {
-    extern bool isChatMode; isChatMode=false;
+    extern bool isChatMode; isChatMode=false; chatPanel().reset();
     townWalkQuest.reset(); explorationGuide.reset(); townDialoguePanel().reset(); fieldDiscovery.reset(); fieldMapPanel().reset(); wardrobeState.disconnect(); travelState.disconnect(); gameOutbox.clear(); s_socket.disconnect();
 }
 bool flushGamePackets() {
@@ -216,12 +219,13 @@ public:
         position=next;
     }
 
-	void draw() {
+	void draw(sf::RenderTarget* output=nullptr) {
+        auto& target=output?*output:*g_window;
 		if (false == m_showing) return;
         if(town_npcs::isResident(_monType)) {
             const auto seconds=combatClock.getElapsedTime().asSeconds();
             const auto position=townMotion.sample(seconds);
-            townNpcRenderer().draw(*g_window,_monType,(position.x-g_left_x)*50.f,(position.y-g_top_y)*50.f,gameFont(),name,seconds,townMotion.facing);
+            townNpcRenderer().draw(target,_monType,(position.x-g_left_x)*50.f,(position.y-g_top_y)*50.f,gameFont(),name,seconds,townMotion.facing);
             return;
         }
 		float rx = (position.x - g_left_x) * TILE_WIDTH + 1;
@@ -229,18 +233,18 @@ public:
 		        if (id >= 0 && id < MAX_USER) {
             world_character::place(m_sprite,rx-1.f,ry-1.f);
         } else m_sprite.setPosition(rx,ry);
-		g_window->draw(m_sprite);
+		target.draw(m_sprite);
 		auto size = m_name.getGlobalBounds();
 		if (m_mess_end_time < chrono::system_clock::now()) {
 			if (id != g_myid) {
                 if(id>=0 && id<MAX_USER) centerText(m_name,{rx-56.f,ry-51.f,160.f,20.f});
                 else m_name.setPosition(rx + 32 - size.width / 2, ry - 25);
-				g_window->draw(m_name);
+				target.draw(m_name);
 			}
 		}
 		else {
-			m_chat.setPosition(30,550);
-			g_window->draw(m_chat);
+			centerText(m_chat,{std::max(0.f,std::min(660.f,rx-100.f)),std::max(0.f,ry-65.f),240.f,40.f});
+			target.draw(m_chat);
 		}
 	}
 
@@ -263,8 +267,8 @@ public:
 	void set_chat(int id, const char str[]) {
 		m_chat.setFont(gameFont());
 		string sss = to_string(id) + " : " + str;
-		m_chat.setString(str);
-		m_chat.setFillColor(sf::Color::Blue);
+		m_chat.setString(fromUtf8(str)); m_chat.setCharacterSize(16); m_chat.setOutlineThickness(2); m_chat.setOutlineColor({255,248,228});
+		m_chat.setFillColor({72,46,37});
 		m_chat.setStyle(sf::Text::Regular);
 		m_mess_end_time = chrono::system_clock::now() + chrono::seconds(3);
 	}
@@ -610,21 +614,14 @@ void ProcessPacket(char* ptr)
 		}
 		break;
 	}
-	case S2C_P_CHAT:
-	{
-		cout << "S2C_P_CHAT 도착 " << endl;
-		sc_packet_chat* my_packet = reinterpret_cast<sc_packet_chat*>(ptr);
-		int other_id = my_packet->id;
-
-		if (other_id == g_myid) {
-			avatar.set_chat(my_packet->id,my_packet->message);
-		}
-		else {
-			players[other_id].set_chat(my_packet->id,my_packet->message);
-		}
-
-		break;
-	}
+    case S2C_P_CHAT: {
+        const auto& packet=*reinterpret_cast<const sc_packet_chat*>(ptr);
+        std::string message;if(!chat_rules::decode(packet.message,message))break;
+        sf::String sender=std::to_string(packet.id);
+        if(packet.id==g_myid){sender=fromUtf8(avatar.name);avatar.set_chat(packet.id,message.c_str());}
+        else {auto it=players.find(packet.id);if(it!=players.end()){sender=fromUtf8(it->second.name);it->second.set_chat(packet.id,message.c_str());}}
+        chatPanel().receive(sender,message);break;
+    }
 	case S2C_P_AVATAR_LOGIN_OK:
 	{
 		cout << " S2C_P_AVATAR_LOGIN_OK 이거 날라옴!!" << endl;
@@ -820,11 +817,60 @@ void initStartScreenInit() {
 	idInputText.setPosition(250, 300);
 }
 
-void drawChat() {
-	g_window->draw(chatSprite);
-	g_window->draw(chatText);
-}
+void drawProfileHud(sf::RenderTarget& out) {
+	if(chatPanel().profileVisible) out.draw(profileSprite); // 프로필그리는거
 
+	for (int i = 0; i < nearMonCnt; ++i) {
+		if (nearMonsters[i].monType == 1)
+			monProfileSprite.setTexture(*monProfile);
+		else if (nearMonsters[i].monType == 2)
+			monProfileSprite.setTexture(*hunsterProfile);
+
+		const auto slot=profile_layout::monsterSlot(chatPanel().profileVisible,i);
+        const auto textureSize=monProfileSprite.getTexture()->getSize();
+        monProfileSprite.setScale(slot.width/textureSize.x,slot.height/textureSize.y);
+        monProfileSprite.setPosition(slot.left,slot.top);
+		out.draw(monProfileSprite); // 프로필그리는거
+
+
+		monHpText[i].setFont(gameFont());
+		monHpText[i].setFillColor(sf::Color::Black);
+		monHpText[i].setStyle(sf::Text::Regular);
+		monHpText[i].setCharacterSize(16); centerText(monHpText[i],{slot.left+114,slot.top+36,80,18});
+
+		monIdText[i].setFont(gameFont());
+		monIdText[i].setFillColor(sf::Color::Black);
+		monIdText[i].setStyle(sf::Text::Regular);
+		monIdText[i].setCharacterSize(16); centerText(monIdText[i],{slot.left+114,slot.top+6,80,18});
+
+		out.draw(monHpText[i]);
+		out.draw(monIdText[i]);
+	}
+	// 플필폰트
+	if(chatPanel().profileVisible) {
+	profileFontInit();
+	out.draw(nameText);
+	out.draw(seedNumText);
+	out.draw(hpText);
+	out.draw(maxHpText);
+	out.draw(levelText);
+    }
+}
+bool handleChatInput(const sf::Event& event,sf::Vector2f point) {
+    const bool consumed=chatPanel().handle(event,point,
+        townDialoguePanel().visible() || fieldMapPanel().visible() || wardrobeState.visible() || travelState.pending(),
+        travelState.status!=world_travel::ClientStatus::Disconnected,GetTickCount64(),[](const std::string& message) {
+            cs_packet_chat packet{};packet.size=sizeof(packet);packet.type=C2S_P_CHAT;packet.id=avatar.id;
+            std::memcpy(packet.message,message.data(),message.size());
+            if(!gameOutbox.enqueue(&packet,sizeof(packet)))return false;
+            return flushGamePackets();
+        });
+    isChatMode=chatPanel().editing;return consumed;
+}
+void drawChat() {
+    chatPanel().place(chatFrameClock.restart().asSeconds(),true,profile_layout::stackTop(chatPanel().profileVisible,nearMonCnt,profileSprite.getGlobalBounds().top));
+    chatPanel().draw(*g_window,gameFont(),travelState.status!=world_travel::ClientStatus::Disconnected);
+}
 
 bool temp = true;
 void client_main()
@@ -861,38 +907,8 @@ void client_main()
 	char buf[100];
 	sprintf_s(buf, "(%d, %d)", avatar.position.x, avatar.position.y);
 
-	g_window->draw(profileSprite); // 프로필그리는거
+    drawProfileHud(*g_window);
 
-	for (int i = 0; i < nearMonCnt; ++i) {
-		if (nearMonsters[i].monType == 1)
-			monProfileSprite.setTexture(*monProfile);
-		else if (nearMonsters[i].monType == 2)
-			monProfileSprite.setTexture(*hunsterProfile);
-
-		monProfileSprite.setPosition(0 + 15, 15 + 125 * i);
-		g_window->draw(monProfileSprite); // 프로필그리는거
-
-
-		monHpText[i].setFont(gameFont());
-		monHpText[i].setFillColor(sf::Color::Black);
-		monHpText[i].setStyle(sf::Text::Regular);
-		monHpText[i].setPosition(0 + 250, 85 + 125 * i);
-
-		monIdText[i].setFont(gameFont());
-		monIdText[i].setFillColor(sf::Color::Black);
-		monIdText[i].setStyle(sf::Text::Regular);
-		monIdText[i].setPosition(0 + 250, 20 + 125 * i);
-
-		g_window->draw(monHpText[i]);
-		g_window->draw(monIdText[i]);
-	}
-	// 플필폰트
-	profileFontInit();
-	g_window->draw(nameText);
-	g_window->draw(seedNumText);
-	g_window->draw(hpText);
-	g_window->draw(maxHpText);
-	g_window->draw(levelText);
 
 
 
@@ -947,7 +963,7 @@ void client_main()
 		g_window->draw(chaseSprite);
 	}
 
-	if (isChatMode) drawChat();
+	drawChat();
 
 
 	text.setString(buf);
@@ -1054,6 +1070,7 @@ void drawCustomizationScreen(sf::RenderTarget& window) {
 }
 
 void beginLoginConnection(unsigned short port = GAME_PORT) {
+    chatPanel().reset(); isChatMode=false;
     townWalkQuest.reset(); explorationGuide.reset(); townDialoguePanel().reset(); fieldDiscovery.reset(); fieldMapPanel().reset(); wardrobeState={}; travelState={}; gameOutbox.clear(); travelPanel.pressed=false; travelPanel.rDown=false;
     s_socket.disconnect();
     in_packet_size = saved_packet_size = 0;
@@ -1196,53 +1213,8 @@ int main()
 
                 if(handleTravelInput(event,window.mapPixelToCoords(pixel),isChatMode)) continue;
 
-				if (event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::Tab) {
-					isChatMode = !isChatMode;
-					if (isChatMode)
-						cout << "채팅 모드 ON" << endl;
-					else {
-						cout << "채팅 모드 OFF" << endl;
-						chatInputStr.clear();
-					}
-				}
-
-				// 채팅 모드일 때 문자 입력 처리
-				if (isChatMode) {
-					if (event.type == sf::Event::TextEntered) {
-						if (event.text.unicode == '\b' && !chatInputStr.empty()) {
-							chatInputStr.pop_back();  // 백스페이스
-						}
-						else if (event.text.unicode >= 32 && event.text.unicode < 128) {
-							chatInputStr += static_cast<char>(event.text.unicode);  // ASCII 문자만
-						}
-
-						chatText.setString("> " + chatInputStr);
-					}
-					else if (event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::Enter) {
-						if (!chatInputStr.empty()) {
-							cs_packet_chat p;
-							p.size = sizeof(p);
-							p.type = C2S_P_CHAT;
-							p.id = avatar.id;
-							//strcpy_s(p.message, chatInputStr.c_str());
-							
-							strncpy_s(p.message, sizeof(p.message), chatInputStr.c_str(), _TRUNCATE);
-							p.message[MAX_CHAT_LENGTH - 1] = '\0';
-							std::cout << "보내는 사람: " << p.id << std::endl;
-							std::cout << "보내는 메시지: " << chatInputStr << std::endl;
-							std::cout << "패킷에 복사된 내용: " << p.message << std::endl;
-							cout << p.message << endl;
-							send_packet(&p);
-
-							chatInputStr.clear();
-						}
-						isChatMode = false;
-
-					}
-				}
-
-
-				if (not isChatMode and event.type == sf::Event::KeyPressed) {
+                if(handleChatInput(event,window.mapPixelToCoords(pixel))) continue;
+                if (not isChatMode and event.type == sf::Event::KeyPressed) {
 					int direction = -1;
 					switch (event.key.code) {
 					case sf::Keyboard::Left:    // 왼

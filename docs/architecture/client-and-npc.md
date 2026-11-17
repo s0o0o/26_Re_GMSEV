@@ -1,5 +1,7 @@
 # 클라이언트 화면과 NPC/Lua
 
+#64: [채팅 구조](chat.md)의 ChatPanel/handleChatInput/drawProfileHud가 기존 ASCII·고정좌표 채팅을 대체한다. 내 프로필 P 표시/숨김과 몬스터0~5개 stackTop에 따라 채팅창 실제 y가 이동한다. 주민prompt/탐험HUD는 오른쪽으로 분리한다. 원본이미지/NPC idle·산책은 변경하지 않는다.
+
 근접주민대화 #61: shared/town_dialogue.hpp는정식ID/type·현재위치·같은Clubhouse·walkable/거리2·중간통로로대상을선택한다. client의townDialogueCandidates는live players의주민3개ID만조회하며정적home좌표로대화하지않는다. town_dialogue_panel.hpp는E/Enter/클릭/닫기·2페이지·idle portrait를담당한다. handleTownDialogueInput이필드지도/옷장/귀환보다앞서대화중입력을소비하고상호모달을차단한다. drawTownDialogueUi/input마다LEAVE·범위이탈을정리하고moveAvatar/끊김/새로그인에서도닫는다. 서버NPC산책/수면은계속되며로컬안내대사는LLM/Lua생성이나서버대화권위가아니다.
 
 접속 중 탐험 #60: `field_discovery.hpp::Record`는 active+5비트 상태만 가지며 서버확정 본인 AVATAR_INFO/ENTER/MOVE 처리 뒤 observe한다. AVATAR_INFO가 세션기록을활성화하고 중복정보는기록을지우지않는다. 단순moveAvatar/키입력·타플레이어이동에서는기록하지않는다. 유효SunnyPeak walkable타일·지점Chebyshev거리2이내를방문으로본다. 거점전환은유지,gameConnectionLost/beginLoginConnection은reset. 지도는같은Record의count/visited를표시하며서버·DB·패킷·보상은변경하지않는다. 메모리기록의한계를화면에명시한다.

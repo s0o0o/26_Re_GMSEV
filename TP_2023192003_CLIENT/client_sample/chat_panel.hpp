@@ -1,0 +1,88 @@
+﻿#pragma once
+#include <SFML/Graphics.hpp>
+#include <deque>
+#include <cmath>
+#include "../../shared/chat_rules.hpp"
+#include "ui_alignment.hpp"
+class ChatPanel {
+    bool tabDown_=false,enterDown_=false,pDown_=false,placed_=false;
+    float y_=0;
+    std::uint64_t nextSend_=0;
+    std::string draft_;
+    sf::String notice_;
+    std::deque<sf::String> lines_;
+public:
+    static void placeLine(sf::Text& text,sf::FloatRect area) {
+        centerText(text,area);const auto b=text.getLocalBounds();
+        text.setOrigin(b.left,b.top+b.height/2.f);text.setPosition(area.left,std::round(area.top+area.height/2.f));
+    }
+    bool editing=false,profileVisible=true;
+    void reset(){*this=ChatPanel{};}
+    const auto& lines()const{return lines_;}
+    const auto& draft()const{return draft_;}
+    sf::FloatRect bounds()const{return {15,y_,360,174};}
+    float targetY(bool profile,float profileTop=664)const{return (profile?profileTop-12.f:785.f)-174.f;}
+    void place(float dt,bool profile,float profileTop=664) {
+        const float target=targetY(profile,profileTop);
+        if(!placed_){y_=target;placed_=true;}
+        else {y_+=(target-y_)*(1.f-std::exp(-std::min(dt,.1f)*28.f));if(std::abs(y_-target)<.1f)y_=target;}
+    }
+    void receive(const sf::String& name,const std::string& message) {
+        if(!chat_rules::valid(message))return;
+        lines_.push_back(name+L": "+sf::String::fromUtf8(message.begin(),message.end()));
+        while(lines_.size()>64)lines_.pop_front();
+    }
+    template<class Send> bool handle(const sf::Event& e,sf::Vector2f point,bool blocked,bool connected,std::uint64_t now,Send send) {
+        if(e.type==sf::Event::KeyReleased) {
+            if(e.key.code==sf::Keyboard::Tab)tabDown_=false;
+            if(e.key.code==sf::Keyboard::Enter)enterDown_=false;
+            if(e.key.code==sf::Keyboard::P)pDown_=false;
+        }
+        if(e.type==sf::Event::LostFocus){editing=false;draft_.clear();tabDown_=enterDown_=pDown_=false;return false;}
+        if(blocked || !connected){editing=false;draft_.clear();return false;}
+        if(e.type==sf::Event::KeyPressed && e.key.code==sf::Keyboard::P && !editing) {
+            if(!pDown_)profileVisible=!profileVisible;pDown_=true;return true;
+        }
+        if(e.type==sf::Event::KeyPressed && e.key.code==sf::Keyboard::Tab) {
+            if(!tabDown_){editing=!editing;draft_.clear();notice_.clear();}tabDown_=true;return true;
+        }
+        if(e.type==sf::Event::MouseButtonReleased && e.mouseButton.button==sf::Mouse::Left && bounds().contains(point)) {
+            editing=true;notice_.clear();return true;
+        }
+        if(!editing)return false;
+        if(e.type==sf::Event::KeyPressed && e.key.code==sf::Keyboard::Escape){editing=false;draft_.clear();return true;}
+        if(e.type==sf::Event::TextEntered) {
+            notice_.clear();
+            auto cp=e.text.unicode;
+            if(cp==8)chat_rules::eraseLast(draft_);
+            else if(cp>=32 && !(cp>=127 && cp<=159) && cp!=0x2028 && cp!=0x2029 && cp<=0x10ffff && !(cp>=0xd800 && cp<=0xdfff)) {
+                auto bytes=sf::String(cp).toUtf8();std::string add(bytes.begin(),bytes.end());
+                if(draft_.size()+add.size()<=chat_rules::maxBytes)draft_+=add;
+                else notice_=L"최대 29바이트 · 지우고 입력해 줘";
+            }
+        }
+        if(e.type==sf::Event::KeyPressed && e.key.code==sf::Keyboard::Enter) {
+            if(!enterDown_ && chat_rules::valid(draft_)) {
+                if(now<nextSend_)notice_=L"잠깐! 0.5초 뒤에 보내 줘";
+                else if(send(draft_)){nextSend_=now+500;draft_.clear();editing=false;notice_.clear();}
+                else notice_=L"전송 불가 · 연결을 확인해 줘";
+            }
+            enterDown_=true;
+        }
+        return true;
+    }
+    void draw(sf::RenderTarget& out,const sf::Font& font,bool connected)const {
+        auto box=[&](sf::FloatRect r,sf::Color color){sf::RectangleShape shape({r.width,r.height});shape.setPosition(r.left,r.top);shape.setFillColor(color);shape.setOutlineColor({122,81,50});shape.setOutlineThickness(1);out.draw(shape);};
+        auto text=[&](sf::String s,sf::FloatRect r,unsigned size){sf::Text t(s,font,size);t.setFillColor({72,46,37});placeLine(t,r);out.draw(t);};
+        box(bounds(),{255,248,228,242});
+        text(connected?L"지역 채팅 · 29B · Tab 입력 / P 프로필":L"지역 채팅  ·  연결 끊김",{25,y_+5,340,20},14);
+        if(lines_.empty())text(L"같은 지역의 친구들과 이야기해 봐!",{25,y_+48,340,24},14);
+        const std::size_t start=lines_.size()>5?lines_.size()-5:0;
+        for(std::size_t i=start;i<lines_.size();++i)text(lines_[i],{25,y_+29+20.f*(i-start),340,18},15);
+        box({24,y_+132,342,32},editing?sf::Color(242,215,159):sf::Color(255,248,228));
+        sf::String input=editing?sf::String::fromUtf8(draft_.begin(),draft_.end()):sf::String(L"Tab / 클릭으로 대화하기");
+        if(editing && draft_.empty())input=L"입력 · Enter 전송 / Esc 취소";
+        if(!notice_.isEmpty())input=notice_;
+        text(input,{31,y_+136,328,24},14);
+    }
+};
