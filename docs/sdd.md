@@ -33,6 +33,8 @@
 
 ## 명세 목록
 
+- [의뢰 추적선택](specs/resident-quest-tracking.md): Active/Ready수동고정·자동복귀·공통J/HUD Goal.
+
 - [주민 의뢰 사용성5큐](specs/quest-usability-queue.md), [의뢰 목록](specs/resident-quest-log.md): J읽기전용탭→추적→지도→필터→통합검증.
 
 - [Pashmina 조사·체험 의뢰](specs/pashmina-experience-quest.md): 독립3/4조건·주민별 문맥·Boss 우선 수첩/HUD 안내.

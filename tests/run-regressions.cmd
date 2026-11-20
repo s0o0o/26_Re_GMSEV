@@ -138,7 +138,7 @@ cl /nologo /EHsc /std:c++17 tests\field_discovery_test.cpp /Fo:build\tests\ /Fe:
 if not "%errorlevel%"=="0" goto failed
 build\tests\field_discovery_test.exe
 if not "%errorlevel%"=="0" goto failed
-for %%T in (town_dialogue exploration_guidance town_walk_quest chat_rules field_investigation field_interaction field_journal resident_experience_quest resident_experience_guidance pashmina_experience resident_quest_log) do (
+for %%T in (town_dialogue exploration_guidance town_walk_quest chat_rules field_investigation field_interaction field_journal resident_experience_quest resident_experience_guidance pashmina_experience resident_quest_log resident_quest_tracking) do (
  cl /nologo /EHsc /std:c++17 tests\%%T_test.cpp /Fo:build\tests\ /Fe:build\tests\%%T_test.exe
  if errorlevel 1 goto failed
  if not errorlevel 0 goto failed
@@ -146,7 +146,7 @@ for %%T in (town_dialogue exploration_guidance town_walk_quest chat_rules field_
  if errorlevel 1 goto failed
  if not errorlevel 0 goto failed
 )
-echo All 59 regression programs passed. Run tests\run-resident-quest-log.cmd and other GPU/window checks separately.
+echo All 60 regression programs passed. Run tests\run-resident-quest-tracking.cmd and other GPU/window checks separately.
 popd
 exit /b 0
 :failed

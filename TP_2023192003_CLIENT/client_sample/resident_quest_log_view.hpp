@@ -3,6 +3,7 @@
 #include "../../shared/resident_quest_log.hpp"
 struct ResidentQuestLogView {
     inline static const sf::FloatRect navigation{415,617,260,26};
+    inline static const sf::FloatRect trackButton{415,556,280,26},autoButton{710,556,145,26};
     static sf::FloatRect row(int index){return {415,265.f+index*70.f,440,62};}
     static const wchar_t* title(int id){return id==1?L"Boss · 두 곳 산책":id==2?L"Boss · 꽃길과 강가":L"Pashmina · 절벽과 그루터기";}
     static const wchar_t* label(resident_quest_log::Status s){using S=resident_quest_log::Status;switch(s){case S::Locked:return L"잠김";case S::Available:return L"수락 가능";case S::Active:return L"진행 중";case S::Ready:return L"보고 준비";default:return L"보고 완료";}}
@@ -20,9 +21,10 @@ struct ResidentQuestLogView {
         UI::text(out,font,sf::String(L"진행 중 ")+std::to_string(active)+L" · 보고 완료 "+std::to_string(done)+L"/3",{415,225,440,24},18);
         for(int i=0;i<3;++i){auto r=row(i);if(i==selected)UI::box(out,r,{242,212,155});const auto& q=log.rows[i];
             UI::text(out,font,title(q.id),{r.left+8,r.top,280,30},18);UI::text(out,font,label(q.status),{r.left+294,r.top,140,30},17);
-            UI::text(out,font,sf::String(q.id==1?L"방문 ":L"조사·체험 ")+std::to_string(q.progress)+L"/2",{r.left+8,r.top+29,425,25},15);}
+            UI::text(out,font,sf::String(q.id==1?L"방문 ":L"조사·체험 ")+std::to_string(q.progress)+L"/2",{r.left+8,r.top+29,280,25},15);
+            if(log.goal.questId==q.id)UI::text(out,font,log.pinned?L"수동 추적":L"자동 안내",{r.left+294,r.top+29,140,25},13);}
         UI::text(out,font,detail(log.rows[selected]),{415,490,440,58},17);
-        UI::text(out,font,L"방향키 / 행 클릭: 설명 선택",{415,556,440,24},16);
+        const bool enabled=resident_quest_log::running(log.rows[selected].status);UI::box(out,trackButton,enabled?sf::Color(242,212,155):sf::Color(221,213,191));UI::text(out,font,L"[Enter] 선택 의뢰 추적",trackButton,15);UI::box(out,autoButton,{242,212,155});UI::text(out,font,L"[A] 자동",autoButton,15);
         UI::text(out,font,L"읽기 전용 · 재접속 초기화 · 보상 없음",{415,589,440,22},14);
         UI::box(out,navigation,{242,212,155});UI::text(out,font,L"[Tab] 탐험 기록",navigation,15);
         UI::box(out,close,{242,212,155});UI::text(out,font,L"닫기",close,18);
