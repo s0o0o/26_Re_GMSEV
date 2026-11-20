@@ -1,5 +1,7 @@
 # 빌드·실행·검증 안내
 
+#77 최종 의뢰 사용성 검증은 `tests/run-content-queue-checks.cmd`를 VS x64 환경에서 실행한다. 전체62 회귀 → 관련17 명령 → 클라 Debug/Release이며 로그는 `build/tests/resident-queue-*.log`다. 기존 필터 UI 검사에 누른 중 F/선택 소멸 취소와 각각의 접속 초기화 전제 assertion을 추가했다. [범위와 실행 증거](../specs/quest-usability-boundaries.md). localhost TCP 허용이 필요하며 실제 DB 검사가 아니다.
+
 갱신: 2026-11-18, #65. [구조 입구](README.md).
 
 #65는패킷v6/message120이므로서버·일반클라·stress GUI를함께빌드한다. 전체회귀52개와별도run-chat의SFML문자열history/scroll검사를구분한다. DB없는Windows입력probe의실행절차/IME한계는 [긴채팅명세](../specs/chat-history.md), 현재데이터/렌더/scroll흐름은 [채팅구조](chat.md)를참고한다.

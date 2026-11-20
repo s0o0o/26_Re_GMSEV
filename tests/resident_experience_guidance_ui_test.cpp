@@ -8,6 +8,8 @@ int main(){const auto root=std::filesystem::current_path();std::filesystem::curr
     sf::Texture profile;assert(profile.loadFromFile("profile.png"));profileSprite.setTexture(profile);profileSprite.setPosition(15,664);nameText.setString("Ham");avatar.set_name("Ham");avatar.get_sprite().setTextureRect({48,0,48,48});
     sf::RenderWindow window(sf::VideoMode(900,800),"Experience guidance fixture",sf::Style::None);window.setVisible(false);g_window=&window;WindowDisplay::resize(window);travelState={};wardrobeState={};
     sc_packet_avatar_info info{};info.size=sizeof(info);info.type=S2C_P_AVATAR_INFO;info.id=7;info.region=2;info.x=32;info.y=32;info.hp=20;info.max_hp=80;info.level=3;info.seedNum=12;ProcessPacket(reinterpret_cast<char*>(&info));
+    // Production snapshot unlocks Boss experience only after the walk report.
+    field_discovery::Record prerequisite;prerequisite.start();prerequisite.observe({world_regions::Id::SunnyPeak,32,32});prerequisite.observe({world_regions::Id::SunnyPeak,90,96});townWalkQuest.reset();assert(townWalkQuest.accept(prerequisite,true));assert(townWalkQuest.report(prerequisite,true));questTracking.reset();pashminaExperienceQuest.reset();
     auto key=[&](sf::Keyboard::Key k,bool release=false){sf::Event e{};e.type=release?sf::Event::KeyReleased:sf::Event::KeyPressed;e.key.code=k;return handleFieldJournalInput(e,{-1,-1});};
     for(int mode=0;mode<5;++mode){fieldDiscovery.reset();fieldDiscovery.start();fieldInvestigationPanel().reset();fieldJournalPanel().reset();residentExperienceQuest.reset();auto& a=fieldInvestigationPanel().state;
         if(mode>=2){world_regions::Position p{world_regions::Id::SunnyPeak,32,32};fieldDiscovery.observe(p);a.open(p,true);a.close();}
