@@ -33,6 +33,8 @@
 
 ## 명세 목록
 
+- [체험 의뢰 수첩·안내](specs/resident-experience-guidance.md): 의뢰 목표행·다음 행동 우선순위와 기존 HUD 슬롯 공유.
+
 - [주민 체험 3큐](specs/resident-experience-queue.md), [Boss 후속 의뢰](specs/resident-experience-quest.md): 기존 산책 보고 이후 조사·체험과 주민 이야기 연결.
 
 - [탐험 수첩](specs/field-journal.md): 방문/조사/체험 읽기 전용 요약·다음 장소/좌표 거리·J 입력 경계.

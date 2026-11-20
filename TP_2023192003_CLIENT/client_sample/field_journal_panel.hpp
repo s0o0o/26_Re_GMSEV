@@ -1,6 +1,7 @@
 ﻿#pragma once
 #include "field_investigation_panel.hpp"
 #include "../../shared/field_journal.hpp"
+#include "resident_experience_hud.hpp"
 class FieldJournalPanel {
     bool open_=false,jDown_=false;int armed_=0,selected_=1;
 public:
@@ -8,7 +9,7 @@ public:
     static sf::FloatRect row(int id){return {415,285.f+(id-1)*40.f,440,38};}
     bool visible()const{return open_;}int selected()const{return selected_;}
     void reset(){open_=jDown_=false;armed_=0;selected_=1;}
-    bool handle(const sf::Event& e,sf::Vector2f mouse,bool active,bool blocked,const field_discovery::Record& record,const field_investigation::State& state){
+    bool handle(const sf::Event& e,sf::Vector2f mouse,bool active,bool blocked,const field_discovery::Record& record,const field_investigation::State& state,int preferredTarget=0){
         if(e.type==sf::Event::LostFocus){jDown_=false;armed_=0;}
         if(e.type==sf::Event::KeyReleased && e.key.code==sf::Keyboard::J)jDown_=false;
         bool fresh=false;if(e.type==sf::Event::KeyPressed && e.key.code==sf::Keyboard::J){fresh=!jDown_;jDown_=true;}
@@ -23,9 +24,9 @@ public:
         }
         if(e.type==sf::Event::MouseButtonPressed && e.mouseButton.button==sf::Mouse::Left)armed_=entry.contains(mouse)?1:0;
         bool click=false;if(e.type==sf::Event::MouseButtonReleased && e.mouseButton.button==sf::Mouse::Left){click=armed_==1 && entry.contains(mouse);armed_=0;}
-        if(fresh || click){open_=true;selected_=field_journal::next(record,state);if(!selected_)selected_=1;return true;}return false;
+        if(fresh || click){open_=true;selected_=preferredTarget>=1 && preferredTarget<=5?preferredTarget:field_journal::next(record,state);if(!selected_)selected_=1;return true;}return false;
     }
-    void draw(sf::RenderTarget& out,const sf::Font& font,world_regions::Position p,const field_discovery::Record& record,const field_investigation::State& state,bool disabled=false)const {
+    void draw(sf::RenderTarget& out,const sf::Font& font,world_regions::Position p,const field_discovery::Record& record,const field_investigation::State& state,bool disabled=false,const resident_experience_quest::State* quest=nullptr)const {
         if(!record.active())return;using UI=FieldInvestigationPanel;
         if(!open_){UI::box(out,entry,disabled?sf::Color(221,213,191):sf::Color(255,248,228));UI::text(out,font,L"[J] 탐험 수첩",entry,20);return;}
         UI::box(out,{395,170,490,490});UI::text(out,font,L"접속 중 탐험 수첩",{415,182,440,32},25);
@@ -37,7 +38,11 @@ public:
         sf::String next=L"다섯 곳의 체험 완료! 보상은 없어.";
         if(const auto id=field_journal::next(record,state)){const auto* l=field_investigation::byId(id);next=sf::String(L"다음 ")+std::to_string(id)+" "+l->name;
             const auto d=field_journal::distance(p,id);next+=d>=0?sf::String(L" · 좌표 거리 ")+std::to_string(d):sf::String(L" · R로 필드 이동");}
-        UI::text(out,font,next,{410,556,460,26},16);UI::text(out,font,L"읽기로 완료되지 않아 · 재접속 초기화",{410,589,460,22},14);
+        sf::String limit=L"읽기로 완료되지 않아 · 재접속 초기화";
+        if(quest){const auto goal=resident_experience_guidance::next(record.active(),*quest,state);
+            if(goal.kind!=resident_experience_guidance::Kind::None){next=L"의뢰: "+experienceNextText(goal,p);
+                limit=sf::String(L"체험 의뢰 ")+std::to_string(quest->progress(state))+L"/2 · 재접속 초기화 · 보상 없음";}}
+        UI::text(out,font,next,{410,556,460,26},16);UI::text(out,font,limit,{410,589,460,22},14);
         UI::text(out,font,L"J / Esc 닫기",{415,617,260,26},15);UI::box(out,closeButton,{242,212,155});UI::text(out,font,L"닫기",closeButton,18);
     }
 };
