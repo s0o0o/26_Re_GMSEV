@@ -4,6 +4,8 @@
 
 ## 탐험 수첩 #68
 
+#75 M지도도같은Snapshot.Goal을읽어방문/조사/체험target만ring으로강조한다. 이미방문한목표는방문완료를유지하고남은행동을별도로표시한다. Report는필드target0/링없음·해당주민R귀환/E/Q안내다. 의뢰없을때기존explorationGuide추천을유지한다. 지도읽기로진행/위치/송신을변경하지않는다. [지도계약](../specs/resident-quest-map.md).
+
 2026-11-21 #72: Boss/Pashmina 의뢰 선택은 owner의 guidedExperienceQuest()가 공통으로 담당하고 같은 선택을 J 목표행/수첩/HUD에 전달한다. Boss가 활성인 동안 우선, 완료 뒤 Pashmina의3 조사/4 체험 및 해당 주민 보고를 안내한다. 둘 다 미수락/보고완료면 기존 일반 추천이다. 별도 서버/DB 상태를 추가하지 않는다. 상세 책임은 [주민 구조](town-adventure.md)에 연결했다.
 
 2026-11-20 #70: `resident_experience_guidance::next`는 활성 후속 의뢰일 때 꽃길 조사1 → 강가 체험2 → Boss 보고를 반환한다. Available/Reported/비활성 접속이면 None으로 기존 일반 탐험 추천에 복귀한다. J를 열 때 preferredTarget으로 목표행을 선택하고, draw는 같은 읽기 전용 Goal을 다음행동/진행 문구로 사용한다. 의뢰가 있더라도 수첩 열람 자체는 기록을 바꾸지 않는다. HUD는 기존 하단 슬롯에서 후속 의뢰 → 원래 산책 의뢰 → 일반 안내 순이며 기존 모달/채팅/주민 근접 숨김 조건을 유지한다. [안내 계약](../specs/resident-experience-guidance.md).

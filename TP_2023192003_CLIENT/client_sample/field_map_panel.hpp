@@ -1,7 +1,9 @@
-#pragma once
+﻿#pragma once
 #include "ui_alignment.hpp"
 #include "../../shared/field_landmarks.hpp"
 #include "../../shared/field_discovery.hpp"
+#include "../../shared/resident_quest_map.hpp"
+#include "resident_experience_hud.hpp"
 #include <string>
 class FieldMapPanel {
     bool open_=false,mDown_=false,ready_=false;
@@ -68,11 +70,13 @@ public:
         box(target,entry,disabled?sf::Color(221,213,191):sf::Color(255,248,228));
         text(target,font,sf::String(L"[M] \uC9C0\uB3C4 ")+std::to_string(record.count())+"/5",entry,22);
     }
-    void draw(sf::RenderTarget& target,const sf::Font& font,world_regions::Position p,const field_discovery::Record& record={},int goal=0) {
+    void draw(sf::RenderTarget& target,const sf::Font& font,world_regions::Position p,const field_discovery::Record& record={},int goal=0,const resident_quest_log::Snapshot& log={}) {
         if(!open_) return;
+        const bool quest=log.active && log.goal.questId!=0;if(quest)goal=resident_quest_map::marker(log.goal);
         sf::RectangleShape dim({900,800});dim.setFillColor({25,24,19,155});target.draw(dim);
         box(target,{70,90,760,600},{255,248,228});
         text(target,font,L"Sunny Peak \uD0D0\uD5D8 \uC9C0\uB3C4",{90,105,720,36},27);
+        if(quest)text(target,font,sf::String(log.pinned?L"추적: ":L"의뢰: ")+questGoalText(log.goal,p),{90,141,720,18},14);
         if(prepare()) {
             sf::Sprite map(terrain_);map.setPosition(mapArea.left,mapArea.top);map.setScale(mapArea.width/256,mapArea.height/256);target.draw(map);
         }
@@ -85,7 +89,9 @@ public:
             marker(target,pt,record.visited(landmark.id)?sf::Color(146,190,113):sf::Color(242,212,155),7);
             text(target,font,std::to_string(landmark.id),{pt.x-10,pt.y-10,20,20},14);
             text(target,font,std::to_string(landmark.id)+"  "+landmark.name,{555,260+(landmark.id-1)*52.f,250,28},19);
-            text(target,font,landmark.id==goal?L"\ubaa9\ud45c / \ubbf8\ubc29\ubb38":record.visited(landmark.id)?L"\uBC29\uBB38 \uC644\uB8CC":L"\uC544\uC9C1 \uBBF8\uBC29\uBB38",{555,288+(landmark.id-1)*52.f,250,20},15);
+            sf::String status=record.visited(landmark.id)?L"방문 완료":L"아직 미방문";
+            if(landmark.id==goal){using K=resident_quest_log::GoalKind;status=quest?(log.goal.kind==K::Inspect?L"조사 목표":log.goal.kind==K::Experience?L"체험 목표":L"방문 목표"):L"목표";status+=record.visited(landmark.id)?L" / 방문 완료":L" / 미방문";}
+            text(target,font,status,{555,288+(landmark.id-1)*52.f,250,20},15);
         }
         marker(target,mapPoint({world_regions::Id::SunnyPeak,10,12}),{191,140,77},6);
         if(world_regions::valid(p) && p.region==world_regions::Id::SunnyPeak) {
