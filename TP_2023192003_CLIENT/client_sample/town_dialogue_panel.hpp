@@ -13,6 +13,8 @@ class TownDialoguePanel {
     town_walk_quest::Stage questStage_=town_walk_quest::Stage::Available;
     unsigned questProgress_=0;
     bool experienceMode_=false;
+    bool pashminaMode_=false;
+    bool questResident()const{return state.type==100 || (state.type==101 && pashminaMode_);}
     bool flowerInspected_=false,riverCompleted_=false;
     static void box(sf::RenderTarget& target,sf::FloatRect r,sf::Color color) {
         sf::RectangleShape s({r.width,r.height});s.setPosition(r.left,r.top);s.setFillColor(color);
@@ -28,15 +30,21 @@ public:
     bool visible() const {return state.visible();}
     void reset() {state.close();eDown_=enterDown_=guideRequested_=qDown_=questRequested_=questReply_=false;armed_=0;guideReply_.clear();}
     void setQuestContext(const town_walk_quest::State& quest,const field_discovery::Record& record) {
-        experienceMode_=false;
+        experienceMode_=pashminaMode_=false;
         questStage_=quest.stage();questProgress_=quest.progress(record);questEnabled_=record.active() && questStage_!=town_walk_quest::Stage::Reported;
     }
     void setExperienceContext(const resident_experience_quest::State& quest,const field_investigation::State& actions,bool active) {
-        experienceMode_=true;questStage_=quest.stage();questProgress_=quest.progress(actions);
-        flowerInspected_=actions.inspected(1);riverCompleted_=actions.completed(2);
+        experienceMode_=true;pashminaMode_=quest.residentType()==101;questStage_=quest.stage();questProgress_=quest.progress(actions);
+        flowerInspected_=actions.inspected(quest.inspectId());riverCompleted_=actions.completed(quest.experienceId());
         questEnabled_=active && questStage_!=town_walk_quest::Stage::Reported;
     }
     sf::String experienceBody() const {
+        if(pashminaMode_){
+            if(questStage_==town_walk_quest::Stage::Available)return L"3 절벽 아래를 E로 조사하고 4 그루터기를\nE로 연 뒤 F로 살펴보고 와 줄래?";
+            if(questStage_==town_walk_quest::Stage::Reported)return L"절벽과 그루터기 이야기를 들려줘서 고마워!\n이번 접속의 내 의뢰를 마쳤어.";
+            if(questStage_==town_walk_quest::Stage::Ready)return L"두 곳의 이야기가 모두 준비됐구나!\n[Q]로 내게 체험 이야기를 들려줘.";
+            return sf::String(L"절벽 조사 ")+(flowerInspected_?L"완료":L"미완료")+L" / 그루터기 체험 "+(riverCompleted_?L"완료":L"미완료")+L"\nE: 조사 / F: 체험 · 돌아와 보고해 줘.";
+        }
         if(questStage_==town_walk_quest::Stage::Available)return L"1 꽃길을 E로 조사하고 2 강가에서\nE를 연 뒤 F로 물결을 보고 와 줄래?";
         if(questStage_==town_walk_quest::Stage::Reported)return L"꽃과 물결 이야기를 들려줘서 고마워!\n이번 접속의 체험 의뢰를 마쳤어.";
         if(questStage_==town_walk_quest::Stage::Ready)return L"두 가지 이야기가 모두 준비됐구나!\n[Q]로 체험 이야기를 보고해 줘.";
@@ -76,18 +84,18 @@ public:
         if(wasOpen && !visible()){armed_=0;return true;}
         if(blocked){if(wasOpen)reset();armed_=0;return wasOpen;}
         if(visible()) {
-            if(freshQ && state.type==100 && questEnabled_){questRequested_=true;return true;}
+            if(freshQ && questResident() && questEnabled_){questRequested_=true;return true;}
             if(e.type==sf::Event::KeyPressed && e.key.code==sf::Keyboard::G){guideRequested_=true;return true;}
             if(e.type==sf::Event::KeyPressed && e.key.code==sf::Keyboard::Escape){state.close();armed_=0;return true;}
             if(freshE || freshEnter){state.next();guideReply_.clear();armed_=0;return true;}
             if(e.type==sf::Event::MouseButtonPressed && e.mouseButton.button==sf::Mouse::Left)
                 armed_=nextButton.contains(mouse)?2:closeButton.contains(mouse)?3:guideButton.contains(mouse)?4:
-                    (state.type==100 && questEnabled_ && questButton.contains(mouse)?5:0);
+                    (questResident() && questEnabled_ && questButton.contains(mouse)?5:0);
             if(e.type==sf::Event::MouseButtonReleased && e.mouseButton.button==sf::Mouse::Left) {
                 if(armed_==2 && nextButton.contains(mouse)){state.next();guideReply_.clear();}
                 if(armed_==3 && closeButton.contains(mouse))state.close();
                 if(armed_==4 && guideButton.contains(mouse))guideRequested_=true;
-                if(armed_==5 && state.type==100 && questEnabled_ && questButton.contains(mouse))questRequested_=true;
+                if(armed_==5 && questResident() && questEnabled_ && questButton.contains(mouse))questRequested_=true;
                 armed_=0;
             }
             return true;
@@ -108,18 +116,18 @@ public:
         const auto rect=TownNpcRenderer::frame(state.type,seconds);
         sf::Sprite portrait(renderer.texture(state.type),rect);portrait.setScale(2,2);
         portrait.setPosition(130+(100-rect.width*2)/2.f,474);target.draw(portrait);
-        if(state.type==100)text(target,font,L"\uc811\uc18d \uc911\n\uc7ac\uc811\uc18d \ucd08\uae30\ud654",{120,570,110,58},13);
+        if(questResident())text(target,font,L"\uc811\uc18d \uc911\n\uc7ac\uc811\uc18d \ucd08\uae30\ud654",{120,570,110,58},13);
         text(target,font,town_npcs::byType(state.type)->name,{245,455,400,30},23);
 text(target,font,guideReply_.isEmpty()?sf::String(std::to_string(state.page+1)+" / 2"):sf::String(questReply_?(experienceMode_?L"체험":L"\uc0b0\ucc45"):L"\uc548\ub0b4"),{690,460,80,24},16);
         sf::String body=guideReply_.isEmpty()?sf::String(line(state.type,state.page)):guideReply_;
-        if(state.type==100 && experienceMode_ && guideReply_.isEmpty())body=experienceBody();
+        if(questResident() && experienceMode_ && guideReply_.isEmpty())body=experienceBody();
         else if(state.type==100 && guideReply_.isEmpty()) {
             if(questStage_==town_walk_quest::Stage::Available && state.page==0)body=L"\uaf43\uae38(1)\uacfc \uac15\uac00(2)\ub97c \ub458\ub7ec\ubcf4\uace0\n\ub3cc\uc544\uc640 \uc0b0\ucc45 \uc774\uc57c\uae30\ub97c \ub4e4\ub824\uc904\ub798?";
             else if(questStage_==town_walk_quest::Stage::Ready)body=L"\ub450 \uacf3\uc744 \ubaa8\ub450 \ub458\ub7ec\ubd24\uad6c\ub098!\n[Q]\ub85c \uc0b0\ucc45 \uc774\uc57c\uae30\ub97c \ubcf4\uace0\ud574 \uc918.";
             else if(questStage_==town_walk_quest::Stage::Reported)body=L"\uc0b0\ucc45 \uc774\uc57c\uae30\ub97c \ub4e4\ub824\uc918\uc11c \uace0\ub9c8\uc6cc!\n\uc774\ubc88 \uc811\uc18d\uc758 \uc758\ub8b0\ub97c \ub9c8\ucce4\uc5b4.";
         }
         text(target,font,body,{245,495,525,58},21);
-        if(state.type==100) {
+        if(questResident()) {
             auto label=questStage_==town_walk_quest::Stage::Available?sf::String(L"[Q] \uc0b0\ucc45 \uc758\ub8b0 \ubc1b\uae30 (\ubcf4\uc0c1 \uc5c6\uc74c)"):
                 questStage_==town_walk_quest::Stage::Ready?sf::String(L"[Q] Boss\uc5d0\uac8c \ubcf4\uace0\ud558\uae30"):
                 questStage_==town_walk_quest::Stage::Reported?sf::String(L"\uc0b0\ucc45 \ubcf4\uace0 \uc644\ub8cc (\uc811\uc18d \uc911)"):
@@ -128,6 +136,7 @@ text(target,font,guideReply_.isEmpty()?sf::String(std::to_string(state.page+1)+"
                 questStage_==town_walk_quest::Stage::Ready?sf::String(L"[Q] Boss에게 체험 보고하기"):
                 questStage_==town_walk_quest::Stage::Reported?sf::String(L"체험 보고 완료 (재접속 초기화)"):
                 sf::String(L"[Q] 체험 진행 확인 ")+std::to_string(questProgress_)+L"/2 (접속 중)";
+            if(pashminaMode_ && questStage_==town_walk_quest::Stage::Ready)label=L"[Q] Pashmina에게 체험 보고하기";
             box(target,questButton,questEnabled_?sf::Color(242,212,155):sf::Color(221,213,191));text(target,font,label,questButton,18);
         } else text(target,font,state.page?L"E / Enter: \ub9c8\uce58\uae30   Esc: \ub2eb\uae30":L"E / Enter: \ub2e4\uc74c   Esc: \ub2eb\uae30",{245,566,525,25},15);
         box(target,guideButton,{242,212,155});text(target,font,L"[G] \ud0d0\ud5d8 \uc548\ub0b4",guideButton,19);
