@@ -4,6 +4,7 @@
 struct ResidentQuestLogView {
     inline static const sf::FloatRect navigation{415,617,260,26};
     inline static const sf::FloatRect trackButton{415,556,280,26},autoButton{710,556,145,26};
+    inline static const sf::FloatRect filterButton{415,225,440,26};
     static sf::FloatRect row(int index){return {415,265.f+index*70.f,440,62};}
     static const wchar_t* title(int id){return id==1?L"Boss · 두 곳 산책":id==2?L"Boss · 꽃길과 강가":L"Pashmina · 절벽과 그루터기";}
     static const wchar_t* label(resident_quest_log::Status s){using S=resident_quest_log::Status;switch(s){case S::Locked:return L"잠김";case S::Available:return L"수락 가능";case S::Active:return L"진행 중";case S::Ready:return L"보고 준비";default:return L"보고 완료";}}
@@ -15,16 +16,17 @@ struct ResidentQuestLogView {
         if(row.status==S::Ready)return L"거점의 "+npc+L"에게 돌아가\nE 대화 후 Q로 이야기를 보고해 줘.";
         return row.id==1?L"1 꽃길과 2 강가를 방문해 줘.\n두 곳을 다녀온 뒤 Boss에게 보고해.":row.id==2?L"1 꽃길 E 조사 / 2 강가 E 후 F 체험\n끝나면 Boss에게 돌아가 보고해.":L"3 절벽 E 조사 / 4 그루터기 E 후 F 체험\n끝나면 Pashmina에게 돌아가 보고해.";
     }
-    static void draw(sf::RenderTarget& out,const sf::Font& font,const resident_quest_log::Snapshot& log,int selected,sf::FloatRect close){using UI=FieldInvestigationPanel;
+    static void draw(sf::RenderTarget& out,const sf::Font& font,const resident_quest_log::Snapshot& log,int selected,sf::FloatRect close,bool activeOnly=false){using UI=FieldInvestigationPanel;
         UI::box(out,{395,170,490,490});UI::text(out,font,L"접속 중 주민 의뢰",{415,182,440,32},25);
         unsigned active=0,done=0;for(auto r:log.rows){active+=resident_quest_log::running(r.status);done+=r.status==resident_quest_log::Status::Reported;}
-        UI::text(out,font,sf::String(L"진행 중 ")+std::to_string(active)+L" · 보고 완료 "+std::to_string(done)+L"/3",{415,225,440,24},18);
-        for(int i=0;i<3;++i){auto r=row(i);if(i==selected)UI::box(out,r,{242,212,155});const auto& q=log.rows[i];
+        const auto v=resident_quest_log::visible(log,activeOnly);if(v.position(selected)<0)selected=v.count?v.indices[0]:-1;
+        UI::box(out,filterButton,{242,212,155});UI::text(out,font,activeOnly?sf::String(L"진행 중 ")+std::to_string(v.count)+L"개 · [F] 전체 보기":sf::String(L"전체 3개 · 진행 중 ")+std::to_string(active)+L" · [F] 필터",filterButton,16);
+        for(int i=0;i<v.count;++i){auto r=row(i);if(v.indices[i]==selected)UI::box(out,r,{242,212,155});const auto& q=log.rows[v.indices[i]];
             UI::text(out,font,title(q.id),{r.left+8,r.top,280,30},18);UI::text(out,font,label(q.status),{r.left+294,r.top,140,30},17);
             UI::text(out,font,sf::String(q.id==1?L"방문 ":L"조사·체험 ")+std::to_string(q.progress)+L"/2",{r.left+8,r.top+29,280,25},15);
             if(log.goal.questId==q.id)UI::text(out,font,log.pinned?L"수동 추적":L"자동 안내",{r.left+294,r.top+29,140,25},13);}
-        UI::text(out,font,detail(log.rows[selected]),{415,490,440,58},17);
-        const bool enabled=resident_quest_log::running(log.rows[selected].status);UI::box(out,trackButton,enabled?sf::Color(242,212,155):sf::Color(221,213,191));UI::text(out,font,L"[Enter] 선택 의뢰 추적",trackButton,15);UI::box(out,autoButton,{242,212,155});UI::text(out,font,L"[A] 자동",autoButton,15);
+        UI::text(out,font,selected>=0?detail(log.rows[selected]):sf::String(L"진행 중인 의뢰가 없어.\n[F] 전체 보기에서 주민의 부탁을 확인해."),{415,490,440,58},17);
+        const bool enabled=selected>=0 && resident_quest_log::running(log.rows[selected].status);UI::box(out,trackButton,enabled?sf::Color(242,212,155):sf::Color(221,213,191));UI::text(out,font,L"[Enter] 선택 의뢰 추적",trackButton,15);UI::box(out,autoButton,{242,212,155});UI::text(out,font,L"[A] 자동",autoButton,15);
         UI::text(out,font,L"읽기 전용 · 재접속 초기화 · 보상 없음",{415,589,440,22},14);
         UI::box(out,navigation,{242,212,155});UI::text(out,font,L"[Tab] 탐험 기록",navigation,15);
         UI::box(out,close,{242,212,155});UI::text(out,font,L"닫기",close,18);

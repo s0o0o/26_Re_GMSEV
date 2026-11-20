@@ -2,6 +2,8 @@
 
 ## 주민 의뢰 목록 #73
 
+#76 목록필터는Visible.indices로행위치와원래의뢰ID를분리한다. F/press-release버튼이전체/Active+Ready를전환하고상하/클릭/추적은원래ID를사용한다. 보이던선택이사라지면첫유효행/없으면-1,누름취소. 빈목록은추적불가·전체보기안내. 버튼누름중필터/선택변경은요청을취소한다. 필터는접속중유지/초기화시전체보기. [필터계약](../specs/resident-quest-filter.md).
+
 #74 shared/resident_quest_tracking.hpp의 State는 접속중 pinnedId만 소유한다. Snapshot의Active/Ready3종만 고정하고 완료·비활성이면 해제한다. 기본선택은 Boss체험→Pashmina→방문이다. decorate가공통Goal(방문/조사/체험/보고·주민/장소)을요약해J목표/본문/HUD에전달한다. 이때만료추적은정리하지만의뢰/방문·조사·체험상태는변경하지않는다. Enter/추적버튼 요청은owner가현재Snapshot으로재검증, A/자동은해제다. 끊김/새로그인 reset/거점왕복보존. [추적명세](../specs/resident-quest-tracking.md).
 
 shared/resident_quest_log.hpp는 기존 방문/Boss/Pashmina 상태를3행 Snapshot으로 읽기만 한다. Boss체험은 방문의뢰 Reported 전 Locked다. owner residentQuestSnapshot()이 활성접속과 현재기록을 전달하고 J패널은 Tab/press-release버튼으로 탐험/의뢰 탭을 전환한다. 상하/행클릭은 설명만 바꾼다. 수락/보고/서버송신은 없고 모달소비·키해제 공통router를 유지한다. disconnect/새로그인은 탭과선택을 reset한다. 기존 화면/주민 행동은 보존한다. [명세](../specs/resident-quest-log.md), [5큐](../specs/quest-usability-queue.md).
