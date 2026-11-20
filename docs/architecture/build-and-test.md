@@ -22,6 +22,8 @@ Debug도Configuration만바꿔빌드한다. 출력은각각`TP_2023192003/x64/Re
 
 ## DB 없는 검사부터
 
+- `tests/run-content-queue-checks.cmd`: VS x64 개발환경/저장소 루트에서 전체57회귀 → 관련12명령(content-boundaries/resident-experience/resident-experience-guidance/field-journal/field-content/chat/town-walk-quest/field-map/sprite-frames/wardrobe-ui/display/travel-client) → 클라Debug/Release2빌드. 로그는 build/tests/resident-queue-*.log. 실제DB 실행기는 호출하지 않는다. `run-content-boundaries.cmd`는 main과 같은 handleGameUiInput을 사용한다. 바깥 PowerShell에서도 LASTEXITCODE를 exit로 전달해 실패 전파를 확인한다.
+
 - `tests/run-resident-experience-guidance.cmd`: 의뢰 목표 우선순위 순수규칙·생산 J목표행/읽기 불변·수첩15/HUD9 렌더. 합성 상태를 주입하며 실제 탐험 플레이로 주장하지 않는다.
 
 - `tests/run-resident-experience.cmd`: 기존 방문 의뢰 후 후속 조사·체험 수락/보고 규칙과 생산 E/F/Q·거점 왕복/수명·4단계×3크기 대화 렌더. 실제 DB나 수동OS 조작이 아니다. 현재 전체 회귀에 순수 의뢰 규칙을 포함한다.

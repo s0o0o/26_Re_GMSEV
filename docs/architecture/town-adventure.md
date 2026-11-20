@@ -14,6 +14,8 @@ client.cpp의townDialogueCandidates는live players에서정식주민3ID만조회
 
 handleTownDialogueInput → 지도 → 옷장 → 귀환 → 채팅/이동 순서다. 열린대화는게임입력을소비한다. E/Enter/다음/닫기와E·Enter반복방지,대화중G안내/Boss전용Q의뢰를TownDialoguePanel이처리한다. Q도release전에다시실행하지않아기존방문이있는수락이보고까지자동연속되지않는다.
 
+현재 생산 입구(#71)는 `handleGameUiInput`이다. 일반 입력은 수첩 → 주민 → 조사 → 지도 → 옷장 → 귀환 → 채팅의 단락 소비 순서를 유지한다. KeyReleased/LostFocus만은 같은 순서로 모든 helper를 호출해 뒤쪽 패널에도 키 latch/포커스 정리가 도달하도록 한다. 이 분기는 새 수락·보고·이동을 실행하는 press가 아니다. Q를 누른 채 대화를 닫고 수첩에서 놓았을 때 다음 Q가 무시되던 경계가 생산 router 테스트에서 실패 재현 후 수정됐다. 게임 이동/공격은 router가 입력을 소비하지 않았을 때만 main의 기존 경로로 간다.
+
 범위이탈/LEAVE는다음입력또는drawTownDialogueUi의reconcile에서닫고,지역전환/끊김/새로그인에서도정리한다. 대화는월드일시정지가아니므로기존서버NPCidle/산책/수면은계속된다. portrait역시같은원본·idle phase를쓴다. 대사는로컬고정안내이며Lua/LLM생성이나서버대화RPC가아니다.
 
 ## 안내와 의뢰
