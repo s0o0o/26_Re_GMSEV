@@ -4,7 +4,7 @@
 
 #65는패킷v6/message120이므로서버·일반클라·stress GUI를함께빌드한다. 전체회귀52개와별도run-chat의SFML문자열history/scroll검사를구분한다. DB없는Windows입력probe의실행절차/IME한계는 [긴채팅명세](../specs/chat-history.md), 현재데이터/렌더/scroll흐름은 [채팅구조](chat.md)를참고한다.
 
-현재 전체 회귀는59개다(#73: 의뢰 목록 요약 포함). `run-chat.cmd`는 순수채팅규칙과생산클라입력/수신·TCP/프로필배치·다중크기렌더를연결한다. `run-town-walk-quest.cmd`는 순수 의뢰→안내→대화/생산클라 입력·패킷·렌더 검사를 연결한다. 새 실행기는 양수/음수 실패 종료를 모두 거부한다. 별도 `run-field-map.cmd`는생산지도입력/패킷·세션/상태렌더, `run-sprite-frames.cmd`는주민crop/HUD경계를검사한다. [필드 탐험 실행 증거](../specs/field-discovery.md)에서본회귀/별도창검사를구분한다. 옷장 `run-wardrobe.cmd`는 실제 IOCP4worker/게임 DB 대역·메모리 외형 Store와지역채팅경계를검사한다. `run-wardrobe-client.cmd`/`run-wardrobe-ui.cmd`는 생산 client.cpp 기반 wire/렌더·주입 입력 검사다. 실제 DB는 `appearance-db-admin.ps1`(명시 DDL), `appearance-db-check.ps1`/`test-live-wardrobe.ps1`로 구분한다. 승인계정 외 실행하지 않는다. [옷장 명세의 실행 증거](../specs/clubhouse-wardrobe.md)에서 실패/통과/미검증을 확인한다.
+현재 전체 회귀는60개다(#74: 의뢰 추적 규칙 포함). `run-chat.cmd`는 순수채팅규칙과생산클라입력/수신·TCP/프로필배치·다중크기렌더를연결한다. `run-town-walk-quest.cmd`는 순수 의뢰→안내→대화/생산클라 입력·패킷·렌더 검사를 연결한다. 새 실행기는 양수/음수 실패 종료를 모두 거부한다. 별도 `run-field-map.cmd`는생산지도입력/패킷·세션/상태렌더, `run-sprite-frames.cmd`는주민crop/HUD경계를검사한다. [필드 탐험 실행 증거](../specs/field-discovery.md)에서본회귀/별도창검사를구분한다. 옷장 `run-wardrobe.cmd`는 실제 IOCP4worker/게임 DB 대역·메모리 외형 Store와지역채팅경계를검사한다. `run-wardrobe-client.cmd`/`run-wardrobe-ui.cmd`는 생산 client.cpp 기반 wire/렌더·주입 입력 검사다. 실제 DB는 `appearance-db-admin.ps1`(명시 DDL), `appearance-db-check.ps1`/`test-live-wardrobe.ps1`로 구분한다. 승인계정 외 실행하지 않는다. [옷장 명세의 실행 증거](../specs/clubhouse-wardrobe.md)에서 실패/통과/미검증을 확인한다.
 
 `run-approved-load.ps1 -BaselineBeforeWardrobe`는 고정 d426613 서버/v4 도구 산출물로 비교하는 진단 옵션이며 기존 승인계정 재사용을 강제한다. 기본 제품 실행 경로를 바꾸지 않는다. 외형 조회 trace는 opt-in이며 종료 성공이 전체 서버 graceful shutdown을 뜻하지 않는다.
 
@@ -26,13 +26,13 @@ Debug도Configuration만바꿔빌드한다. 출력은각각`TP_2023192003/x64/Re
 
 - `tests/run-pashmina-experience.cmd`: 순수3/4조건·독립상태/동시의뢰 안내우선순위, 생산E/F/J/Q·버튼 외부release·잘못된주민/LEAVE·왕복/초기화와 대화12/수첩3/HUD3 렌더. 실제DB/OS 플레이가 아니다. run-content-queue-checks에 포함한다.
 
-- `tests/run-content-queue-checks.cmd`: VS x64 개발환경/저장소 루트에서 전체59회귀 → 관련14명령(resident-quest-log/pashmina-experience/content-boundaries/resident-experience/resident-experience-guidance/field-journal/field-content/chat/town-walk-quest/field-map/sprite-frames/wardrobe-ui/display/travel-client) → 클라Debug/Release2빌드. 로그는 build/tests/resident-queue-*.log. 실제DB 실행기는 호출하지 않는다. `run-content-boundaries.cmd`는 main과 같은 handleGameUiInput을 사용한다. 바깥 PowerShell에서도 LASTEXITCODE를 exit로 전달해 실패 전파를 확인한다.
+- `tests/run-content-queue-checks.cmd`: VS x64 개발환경/저장소 루트에서 전체60회귀 → 관련15명령(resident-quest-tracking/resident-quest-log/pashmina-experience/content-boundaries/resident-experience/resident-experience-guidance/field-journal/field-content/chat/town-walk-quest/field-map/sprite-frames/wardrobe-ui/display/travel-client) → 클라Debug/Release2빌드. 로그는 build/tests/resident-queue-*.log. 실제DB 실행기는 호출하지 않는다. `run-content-boundaries.cmd`는 main과 같은 handleGameUiInput을 사용한다. 바깥 PowerShell에서도 LASTEXITCODE를 exit로 전달해 실패 전파를 확인한다.
 
 - `tests/run-resident-experience-guidance.cmd`: 의뢰 목표 우선순위 순수규칙·생산 J목표행/읽기 불변·수첩15/HUD9 렌더. 합성 상태를 주입하며 실제 탐험 플레이로 주장하지 않는다.
 
 - `tests/run-resident-experience.cmd`: 기존 방문 의뢰 후 후속 조사·체험 수락/보고 규칙과 생산 E/F/Q·거점 왕복/수명·4단계×3크기 대화 렌더. 실제 DB나 수동OS 조작이 아니다. 현재 전체 회귀에 순수 의뢰 규칙을 포함한다.
 
-- `tests/run-regressions.cmd`:현재59개 프로그램. 청크/충돌·귀환 규칙/실제worker, 단위·loopback+DB대역·모의TCP부하를 포함한다. 실제DB300명 실행이 아니다.
+- `tests/run-regressions.cmd`:현재60개 프로그램. 청크/충돌·귀환 규칙/실제worker, 단위·loopback+DB대역·모의TCP부하를 포함한다. 실제DB300명 실행이 아니다.
 - `tests/run-field-journal.cmd`: 순수 수첩 요약과 생산 클라 J/행·버튼·읽기 불변/수명/4상태×3크기 렌더. `run-field-content.cmd`는 E/F 조사·체험 입력/취소/렌더와 90% 프로필 경계를 검사한다. [콘텐츠 구조](field-content.md), [수첩 결과](../specs/field-journal.md) 참조.
 - `tests/run-field-chunks.cmd`:모든 필드 칸·연결성·제한 캐시·수집 상태·경로 예산과 실제TCP/IOCP4worker+DB대역 이동 검사.
 - `tests/run-field-preview.cmd`:가시 청크·타일·캐시 예산, 시작/다리/절벽/끝·충돌 진단과 해상도별 생산 렌더러 출력. 실제 OS 입력/DB 화면/FPS 측정이 아니다.

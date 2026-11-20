@@ -6,16 +6,20 @@
 class FieldJournalPanel {
     bool open_=false,jDown_=false;int armed_=0,selected_=1;
     bool questTab_=false,tabDown_=false;int selectedQuest_=0;
+    bool enterDown_=false,aDown_=false;int trackRequest_=-1;
 public:
     inline static const sf::FloatRect entry{650,174,230,38},closeButton{710,616,150,30};
     static sf::FloatRect row(int id){return {415,285.f+(id-1)*40.f,440,38};}
     bool visible()const{return open_;}int selected()const{return selected_;}
     bool questTab()const{return questTab_;}int selectedQuest()const{return selectedQuest_;}
-    void reset(){open_=jDown_=questTab_=tabDown_=false;armed_=0;selected_=1;selectedQuest_=0;}
+    int takeTrackRequest(){const int r=trackRequest_;trackRequest_=-1;return r;}
+    void reset(){open_=jDown_=questTab_=tabDown_=enterDown_=aDown_=false;armed_=0;selected_=1;selectedQuest_=0;trackRequest_=-1;}
     bool handle(const sf::Event& e,sf::Vector2f mouse,bool active,bool blocked,const field_discovery::Record& record,const field_investigation::State& state,int preferredTarget=0,const resident_quest_log::Snapshot& log={}){
-        if(e.type==sf::Event::LostFocus){jDown_=tabDown_=false;armed_=0;}
+        if(e.type==sf::Event::LostFocus){jDown_=tabDown_=enterDown_=aDown_=false;armed_=0;}
         if(e.type==sf::Event::KeyReleased && e.key.code==sf::Keyboard::J)jDown_=false;
         if(e.type==sf::Event::KeyReleased && e.key.code==sf::Keyboard::Tab)tabDown_=false;
+        if(e.type==sf::Event::KeyReleased && e.key.code==sf::Keyboard::Enter)enterDown_=false;
+        if(e.type==sf::Event::KeyReleased && e.key.code==sf::Keyboard::A)aDown_=false;
         bool fresh=false;if(e.type==sf::Event::KeyPressed && e.key.code==sf::Keyboard::J){fresh=!jDown_;jDown_=true;}
         const bool was=open_;if(!active || blocked){open_=false;armed_=0;return was;}
         if(open_){
@@ -24,10 +28,12 @@ public:
             if(log.active && e.type==sf::Event::MouseButtonPressed && e.mouseButton.button==sf::Mouse::Left && ResidentQuestLogView::navigation.contains(mouse)){armed_=8;return true;}
             if(e.type==sf::Event::MouseButtonReleased && e.mouseButton.button==sf::Mouse::Left && armed_==8){if(log.active && ResidentQuestLogView::navigation.contains(mouse))questTab_=!questTab_;armed_=0;return true;}
             if(questTab_ && log.active){
-                if(e.type==sf::Event::KeyPressed && e.key.code==sf::Keyboard::Up)selectedQuest_=(std::max)(0,selectedQuest_-1);
-                if(e.type==sf::Event::KeyPressed && e.key.code==sf::Keyboard::Down)selectedQuest_=(std::min)(2,selectedQuest_+1);
-                if(e.type==sf::Event::MouseButtonPressed && e.mouseButton.button==sf::Mouse::Left){armed_=closeButton.contains(mouse)?7:0;for(int i=0;i<3;++i)if(ResidentQuestLogView::row(i).contains(mouse))armed_=10+i;}
-                if(e.type==sf::Event::MouseButtonReleased && e.mouseButton.button==sf::Mouse::Left){if(armed_==7 && closeButton.contains(mouse))open_=false;for(int i=0;i<3;++i)if(armed_==10+i && ResidentQuestLogView::row(i).contains(mouse))selectedQuest_=i;armed_=0;}return true;
+                if(e.type==sf::Event::KeyPressed && e.key.code==sf::Keyboard::Enter){if(!enterDown_ && resident_quest_log::running(log.rows[selectedQuest_].status))trackRequest_=selectedQuest_+1;enterDown_=true;return true;}
+                if(e.type==sf::Event::KeyPressed && e.key.code==sf::Keyboard::A){if(!aDown_)trackRequest_=0;aDown_=true;return true;}
+                if(e.type==sf::Event::KeyPressed && e.key.code==sf::Keyboard::Up){if(armed_==20)armed_=0;selectedQuest_=(std::max)(0,selectedQuest_-1);}
+                if(e.type==sf::Event::KeyPressed && e.key.code==sf::Keyboard::Down){if(armed_==20)armed_=0;selectedQuest_=(std::min)(2,selectedQuest_+1);}
+                if(e.type==sf::Event::MouseButtonPressed && e.mouseButton.button==sf::Mouse::Left){armed_=closeButton.contains(mouse)?7:ResidentQuestLogView::autoButton.contains(mouse)?21:ResidentQuestLogView::trackButton.contains(mouse)?20:0;for(int i=0;i<3;++i)if(ResidentQuestLogView::row(i).contains(mouse))armed_=10+i;}
+                if(e.type==sf::Event::MouseButtonReleased && e.mouseButton.button==sf::Mouse::Left){if(armed_==7 && closeButton.contains(mouse))open_=false;if(armed_==20 && ResidentQuestLogView::trackButton.contains(mouse) && resident_quest_log::running(log.rows[selectedQuest_].status))trackRequest_=selectedQuest_+1;if(armed_==21 && ResidentQuestLogView::autoButton.contains(mouse))trackRequest_=0;for(int i=0;i<3;++i)if(armed_==10+i && ResidentQuestLogView::row(i).contains(mouse))selectedQuest_=i;armed_=0;}return true;
             }
             if(e.type==sf::Event::KeyPressed && e.key.code==sf::Keyboard::Up)selected_=(std::max)(1,selected_-1);
             if(e.type==sf::Event::KeyPressed && e.key.code==sf::Keyboard::Down)selected_=(std::min)(5,selected_+1);
@@ -56,6 +62,7 @@ public:
         if(quest){const auto goal=resident_experience_guidance::next(record.active(),*quest,state);
             if(goal.kind!=resident_experience_guidance::Kind::None){next=L"의뢰: "+experienceNextText(goal,p);
                 limit=sf::String(L"체험 의뢰 ")+std::to_string(quest->progress(state))+L"/2 · 재접속 초기화 · 보상 없음";}}
+        if(log.goal.questId){next=sf::String(log.pinned?L"추적: ":L"의뢰: ")+questGoalText(log.goal,p);}
         UI::text(out,font,next,{410,556,460,26},16);UI::text(out,font,limit,{410,589,460,22},14);
         if(log.active){UI::box(out,ResidentQuestLogView::navigation,{242,212,155});UI::text(out,font,L"[Tab] 주민 의뢰",ResidentQuestLogView::navigation,15);}else UI::text(out,font,L"J / Esc 닫기",{415,617,260,26},15);UI::box(out,closeButton,{242,212,155});UI::text(out,font,L"닫기",closeButton,18);
     }

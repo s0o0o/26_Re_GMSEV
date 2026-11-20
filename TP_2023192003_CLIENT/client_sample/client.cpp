@@ -41,7 +41,9 @@ exploration_guidance::State explorationGuide;
 #include "town_walk_quest_hud.hpp"
 town_walk_quest::State townWalkQuest; resident_experience_quest::State residentExperienceQuest;
 resident_experience_quest::State pashminaExperienceQuest{3,4,101};
-resident_quest_log::Snapshot residentQuestSnapshot(){return resident_quest_log::snapshot(fieldDiscovery.active(),townWalkQuest,fieldDiscovery,residentExperienceQuest,pashminaExperienceQuest,fieldInvestigationPanel().state);}
+#include "../../shared/resident_quest_tracking.hpp"
+resident_quest_tracking::State questTracking;
+resident_quest_log::Snapshot residentQuestSnapshot(){return questTracking.decorate(resident_quest_log::snapshot(fieldDiscovery.active(),townWalkQuest,fieldDiscovery,residentExperienceQuest,pashminaExperienceQuest,fieldInvestigationPanel().state),fieldDiscovery,residentExperienceQuest,pashminaExperienceQuest,fieldInvestigationPanel().state);}
 const resident_experience_quest::State& guidedExperienceQuest(){return resident_experience_guidance::preferred(fieldDiscovery.active(),residentExperienceQuest,pashminaExperienceQuest,fieldInvestigationPanel().state);}
 WardrobePanel& wardrobePanel() { static WardrobePanel panel; return panel; }
 bool wardrobeBackdropNeeded=false;
@@ -67,7 +69,7 @@ HamsterCustomizer& hamsterCustomizer() {
 sf::TcpSocket s_socket;
 void gameConnectionLost() {
     extern bool isChatMode; isChatMode=false; chatPanel().reset();
-    fieldJournalPanel().reset(); fieldInvestigationPanel().reset(); townWalkQuest.reset(); residentExperienceQuest.reset(); pashminaExperienceQuest.reset(); explorationGuide.reset(); townDialoguePanel().reset(); fieldDiscovery.reset(); fieldMapPanel().reset(); wardrobeState.disconnect(); travelState.disconnect(); gameOutbox.clear(); s_socket.disconnect();
+    fieldJournalPanel().reset(); fieldInvestigationPanel().reset(); townWalkQuest.reset(); residentExperienceQuest.reset(); pashminaExperienceQuest.reset(); questTracking.reset(); explorationGuide.reset(); townDialoguePanel().reset(); fieldDiscovery.reset(); fieldMapPanel().reset(); wardrobeState.disconnect(); travelState.disconnect(); gameOutbox.clear(); s_socket.disconnect();
 }
 bool flushGamePackets() {
     const bool okay=gameOutbox.pump([](const std::uint8_t* data,std::size_t size,std::size_t& sent) {
@@ -418,10 +420,12 @@ town_dialogue::Candidates townDialogueCandidates() {
     return result;
 }
 bool handleFieldJournalInput(const sf::Event& e,sf::Vector2f point){
-    return fieldJournalPanel().handle(e,point,fieldDiscovery.active() && travelState.status!=world_travel::ClientStatus::Disconnected,
-        isChatMode || townDialoguePanel().visible() || fieldInvestigationPanel().visible() || fieldMapPanel().visible() || wardrobeState.visible() || travelState.pending(),fieldDiscovery,fieldInvestigationPanel().state,resident_experience_guidance::next(fieldDiscovery.active(),guidedExperienceQuest(),fieldInvestigationPanel().state).target,residentQuestSnapshot());
-}
-bool handleFieldInvestigationInput(const sf::Event& e,sf::Vector2f mouse){
+    const auto log=residentQuestSnapshot();
+    const bool consumed=fieldJournalPanel().handle(e,point,log.active && travelState.status!=world_travel::ClientStatus::Disconnected,
+        isChatMode || townDialoguePanel().visible() || fieldInvestigationPanel().visible() || fieldMapPanel().visible() || wardrobeState.visible() || travelState.pending(),fieldDiscovery,fieldInvestigationPanel().state,log.goal.target,log);
+    const int request=fieldJournalPanel().takeTrackRequest();if(request>=0)questTracking.select(request,residentQuestSnapshot());
+    return consumed;
+}bool handleFieldInvestigationInput(const sf::Event& e,sf::Vector2f mouse){
     return fieldInvestigationPanel().handle(e,mouse,avatar.position,fieldDiscovery.active(),
         fieldJournalPanel().visible() || isChatMode || townDialoguePanel().visible() || fieldMapPanel().visible() || wardrobeState.visible() || travelState.pending(),
         travelState.status!=world_travel::ClientStatus::Disconnected,GetTickCount64());
@@ -1028,7 +1032,7 @@ void client_main()
         fieldInvestigationPanel().draw(*g_window,gameFont(),avatar.position,fieldDiscovery.active(),GetTickCount64());
     if(!fieldJournalPanel().visible() && !fieldInvestigationPanel().visible() && !townDialoguePanel().visible() && !fieldMapPanel().visible() && !wardrobeState.visible() && !isChatMode && !travelState.pending()
         && !town_dialogue::nearest(avatar.position,townDialogueCandidates())) {
-        if(!drawResidentExperienceQuest(*g_window,gameFont(),guidedExperienceQuest(),fieldInvestigationPanel().state,fieldDiscovery,avatar.position) && !drawTownWalkQuest(*g_window,gameFont(),townWalkQuest,fieldDiscovery,explorationGuide,avatar.position))
+        if(!drawTrackedQuest(*g_window,gameFont(),residentQuestSnapshot(),avatar.position))
             drawExplorationGuidance(*g_window,gameFont(),explorationGuide,avatar.position);
     }
     if(fieldMapPanel().visible()) fieldMapPanel().draw(*g_window,gameFont(),avatar.position,fieldDiscovery,explorationGuide.target());
@@ -1127,7 +1131,7 @@ void drawCustomizationScreen(sf::RenderTarget& window) {
 
 void beginLoginConnection(unsigned short port = GAME_PORT) {
     chatPanel().reset(); isChatMode=false;
-    fieldJournalPanel().reset(); fieldInvestigationPanel().reset(); townWalkQuest.reset(); residentExperienceQuest.reset(); pashminaExperienceQuest.reset(); explorationGuide.reset(); townDialoguePanel().reset(); fieldDiscovery.reset(); fieldMapPanel().reset(); wardrobeState={}; travelState={}; gameOutbox.clear(); travelPanel.pressed=false; travelPanel.rDown=false;
+    fieldJournalPanel().reset(); fieldInvestigationPanel().reset(); townWalkQuest.reset(); residentExperienceQuest.reset(); pashminaExperienceQuest.reset(); questTracking.reset(); explorationGuide.reset(); townDialoguePanel().reset(); fieldDiscovery.reset(); fieldMapPanel().reset(); wardrobeState={}; travelState={}; gameOutbox.clear(); travelPanel.pressed=false; travelPanel.rDown=false;
     s_socket.disconnect();
     in_packet_size = saved_packet_size = 0;
     s_socket.setBlocking(true);

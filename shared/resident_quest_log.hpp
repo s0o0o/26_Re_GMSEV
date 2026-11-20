@@ -4,7 +4,9 @@
 namespace resident_quest_log {
 enum class Status {Locked,Available,Active,Ready,Reported};
 struct Row {int id=0;Status status=Status::Available;unsigned progress=0;};
-struct Snapshot {bool active=false;std::array<Row,3> rows{};};
+enum class GoalKind {None,Visit,Inspect,Experience,Report};
+struct Goal {int questId=0,target=0,residentType=100;GoalKind kind=GoalKind::None;};
+struct Snapshot {bool active=false;std::array<Row,3> rows{};int pinned=0;Goal goal{};};
 inline Status status(town_walk_quest::Stage s){using S=town_walk_quest::Stage;return s==S::Active?Status::Active:s==S::Ready?Status::Ready:s==S::Reported?Status::Reported:Status::Available;}
 inline bool running(Status s){return s==Status::Active || s==Status::Ready;}
 inline Snapshot snapshot(bool active,const town_walk_quest::State& walk,const field_discovery::Record& record,const resident_experience_quest::State& boss,const resident_experience_quest::State& pash,const field_investigation::State& actions){
