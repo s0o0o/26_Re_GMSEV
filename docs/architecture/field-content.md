@@ -6,6 +6,8 @@
 
 2026-11-20 #70: `resident_experience_guidance::next`는 활성 후속 의뢰일 때 꽃길 조사1 → 강가 체험2 → Boss 보고를 반환한다. Available/Reported/비활성 접속이면 None으로 기존 일반 탐험 추천에 복귀한다. J를 열 때 preferredTarget으로 목표행을 선택하고, draw는 같은 읽기 전용 Goal을 다음행동/진행 문구로 사용한다. 의뢰가 있더라도 수첩 열람 자체는 기록을 바꾸지 않는다. HUD는 기존 하단 슬롯에서 후속 의뢰 → 원래 산책 의뢰 → 일반 안내 순이며 기존 모달/채팅/주민 근접 숨김 조건을 유지한다. [안내 계약](../specs/resident-experience-guidance.md).
 
+#71 `handleGameUiInput`은 main과 생산 경계검사가 공유하는 입력 입구다. 누름/클릭은 첫 소비에서 멈추고 키 해제/포커스 이탈은 모든 패널에 전달한다. 따라서 수첩이 열린 동안 놓은 Q/J가 이전 패널에 눌린 상태로 남지 않는다. `run-content-boundaries.cmd`는 각 모달 차단·행 경계/외부release·취소/잘못된보고·새로그인 초기화를 검사한다. [경계 계약](../specs/resident-experience-boundaries.md).
+
 [수첩 계약](../specs/field-journal.md)의 `field_journal`은 기존 방문 Record와 조사 State의 inspected/completed를 읽기만 한다. `next`는 첫 체험 미완료 ID를 택한다. 거리 값은 SunnyPeak 내부 좌표의 Manhattan 거리이며 장애물을 고려한 경로 길이나 자동 이동이 아니다. 거점에서는 R로 필드에 가라는 안내를 표시한다.
 
 `handleFieldJournalInput` → `FieldJournalPanel::handle`은 주민/조사보다 먼저 호출된다. 연결된 활성 Record가 필요하며 채팅·주민·조사·지도·옷장·귀환 중에는 열지 않는다. J fresh-key/버튼 press-release로 열고 J/Esc/닫기로 닫는다. 방향키/행 선택은 설명만 바꾸며 조사·체험 완료를 만들지 않는다. 다른 입력 helper는 수첩 visible을 차단 조건으로 사용한다. 기존 서버 패킷·월드 갱신은 멈추지 않는다.
@@ -24,4 +26,4 @@ F/행동버튼은같은조사패널의fresh key/press-release경로다. draw직�
 
 #66 추가사용자요청의내프로필90%는 `profile_layout::selfStates`에서좌15/하785앵커의렌더변환으로프레임·초상화·동적글자를함께줄인다. 원본텍스처/명목NAME 슬롯/이름데이터는보존한다. `selfTop()`은676.1로바뀌며몬스터stack/채팅목표y는같은실제경계를쓴다. 채팅12px간격은유지한다.
 
-검사: 순수 field_investigation/field_interaction/field_journal은 전체55회귀에 포함된다. run-field-content는 생산client.cpp E/F/서버패킷/모달/세크기5장소렌더·프로필변환을 검사한다. PNG는 fixture 생산렌더러 출력이며 전체게임 수동OS/실제DB/성능 증거가 아니다. 실행결과는 명세/이슈에 기록한다.
+검사: 순수 field_investigation/field_interaction/field_journal과 주민 체험 의뢰/안내는 현재 전체57회귀에 포함된다. run-field-content는 생산client.cpp E/F/서버패킷/모달/세크기5장소렌더·프로필변환을 검사한다. PNG는 fixture 생산렌더러 출력이며 전체게임 수동OS/실제DB/성능 증거가 아니다. 실행결과는 명세/이슈에 기록한다.

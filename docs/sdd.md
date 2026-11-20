@@ -33,6 +33,8 @@
 
 ## 명세 목록
 
+- [콘텐츠 입력·수명 경계](specs/resident-experience-boundaries.md): main 공유 router·모달 간 키 해제/포커스 정리·거부/초기화 회귀와3큐 통합.
+
 - [체험 의뢰 수첩·안내](specs/resident-experience-guidance.md): 의뢰 목표행·다음 행동 우선순위와 기존 HUD 슬롯 공유.
 
 - [주민 체험 3큐](specs/resident-experience-queue.md), [Boss 후속 의뢰](specs/resident-experience-quest.md): 기존 산책 보고 이후 조사·체험과 주민 이야기 연결.

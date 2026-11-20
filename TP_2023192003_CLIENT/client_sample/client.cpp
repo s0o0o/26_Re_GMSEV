@@ -895,6 +895,23 @@ bool handleChatInput(const sf::Event& event,sf::Vector2f point) {
         });
     isChatMode=chatPanel().editing;return consumed;
 }
+bool handleGameUiInput(const sf::Event& event,sf::RenderWindow& window,sf::Vector2f point) {
+    // Releases/focus cleanup must reach every latch, even behind the owning modal.
+    if(event.type==sf::Event::KeyReleased || event.type==sf::Event::LostFocus) {
+        const bool journal=handleFieldJournalInput(event,point);
+        const bool town=handleTownDialogueInput(event,point);
+        const bool field=handleFieldInvestigationInput(event,point);
+        const bool map=handleFieldMapInput(event,point);
+        const bool wardrobe=handleWardrobeInput(event,window,point);
+        const bool travel=handleTravelInput(event,point,isChatMode);
+        const bool chat=handleChatInput(event,point);
+        return journal || town || field || map || wardrobe || travel || chat;
+    }
+    return handleFieldJournalInput(event,point) || handleTownDialogueInput(event,point)
+        || handleFieldInvestigationInput(event,point) || handleFieldMapInput(event,point)
+        || handleWardrobeInput(event,window,point) || handleTravelInput(event,point,isChatMode)
+        || handleChatInput(event,point);
+}
 void drawChat() {
     chatPanel().place(chatFrameClock.restart().asSeconds(),true,profile_layout::stackTop(chatPanel().profileVisible,nearMonCnt));
     chatPanel().draw(*g_window,gameFont(),travelState.status!=world_travel::ClientStatus::Disconnected);
@@ -1241,15 +1258,7 @@ int main()
                 if(event.type==sf::Event::MouseButtonPressed || event.type==sf::Event::MouseButtonReleased)
                     pixel={event.mouseButton.x,event.mouseButton.y};
                 if(event.type==sf::Event::MouseWheelScrolled)pixel={event.mouseWheelScroll.x,event.mouseWheelScroll.y};
-                if(handleFieldJournalInput(event,window.mapPixelToCoords(pixel))) continue;
-                if(handleTownDialogueInput(event,window.mapPixelToCoords(pixel))) continue;
-                if(handleFieldInvestigationInput(event,window.mapPixelToCoords(pixel))) continue;
-                if(handleFieldMapInput(event,window.mapPixelToCoords(pixel))) continue;
-                if(handleWardrobeInput(event,window,window.mapPixelToCoords(pixel))) continue;
-
-                if(handleTravelInput(event,window.mapPixelToCoords(pixel),isChatMode)) continue;
-
-                if(handleChatInput(event,window.mapPixelToCoords(pixel))) continue;
+                if(handleGameUiInput(event,window,window.mapPixelToCoords(pixel))) continue;
                 if (not isChatMode and event.type == sf::Event::KeyPressed) {
 					int direction = -1;
 					switch (event.key.code) {
