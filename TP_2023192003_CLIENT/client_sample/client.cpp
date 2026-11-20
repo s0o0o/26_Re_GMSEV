@@ -41,6 +41,7 @@ exploration_guidance::State explorationGuide;
 #include "town_walk_quest_hud.hpp"
 town_walk_quest::State townWalkQuest; resident_experience_quest::State residentExperienceQuest;
 resident_experience_quest::State pashminaExperienceQuest{3,4,101};
+resident_quest_log::Snapshot residentQuestSnapshot(){return resident_quest_log::snapshot(fieldDiscovery.active(),townWalkQuest,fieldDiscovery,residentExperienceQuest,pashminaExperienceQuest,fieldInvestigationPanel().state);}
 const resident_experience_quest::State& guidedExperienceQuest(){return resident_experience_guidance::preferred(fieldDiscovery.active(),residentExperienceQuest,pashminaExperienceQuest,fieldInvestigationPanel().state);}
 WardrobePanel& wardrobePanel() { static WardrobePanel panel; return panel; }
 bool wardrobeBackdropNeeded=false;
@@ -418,7 +419,7 @@ town_dialogue::Candidates townDialogueCandidates() {
 }
 bool handleFieldJournalInput(const sf::Event& e,sf::Vector2f point){
     return fieldJournalPanel().handle(e,point,fieldDiscovery.active() && travelState.status!=world_travel::ClientStatus::Disconnected,
-        isChatMode || townDialoguePanel().visible() || fieldInvestigationPanel().visible() || fieldMapPanel().visible() || wardrobeState.visible() || travelState.pending(),fieldDiscovery,fieldInvestigationPanel().state,resident_experience_guidance::next(fieldDiscovery.active(),guidedExperienceQuest(),fieldInvestigationPanel().state).target);
+        isChatMode || townDialoguePanel().visible() || fieldInvestigationPanel().visible() || fieldMapPanel().visible() || wardrobeState.visible() || travelState.pending(),fieldDiscovery,fieldInvestigationPanel().state,resident_experience_guidance::next(fieldDiscovery.active(),guidedExperienceQuest(),fieldInvestigationPanel().state).target,residentQuestSnapshot());
 }
 bool handleFieldInvestigationInput(const sf::Event& e,sf::Vector2f mouse){
     return fieldInvestigationPanel().handle(e,mouse,avatar.position,fieldDiscovery.active(),
@@ -1021,7 +1022,7 @@ void client_main()
     drawWardrobeUi(*g_window);
     drawTownDialogueUi(*g_window);
     if(!isChatMode && !townDialoguePanel().visible() && !fieldInvestigationPanel().visible() && !fieldMapPanel().visible() && !wardrobeState.visible() && !travelState.pending())
-        fieldJournalPanel().draw(*g_window,gameFont(),avatar.position,fieldDiscovery,fieldInvestigationPanel().state,false,&guidedExperienceQuest());
+        fieldJournalPanel().draw(*g_window,gameFont(),avatar.position,fieldDiscovery,fieldInvestigationPanel().state,false,&guidedExperienceQuest(),residentQuestSnapshot());
     fieldInvestigationPanel().state.tick(GetTickCount64(),avatar.position,fieldDiscovery.active() && travelState.status!=world_travel::ClientStatus::Disconnected && !fieldJournalPanel().visible() && !isChatMode && !townDialoguePanel().visible() && !fieldMapPanel().visible() && !wardrobeState.visible() && !travelState.pending());
     if(!fieldJournalPanel().visible() && !isChatMode && !townDialoguePanel().visible() && !fieldMapPanel().visible() && !wardrobeState.visible() && !travelState.pending())
         fieldInvestigationPanel().draw(*g_window,gameFont(),avatar.position,fieldDiscovery.active(),GetTickCount64());

@@ -2,20 +2,33 @@
 #include "field_investigation_panel.hpp"
 #include "../../shared/field_journal.hpp"
 #include "resident_experience_hud.hpp"
+#include "resident_quest_log_view.hpp"
 class FieldJournalPanel {
     bool open_=false,jDown_=false;int armed_=0,selected_=1;
+    bool questTab_=false,tabDown_=false;int selectedQuest_=0;
 public:
     inline static const sf::FloatRect entry{650,174,230,38},closeButton{710,616,150,30};
     static sf::FloatRect row(int id){return {415,285.f+(id-1)*40.f,440,38};}
     bool visible()const{return open_;}int selected()const{return selected_;}
-    void reset(){open_=jDown_=false;armed_=0;selected_=1;}
-    bool handle(const sf::Event& e,sf::Vector2f mouse,bool active,bool blocked,const field_discovery::Record& record,const field_investigation::State& state,int preferredTarget=0){
-        if(e.type==sf::Event::LostFocus){jDown_=false;armed_=0;}
+    bool questTab()const{return questTab_;}int selectedQuest()const{return selectedQuest_;}
+    void reset(){open_=jDown_=questTab_=tabDown_=false;armed_=0;selected_=1;selectedQuest_=0;}
+    bool handle(const sf::Event& e,sf::Vector2f mouse,bool active,bool blocked,const field_discovery::Record& record,const field_investigation::State& state,int preferredTarget=0,const resident_quest_log::Snapshot& log={}){
+        if(e.type==sf::Event::LostFocus){jDown_=tabDown_=false;armed_=0;}
         if(e.type==sf::Event::KeyReleased && e.key.code==sf::Keyboard::J)jDown_=false;
+        if(e.type==sf::Event::KeyReleased && e.key.code==sf::Keyboard::Tab)tabDown_=false;
         bool fresh=false;if(e.type==sf::Event::KeyPressed && e.key.code==sf::Keyboard::J){fresh=!jDown_;jDown_=true;}
         const bool was=open_;if(!active || blocked){open_=false;armed_=0;return was;}
         if(open_){
             if(fresh || (e.type==sf::Event::KeyPressed && e.key.code==sf::Keyboard::Escape)){open_=false;return true;}
+            if(e.type==sf::Event::KeyPressed && e.key.code==sf::Keyboard::Tab){if(!tabDown_ && log.active){questTab_=!questTab_;armed_=0;}tabDown_=true;return true;}
+            if(log.active && e.type==sf::Event::MouseButtonPressed && e.mouseButton.button==sf::Mouse::Left && ResidentQuestLogView::navigation.contains(mouse)){armed_=8;return true;}
+            if(e.type==sf::Event::MouseButtonReleased && e.mouseButton.button==sf::Mouse::Left && armed_==8){if(log.active && ResidentQuestLogView::navigation.contains(mouse))questTab_=!questTab_;armed_=0;return true;}
+            if(questTab_ && log.active){
+                if(e.type==sf::Event::KeyPressed && e.key.code==sf::Keyboard::Up)selectedQuest_=(std::max)(0,selectedQuest_-1);
+                if(e.type==sf::Event::KeyPressed && e.key.code==sf::Keyboard::Down)selectedQuest_=(std::min)(2,selectedQuest_+1);
+                if(e.type==sf::Event::MouseButtonPressed && e.mouseButton.button==sf::Mouse::Left){armed_=closeButton.contains(mouse)?7:0;for(int i=0;i<3;++i)if(ResidentQuestLogView::row(i).contains(mouse))armed_=10+i;}
+                if(e.type==sf::Event::MouseButtonReleased && e.mouseButton.button==sf::Mouse::Left){if(armed_==7 && closeButton.contains(mouse))open_=false;for(int i=0;i<3;++i)if(armed_==10+i && ResidentQuestLogView::row(i).contains(mouse))selectedQuest_=i;armed_=0;}return true;
+            }
             if(e.type==sf::Event::KeyPressed && e.key.code==sf::Keyboard::Up)selected_=(std::max)(1,selected_-1);
             if(e.type==sf::Event::KeyPressed && e.key.code==sf::Keyboard::Down)selected_=(std::min)(5,selected_+1);
             if(e.type==sf::Event::MouseButtonPressed && e.mouseButton.button==sf::Mouse::Left){armed_=closeButton.contains(mouse)?7:0;for(int id=1;id<=5;++id)if(row(id).contains(mouse))armed_=id+1;}
@@ -26,9 +39,10 @@ public:
         bool click=false;if(e.type==sf::Event::MouseButtonReleased && e.mouseButton.button==sf::Mouse::Left){click=armed_==1 && entry.contains(mouse);armed_=0;}
         if(fresh || click){open_=true;selected_=preferredTarget>=1 && preferredTarget<=5?preferredTarget:field_journal::next(record,state);if(!selected_)selected_=1;return true;}return false;
     }
-    void draw(sf::RenderTarget& out,const sf::Font& font,world_regions::Position p,const field_discovery::Record& record,const field_investigation::State& state,bool disabled=false,const resident_experience_quest::State* quest=nullptr)const {
+    void draw(sf::RenderTarget& out,const sf::Font& font,world_regions::Position p,const field_discovery::Record& record,const field_investigation::State& state,bool disabled=false,const resident_experience_quest::State* quest=nullptr,const resident_quest_log::Snapshot& log={})const {
         if(!record.active())return;using UI=FieldInvestigationPanel;
         if(!open_){UI::box(out,entry,disabled?sf::Color(221,213,191):sf::Color(255,248,228));UI::text(out,font,L"[J] 탐험 수첩",entry,20);return;}
+        if(questTab_ && log.active){ResidentQuestLogView::draw(out,font,log,selectedQuest_,closeButton);return;}
         UI::box(out,{395,170,490,490});UI::text(out,font,L"접속 중 탐험 수첩",{415,182,440,32},25);
         UI::text(out,font,sf::String(L"방문 ")+std::to_string(record.count())+L"/5 · 조사 "+std::to_string(field_journal::inspected(state))+L"/5 · 체험 "+std::to_string(field_journal::completed(state))+L"/5",{415,225,440,24},18);
         UI::text(out,font,L"장소 / 방향키로 선택",{415,260,260,22},15);UI::text(out,font,L"방문   조사   체험",{685,260,170,22},15);
@@ -43,6 +57,6 @@ public:
             if(goal.kind!=resident_experience_guidance::Kind::None){next=L"의뢰: "+experienceNextText(goal,p);
                 limit=sf::String(L"체험 의뢰 ")+std::to_string(quest->progress(state))+L"/2 · 재접속 초기화 · 보상 없음";}}
         UI::text(out,font,next,{410,556,460,26},16);UI::text(out,font,limit,{410,589,460,22},14);
-        UI::text(out,font,L"J / Esc 닫기",{415,617,260,26},15);UI::box(out,closeButton,{242,212,155});UI::text(out,font,L"닫기",closeButton,18);
+        if(log.active){UI::box(out,ResidentQuestLogView::navigation,{242,212,155});UI::text(out,font,L"[Tab] 주민 의뢰",ResidentQuestLogView::navigation,15);}else UI::text(out,font,L"J / Esc 닫기",{415,617,260,26},15);UI::box(out,closeButton,{242,212,155});UI::text(out,font,L"닫기",closeButton,18);
     }
 };

@@ -4,6 +4,8 @@
 
 ## 읽는 순서
 
+#73 J수첩의 주민 의뢰 목록·읽기전용 요약/탭입력은 [주민 구조](town-adventure.md)에 정리했다.
+
 2026-11-20 #69 [주민 후속 의뢰](town-adventure.md)는 기존 산책 보고 후 꽃길 조사·강가 체험 연결과 Q 입력/접속 수명을 설명한다.
 
 #70 수첩/필드 안내와 #71 공통 UI 입력 router·키 해제/포커스 정리는 [필드 콘텐츠](field-content.md), [주민 구조](town-adventure.md), [검증 실행기](build-and-test.md)에 연결했다.

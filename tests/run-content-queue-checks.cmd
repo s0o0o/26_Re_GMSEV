@@ -5,7 +5,7 @@ if not exist build\tests mkdir build\tests
 call tests\run-regressions.cmd > build\tests\resident-queue-regressions.log 2>&1
 if errorlevel 1 goto failed
 if not errorlevel 0 goto failed
-for %%T in (pashmina-experience content-boundaries resident-experience resident-experience-guidance field-journal field-content chat town-walk-quest field-map sprite-frames wardrobe-ui display travel-client) do (
+for %%T in (resident-quest-log pashmina-experience content-boundaries resident-experience resident-experience-guidance field-journal field-content chat town-walk-quest field-map sprite-frames wardrobe-ui display travel-client) do (
  call tests\run-%%T.cmd > build\tests\resident-queue-%%T.log 2>&1
  if errorlevel 1 goto failed
  if not errorlevel 0 goto failed
