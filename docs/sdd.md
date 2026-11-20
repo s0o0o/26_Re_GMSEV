@@ -33,6 +33,8 @@
 
 ## 명세 목록
 
+- [주민 체험 3큐](specs/resident-experience-queue.md), [Boss 후속 의뢰](specs/resident-experience-quest.md): 기존 산책 보고 이후 조사·체험과 주민 이야기 연결.
+
 - [탐험 수첩](specs/field-journal.md): 방문/조사/체험 읽기 전용 요약·다음 장소/좌표 거리·J 입력 경계.
 
 - [장소 상호작용](specs/field-interaction.md):0.9초연출·취소/쿨다운/접속중완료bit.
