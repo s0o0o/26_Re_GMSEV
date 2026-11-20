@@ -2,6 +2,12 @@
 
 2026-11-17 · #61/#62/#63 · [구조 입구](README.md), [실행 큐](../specs/resident-adventure-queue.md).
 
+## 조사·체험 후속 의뢰 #69 (2026-11-20)
+
+[계약](../specs/resident-experience-quest.md), [이번 3큐](../specs/resident-experience-queue.md). 기존 방문 산책 의뢰는 그대로 유지한다. Reported 뒤 새 Q 요청은 `residentExperienceQuest`의 accept/report로 전환된다. 수락 가능한 조건은 활성 Record·기존 방문 보고·패널이 현재 근접성을 검사한 Boss ID/type이다. 후속 상태는 Available → Active → Ready → Reported이며 `field_investigation::State.inspected(1)`과 `completed(2)` 두 조건만 읽는다. 방문만으로 Ready가 되지 않는다. 같은 접속의 수락 전 조사/체험도 인정하고 수락과 보고는 서로 다른 Q press-release가 필요하다.
+
+TownDialoguePanel::setQuestContext 뒤, 기존 의뢰 Reported인 경우에만 setExperienceContext가 후속 본문/Q 상태를 제공한다. owner의 입력/대화 draw에서 update하며 gameConnectionLost/beginLoginConnection은 후속도 reset한다. 거점 왕복은 보존한다. 서버 NPC idle/산책·패킷·Lua/DB/보상은 변경하지 않는다. 생산 렌더 fixture와 실제 게임/DB 플레이는 다른 검증이다.
+
 ## 위치와 입력
 
 client.cpp의townDialogueCandidates는live players에서정식주민3ID만조회한다. shared/town_dialogue.hpp는ID/type/지역·walkable/Manhattan거리2·중간통로를확인하고가장가까운대상(동률은낮은ID)을고른다. 서버home상수위치가아니라현재관측위치로판정한다.

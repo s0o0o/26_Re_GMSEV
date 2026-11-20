@@ -1,6 +1,7 @@
 #pragma once
 #include "ui_alignment.hpp"
 #include "../../shared/town_walk_quest.hpp"
+#include "../../shared/resident_experience_quest.hpp"
 #include "../../shared/exploration_guidance.hpp"
 inline bool drawTownWalkQuest(sf::RenderTarget& target,const sf::Font& font,const town_walk_quest::State& quest,
     const field_discovery::Record& record,const exploration_guidance::State& guide,world_regions::Position p) {
