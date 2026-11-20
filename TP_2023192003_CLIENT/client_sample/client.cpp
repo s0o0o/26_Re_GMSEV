@@ -1035,7 +1035,7 @@ void client_main()
         if(!drawTrackedQuest(*g_window,gameFont(),residentQuestSnapshot(),avatar.position))
             drawExplorationGuidance(*g_window,gameFont(),explorationGuide,avatar.position);
     }
-    if(fieldMapPanel().visible()) fieldMapPanel().draw(*g_window,gameFont(),avatar.position,fieldDiscovery,explorationGuide.target());
+    if(fieldMapPanel().visible()) fieldMapPanel().draw(*g_window,gameFont(),avatar.position,fieldDiscovery,explorationGuide.target(),residentQuestSnapshot());
     else if(avatar.position.region==world_regions::Id::SunnyPeak) fieldMapPanel().drawEntry(*g_window,gameFont(),isChatMode || travelState.pending() || travelState.status==world_travel::ClientStatus::Disconnected,fieldDiscovery);
 }
 
