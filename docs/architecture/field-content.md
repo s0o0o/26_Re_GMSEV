@@ -30,4 +30,4 @@ F/행동버튼은같은조사패널의fresh key/press-release경로다. draw직�
 
 #66 추가사용자요청의내프로필90%는 `profile_layout::selfStates`에서좌15/하785앵커의렌더변환으로프레임·초상화·동적글자를함께줄인다. 원본텍스처/명목NAME 슬롯/이름데이터는보존한다. `selfTop()`은676.1로바뀌며몬스터stack/채팅목표y는같은실제경계를쓴다. 채팅12px간격은유지한다.
 
-검사: 순수 field_investigation/field_interaction/field_journal과 주민 체험 의뢰/안내·Pashmina 규칙은 현재 전체58회귀에 포함된다. run-field-content는 생산client.cpp E/F/서버패킷/모달/세크기5장소렌더·프로필변환을 검사한다. PNG는 fixture 생산렌더러 출력이며 전체게임 수동OS/실제DB/성능 증거가 아니다. 실행결과는 명세/이슈에 기록한다.
+검사: field_investigation/field_interaction/field_journal과 주민 체험 의뢰/안내·Pashmina 및 의뢰 목록/추적/지도/필터 규칙은 현재 전체62회귀에 포함된다(#77). run-field-content는 생산client.cpp E/F/서버패킷/모달/세크기5장소렌더·프로필변환을 검사한다. PNG는 fixture 생산렌더러 출력이며 전체게임 수동OS/실제DB/성능 증거가 아니다. 실행결과는 명세/이슈에 기록한다.
