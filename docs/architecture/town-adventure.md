@@ -18,6 +18,8 @@ handleTownDialogueInput → 지도 → 옷장 → 귀환 → 채팅/이동 순�
 
 ## 안내와 의뢰
 
+#70 후속 의뢰 진행 중에는 shared/resident_experience_guidance.hpp가 목적 행동을 선택하고 client_sample/resident_experience_hud.hpp가 E/F 또는 R/보고 문구를 만든다. J 수첩도 같은 Goal을 읽는다. 별도 위치 권위·자동 이동·보상을 만들지 않으며 완료 뒤 일반 안내로 복귀한다. [필드 콘텐츠 구조](field-content.md)에 렌더/입력 우선순위를 연결했다.
+
 exploration_guidance::State는같은접속의field_discovery::Record에서첫미방문ID를선택한다. 본인확정AVATAR_INFO/ENTER/MOVE로Record.observe뒤안내update가실행된다. 방향은N/S/E/W조합이고거리는Manhattan좌표거리다. 실제장애물우회/최단경로가아니다.
 
 town_walk_quest::State는별도접속중상태다.
