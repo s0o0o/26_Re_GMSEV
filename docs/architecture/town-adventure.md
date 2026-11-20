@@ -1,5 +1,9 @@
 # 주민 대화·안내·산책 의뢰
 
+## 주민 의뢰 목록 #73
+
+shared/resident_quest_log.hpp는 기존 방문/Boss/Pashmina 상태를3행 Snapshot으로 읽기만 한다. Boss체험은 방문의뢰 Reported 전 Locked다. owner residentQuestSnapshot()이 활성접속과 현재기록을 전달하고 J패널은 Tab/press-release버튼으로 탐험/의뢰 탭을 전환한다. 상하/행클릭은 설명만 바꾼다. 수락/보고/서버송신은 없고 모달소비·키해제 공통router를 유지한다. disconnect/새로그인은 탭과선택을 reset한다. 기존 화면/주민 행동은 보존한다. [명세](../specs/resident-quest-log.md), [5큐](../specs/quest-usability-queue.md).
+
 2026-11-17 · #61/#62/#63 · [구조 입구](README.md), [실행 큐](../specs/resident-adventure-queue.md).
 
 ## 조사·체험 후속 의뢰 #69 (2026-11-20)
